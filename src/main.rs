@@ -6,6 +6,7 @@ use termion::raw::IntoRawMode;
 use tui::widgets::{Widget, Block, Borders};
 use tui::layout::{Layout, Constraint, Direction};
 
+mod calendar;
 
 fn main() -> Result<(), io::Error> {
     let stdout = io::stdout().into_raw_mode()?;
