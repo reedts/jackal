@@ -1,9 +1,11 @@
-use chrono::{Date, TimeZone, Utc};
+use chrono::{Date, Datelike, TimeZone, Utc};
 use chrono::naive::NaiveDate;
-use std::convert::TryInto;
 use std::cmp::Ordering;
-use std::io;
+use std::convert::{TryInto, TryFrom};
+use std::fmt;
 use std::fs;
+use std::io;
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use vobject::icalendar::{ICalendar, Event};
 
@@ -20,7 +22,7 @@ pub struct Day<'a, Tz: TimeZone> {
 }
 
 pub struct Month<'a, Tz: TimeZone> {
-    value: MonthValue,   
+    value: MonthValue,
     days: Vec<Day<'a, Tz>>
 }
 
@@ -30,14 +32,17 @@ pub enum MonthValue {
     March,
     April,
     May,
-    June,      
-    July,      
+    June,
+    July,
     August,
     September,
     October,
     November,
     December,
 }
+
+#[derive(Debug)]
+pub struct NotAMonthError {}
 
 
 pub struct Year<'a, Tz: TimeZone> {
@@ -48,12 +53,12 @@ pub struct Year<'a, Tz: TimeZone> {
 }
 
 impl<'a> Calendar<'a> {
-    fn new(path: &'a Path, year: i32) -> io::Result<Calendar<'a>> {
+    pub fn new(path: &'a Path, year: i32) -> io::Result<Calendar<'a>> {
         Ok(Calendar {
             path: PathBuf::from(path),
             icals: fs::read_dir(path)?
                 .map(|rd| rd.map_or_else(
-                    |err| -> vobject::error::Result<ICalendar> {
+                    |_| -> vobject::error::Result<ICalendar> {
                         Err(vobject::error::VObjectErrorKind::NotAVCard)
                     },
                     |file| -> vobject::error::Result<ICalendar> {
@@ -66,16 +71,42 @@ impl<'a> Calendar<'a> {
         })
 
     }
+
+    pub fn curr_month(&self) -> &Month<'a, Utc> {
+        let date = Utc::now().date();
+
+        &self.year.months[(date.naive_utc().month() - 1) as usize]
+    }
+
+    pub fn curr_month_mut(&mut self) -> &mut Month<'a, Utc> {
+        let date = Utc::now().date();
+
+        &mut self.year.months[date.naive_utc().month0() as usize]
+    }
+
+    pub fn curr_day(&self) -> &Day<'a, Utc> {
+        let date = Utc::now().date();
+        let naive_date = date.naive_utc();
+
+        &self.year.months[naive_date.month0() as usize].days[naive_date.day0() as usize]
+    }
+
+    pub fn curr_day_mut(&mut self) -> &mut Day<'a, Utc> {
+        let date = Utc::now().date();
+        let naive_date = date.naive_utc();
+
+        &mut self.year.months[naive_date.month0() as usize].days[naive_date.day0() as usize]
+    }
 }
 
 impl<'a, Tz: TimeZone> Day<'a, Tz> {
-    fn new(date: Date<Tz>, events: &[Event<'a>]) -> Day<'a, Tz> {
+    pub fn new(date: Date<Tz>, events: &[Event<'a>]) -> Day<'a, Tz> {
         Day { date, events: events.to_vec() }
     }
 }
 
 impl MonthValue {
-    fn ord(&self) -> u8 {
+    pub fn ord(&self) -> u8 {
         match *self {
             MonthValue::January     => 0,
             MonthValue::February    => 1,
@@ -91,8 +122,8 @@ impl MonthValue {
             MonthValue::December    => 11
         }
     }
-    
-    fn num(&self) -> u8 {
+
+    pub fn num(&self) -> u8 {
         match *self {
             MonthValue::January     => 1,
             MonthValue::February    => 2,
@@ -105,11 +136,11 @@ impl MonthValue {
             MonthValue::September   => 9,
             MonthValue::October     => 10,
             MonthValue::November    => 11,
-            MonthValue::December    => 12 
+            MonthValue::December    => 12
         }
     }
 
-    fn name(&self) -> &'static str {
+    pub fn name(&self) -> &'static str {
         match *self {
             MonthValue::January     => "January",
             MonthValue::February    => "February",
@@ -147,9 +178,39 @@ impl Ord for MonthValue {
     }
 }
 
+impl TryFrom<u32> for MonthValue {
+    type Error = NotAMonthError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            1  => Ok(MonthValue::January),
+            2  => Ok(MonthValue::February),
+            3  => Ok(MonthValue::March),
+            4  => Ok(MonthValue::April),
+            5  => Ok(MonthValue::May),
+            6  => Ok(MonthValue::June),
+            7  => Ok(MonthValue::July),
+            8  => Ok(MonthValue::August),
+            9  => Ok(MonthValue::September),
+            10 => Ok(MonthValue::October),
+            11 => Ok(MonthValue::November),
+            12 => Ok(MonthValue::December) ,
+            _ => Err(Self::Error {})
+        }
+    }
+}
+
+impl fmt::Display for NotAMonthError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Value could not be converted to a month")
+    }
+}
+
+impl Error for NotAMonthError {}
+
 impl<'a> Year<'a, Utc> {
     fn new(year: i32) -> Year<'a, Utc> {
-        let y = Year {
+        let mut y = Year {
             year,
             begin:  NaiveDate::from_ymd(year.try_into().unwrap(), 1, 1),
             end:    NaiveDate::from_ymd(year.try_into().unwrap(), 12, 31),
@@ -168,23 +229,18 @@ impl<'a> Year<'a, Utc> {
                 Month { value: MonthValue::December,    days: Vec::with_capacity(31)}
             ]
         };
-        for (month, days) in y.months.into_iter().map(|m| {
-            // Get number of days in month by calculating the
-            // difference between the first of the month and the
-            // first of the next month
-            (
-                m,
-                if m.value.num() == 12 {
+
+        for month in y.months.iter_mut() {
+            let days =
+                if month.value.num() == 12 {
                     NaiveDate::from_ymd(year + 1, 1, 1)
                 } else {
-                    NaiveDate::from_ymd(year, m.value.num() as u32 + 1, 1)
-                }.signed_duration_since(NaiveDate::from_ymd(year, m.value.num() as u32, 1))
-                .num_days()
-            )
-        }) {
+                    NaiveDate::from_ymd(year, month.value.num() as u32 + 1, 1)
+                }.signed_duration_since(NaiveDate::from_ymd(year, month.value.num() as u32, 1))
+                .num_days();
             for d in 1..=days {
                 let date = NaiveDate::from_ymd(year, month.value.num() as u32, d as u32);
-                y.months[month.value.ord() as usize].days.insert(
+                month.days.insert(
                     0,
                     Day {
                         date: Utc.from_utc_date(&date),
