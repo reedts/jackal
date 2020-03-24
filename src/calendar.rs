@@ -105,6 +105,18 @@ impl<'a, Tz: TimeZone> Day<'a, Tz> {
     }
 }
 
+impl<'a, Tz: TimeZone> fmt::Display for Day<'a, Tz> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.date.naive_utc().day())
+    }
+}
+
+impl<'a, Tz: TimeZone> Month<'a, Tz> {
+    pub fn days(&self) -> &Vec<Day<'a, Tz>> {
+        &self.days
+    }
+}
+
 impl MonthValue {
     pub fn ord(&self) -> u8 {
         match *self {
@@ -240,8 +252,7 @@ impl<'a> Year<'a, Utc> {
                 .num_days();
             for d in 1..=days {
                 let date = NaiveDate::from_ymd(year, month.value.num() as u32, d as u32);
-                month.days.insert(
-                    0,
+                month.days.push(
                     Day {
                         date: Utc.from_utc_date(&date),
                         events: Vec::new()
