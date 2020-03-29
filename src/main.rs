@@ -1,4 +1,5 @@
 mod calendar;
+mod cmds;
 mod config;
 mod events;
 mod ui;
@@ -56,6 +57,7 @@ fn main() -> Result<(), io::Error> {
         match events.next().unwrap() {
             Event::Tick => {
             },
+            Event::Cmd(_) => {},
             Event::Input(key) => match key {
                 Key::Char(_) => {
                     break;

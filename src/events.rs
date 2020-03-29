@@ -1,4 +1,5 @@
 use crate::config;
+use crate::cmds;
 use std::io;
 use std::sync::{
     mpsc,
@@ -16,6 +17,7 @@ use config::Config;
 
 pub enum Event<T> {
     Input(T),
+    Cmd(cmds::Cmd),
     Tick,
 }
 
@@ -40,9 +42,6 @@ impl Events {
                     match evt {
                         Ok(key) => {
                             if let Err(_) = tx.send(Event::Input(key)) {
-                                return;
-                            }
-                            if key == config.exit_key {
                                 return;
                             }
                         }
