@@ -1,4 +1,10 @@
-use chrono::{Date, Datelike, TimeZone, Utc};
+use chrono::{
+    Date,
+    Datelike,
+    TimeZone,
+    Utc,
+    Weekday
+};
 use chrono::naive::NaiveDate;
 use std::cmp::Ordering;
 use std::convert::{TryInto, TryFrom};
@@ -72,6 +78,10 @@ impl<'a> Calendar<'a> {
 
     }
 
+    pub fn year(&self) -> &Year<'a, Utc> {
+        &self.year
+    }
+
     pub fn curr_month(&self) -> &Month<'a, Utc> {
         let date = Utc::now().date();
 
@@ -103,6 +113,18 @@ impl<'a, Tz: TimeZone> Day<'a, Tz> {
     pub fn new(date: Date<Tz>, events: &[Event<'a>]) -> Day<'a, Tz> {
         Day { date, events: events.to_vec() }
     }
+
+    pub fn date(&self) -> &Date<Tz> {
+        &self.date
+    }
+
+    pub fn day_num(&self) -> u32 {
+        self.date.naive_utc().day()
+    }
+
+    pub fn weekday(&self) -> Weekday {
+        self.date.weekday()
+    }
 }
 
 impl<'a, Tz: TimeZone> fmt::Display for Day<'a, Tz> {
@@ -114,6 +136,14 @@ impl<'a, Tz: TimeZone> fmt::Display for Day<'a, Tz> {
 impl<'a, Tz: TimeZone> Month<'a, Tz> {
     pub fn days(&self) -> &Vec<Day<'a, Tz>> {
         &self.days
+    }
+
+    pub fn name(&self) -> &'static str {
+        self.value.name()
+    }
+
+    pub fn num(&self) -> u32 {
+        self.value.num() as u32
     }
 }
 
@@ -262,5 +292,9 @@ impl<'a> Year<'a, Utc> {
         }
 
         y
+    }
+
+    pub fn num(&self) -> i32 {
+        self.year
     }
 }
