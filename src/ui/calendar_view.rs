@@ -1,4 +1,5 @@
 use crate::calendar::{Calendar, Day, Month};
+use crate::cmds::{Receiver, Cmd, Result};
 
 use chrono::{Utc, Weekday};
 
@@ -6,6 +7,8 @@ use tui::buffer::Buffer;
 use tui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Style};
 use tui::widgets::{Block, Borders, Text, Paragraph, Widget};
+
+use crate::ui::Selection;
 
 struct DayBlock<'a> {
     day: &'a Day<'a, Utc>,
@@ -40,9 +43,89 @@ impl<'a> CalendarView<'a> {
     fn selected_block(&self) -> &DayBlock<'a>{
         &self.day_blocks[self.selected_day_idx]
     }
+    
+    fn selected_block_mut(&mut self) -> &mut DayBlock<'a>{
+        &mut self.day_blocks[self.selected_day_idx]
+    }
 
     pub fn selected_day(&self) -> &Day<'a, Utc> {
         self.day_blocks[self.selected_day_idx].day()
+    }
+
+    fn checked_select_n_next(&mut self, n: usize) {
+        self.selected_block_mut().unselect();
+        self.selected_day_idx = if let Some(i) = self.selected_day_idx.checked_add(n) {
+            i
+        } else {
+            self.selected_day_idx
+        };
+        self.selected_block_mut().select();
+    }
+    
+    fn checked_select_n_prev(&mut self, n: usize) {
+        self.selected_block_mut().unselect();
+        self.selected_day_idx = if let Some(i) = self.selected_day_idx.checked_sub(n) {
+            i
+        } else {
+            self.selected_day_idx
+        };
+        self.selected_block_mut().select();
+    }
+}
+
+impl<'a> Receiver for CalendarView<'a> {
+    fn recv(&mut self, cmd: Cmd) -> Result {
+        match cmd {
+            Cmd::NextDay => {
+                self.move_right();
+            },
+            Cmd::PrevDay => {
+                self.move_left();
+            },
+            Cmd::NextWeek => {
+                self.move_down();
+            },
+            Cmd::PrevWeek => {
+                self.move_up();
+            }
+            _ => {}
+        }
+
+        Ok(cmd)
+    }
+}
+
+impl<'a> Selection for CalendarView<'a> {
+    fn move_left(&mut self) {
+        self.checked_select_n_prev(1);
+    }
+
+    fn move_right(&mut self) {
+        self.checked_select_n_next(1);
+    }
+
+    fn move_up(&mut self) {
+        self.checked_select_n_prev(7);
+    }
+
+    fn move_down(&mut self) {
+        self.checked_select_n_next(7);
+    }
+
+    fn move_n_left(&mut self, n: usize) {
+        self.checked_select_n_prev(n);
+    }
+
+    fn move_n_right(&mut self, n: usize) {
+        self.checked_select_n_next(n);
+    }
+
+    fn move_n_up(&mut self, n: usize) {
+        self.checked_select_n_prev(n * 7);
+    }
+
+    fn move_n_down(&mut self, n: usize) {
+        self.checked_select_n_next(n * 7);
     }
 }
 

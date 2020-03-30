@@ -11,13 +11,13 @@ pub enum Cmd {
     Exit
 }
 
-type Result = result::Result<Cmd, CmdFailed>;
+pub type Result = result::Result<Cmd, CmdFailed>;
 
 #[derive(Debug, Clone)]
 pub struct CmdFailed;
 
 pub trait Receiver {
-    fn recv(cmd: Cmd) -> Result;
+    fn recv(&mut self, cmd: Cmd) -> Result;
 }
 
 
