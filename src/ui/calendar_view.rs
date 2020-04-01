@@ -1,5 +1,6 @@
 use crate::calendar::{Calendar, Day, Month};
-use crate::cmds::{Receiver, Cmd, Result};
+use crate::cmds::{Cmd, Result};
+use crate::control::Control;
 
 use chrono::{Utc, Weekday};
 
@@ -55,7 +56,11 @@ impl<'a> CalendarView<'a> {
     fn checked_select_n_next(&mut self, n: usize) {
         self.selected_block_mut().unselect();
         self.selected_day_idx = if let Some(i) = self.selected_day_idx.checked_add(n) {
-            i
+            if i < self.day_blocks.len() {
+                i
+            } else {
+                self.selected_day_idx
+            }
         } else {
             self.selected_day_idx
         };
@@ -73,25 +78,27 @@ impl<'a> CalendarView<'a> {
     }
 }
 
-impl<'a> Receiver for CalendarView<'a> {
-    fn recv(&mut self, cmd: Cmd) -> Result {
+impl<'a> Control for CalendarView<'a> {
+    fn send_cmd(&mut self, cmd: Cmd) -> Result {
         match cmd {
             Cmd::NextDay => {
                 self.move_right();
+                Ok(Cmd::Noop)
             },
             Cmd::PrevDay => {
                 self.move_left();
+                Ok(Cmd::Noop)
             },
             Cmd::NextWeek => {
                 self.move_down();
+                Ok(Cmd::Noop)
             },
             Cmd::PrevWeek => {
                 self.move_up();
+                Ok(Cmd::Noop)
             }
-            _ => {}
+            _ => Ok(cmd)
         }
-
-        Ok(cmd)
     }
 }
 

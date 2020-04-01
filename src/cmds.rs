@@ -4,6 +4,7 @@ use std::result;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Cmd {
+    Noop,
     NextDay,
     PrevDay,
     NextWeek,
@@ -15,11 +16,6 @@ pub type Result = result::Result<Cmd, CmdFailed>;
 
 #[derive(Debug, Clone)]
 pub struct CmdFailed;
-
-pub trait Receiver {
-    fn recv(&mut self, cmd: Cmd) -> Result;
-}
-
 
 impl fmt::Display for CmdFailed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -8,31 +8,30 @@ use std::sync::{
 };
 
 use std::thread;
-use std::time::Duration;
 
 use termion::event::Key;
 use termion::input::TermRead;
 
 use config::Config;
 
-pub enum Event<T> {
-    Input(T),
+pub enum Event {
+    Input(Key),
     Cmd(cmds::Cmd),
     Tick,
 }
 
-pub struct Events {
-    rx: mpsc::Receiver<Event<Key>>,
+pub struct Dispatcher {
+    rx: mpsc::Receiver<Event>,
     input_handle: thread::JoinHandle<()>,
     tick_handle: thread::JoinHandle<()>
 }
 
-impl Events {
-    pub fn new() -> Events {
-        Events::from_config(Config::default())
+impl Dispatcher {
+    pub fn new() -> Dispatcher {
+        Dispatcher::from_config(Config::default())
     }
 
-    pub fn from_config(config: Config) -> Events {
+    pub fn from_config(config: Config) -> Dispatcher {
         let (tx, rx) = mpsc::channel();
         let input_handle = {
             let tx = tx.clone();
@@ -60,14 +59,14 @@ impl Events {
                 }
             })
         };
-        Events {
+        Dispatcher {
             rx,
             input_handle,
             tick_handle,
         }
     }
 
-    pub fn next(&self) -> Result<Event<Key>, mpsc::RecvError> {
+    pub fn next(&self) -> Result<Event, mpsc::RecvError> {
         self.rx.recv()
     }
 }
