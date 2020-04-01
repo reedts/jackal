@@ -5,9 +5,11 @@ use std::time::Duration;
 
 use termion::event::Key;
 
+pub type KeyMap = HashMap<Key, Cmd>;
+
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub key_map: HashMap<Key, Cmd>,
+    pub key_map: KeyMap,
     pub tick_rate: Duration
 }
 
