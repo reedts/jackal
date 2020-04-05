@@ -16,7 +16,7 @@ pub enum View<'a> {
 pub struct App<'a> {
     pub quit: bool,
     views: [View<'a>; 1],
-    calendar: &'a mut Calendar<'a>,
+    calendar: Calendar<'a>,
     active_view: usize,
     config: &'a Config,
 }
@@ -30,14 +30,18 @@ impl<'a> Control for View<'a> {
 }
 
 impl<'a> App<'a> {
-    pub fn new(config: &'a Config, calendar: &'a mut Calendar<'a>) -> App<'a> {
+    pub fn new(config: &'a Config, calendar: Calendar<'a>) -> App<'a> {
         App {
             quit: false,
-            views: [View::Calendar(Controller::new(&config.key_map, CalendarView::new(calendar)))],
+            views: [View::Calendar(Controller::new(&config.key_map))],
             calendar,
             active_view: 0,
             config,
         }
+    }
+
+    pub fn calendar(&self) -> &Calendar {
+        &self.calendar
     }
 
     fn active_view_mut(&mut self) -> &mut View<'a> {

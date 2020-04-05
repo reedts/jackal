@@ -26,7 +26,7 @@ pub struct Calendar<'a> {
 
 pub struct Day<'a, Tz: TimeZone> {
     date: Date<Tz>,
-    events: Vec<Event<'a, FixedOffset>>,
+    events: Vec<&'a ical::Event<FixedOffset>>,
 }
 
 pub struct Month<'a, Tz: TimeZone> {
@@ -120,7 +120,7 @@ impl<'a> Calendar<'a> {
 }
 
 impl<'a, Tz: TimeZone> Day<'a, Tz> {
-    pub fn new(date: Date<Tz>, events: &[Event<'a, FixedOffset>]) -> Day<'a, Tz> {
+    pub fn new(date: Date<Tz>, events: &[&'a ical::Event<FixedOffset>]) -> Day<'a, Tz> {
         Day {
             date,
             events: events.to_vec(),
@@ -137,10 +137,6 @@ impl<'a, Tz: TimeZone> Day<'a, Tz> {
 
     pub fn weekday(&self) -> Weekday {
         self.date.weekday()
-    }
-
-    pub fn add_event(&mut self, event: Event<'a, FixedOffset>) {
-        self.events.push(event);
     }
 }
 

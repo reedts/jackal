@@ -37,7 +37,7 @@ fn main() -> Result<(), io::Error> {
         now.date().naive_utc().year(),
     )?;
 
-    let mut app = App::new(&config, &mut calendar);
+    let mut app = App::new(&config, calendar);
 
     loop {
         // Draw
