@@ -5,7 +5,7 @@ use crate::cmds::{
 use crate::config::Config;
 use crate::control::{Control, Controller};
 use crate::events::Event;
-use crate::ui::calendar_view::CalendarView;
+use crate::ui::calview::CalendarView;
 
 use tui::buffer::Buffer;
 use tui::layout::{Layout, Constraint, Direction, Rect};

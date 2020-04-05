@@ -21,7 +21,7 @@ use app::App;
 use calendar::Calendar;
 use config::Config;
 use events::{Dispatcher, Event};
-use ui::calendar_view::CalendarView;
+use ui::calview::CalendarView;
 
 
 fn main() -> Result<(), io::Error> {

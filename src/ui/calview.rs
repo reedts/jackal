@@ -24,9 +24,10 @@ pub struct CalendarView<'a> {
 }
 
 impl<'a> CalendarView<'a> {
-    pub fn new(calendar: &'a mut Calendar<'a>) -> CalendarView<'a> {
+    pub fn new(calendar: &'a Calendar<'a>) -> CalendarView<'a> {
         let curr_month = calendar.curr_month();
         let curr_day = calendar.curr_day().day_num();
+
         let mut view = CalendarView {
             calendar,
             selected_month: curr_month,

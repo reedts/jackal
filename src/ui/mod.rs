@@ -1,4 +1,4 @@
-pub mod calendar_view;
+pub mod calview;
 
 pub trait Selection {
     fn move_left(&mut self);

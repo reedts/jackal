@@ -1,6 +1,8 @@
 use chrono::{
     Date,
     Datelike,
+    DateTime,
+    FixedOffset,
     TimeZone,
     Utc,
     Weekday
@@ -13,18 +15,24 @@ use std::fs;
 use std::io;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use vobject::icalendar::{ICalendar, Event};
+
+#[derive(Clone)]
+pub struct Event<'a, Tz: TimeZone> {
+    parent: &'a Calendar<'a>,
+    date: DateTime<Tz>,
+    path: PathBuf,
+}
 
 pub struct Calendar<'a> {
     path: PathBuf,
-    icals: Vec<ICalendar>,
+    events: Vec<Event<'a, FixedOffset>>,
     year: Year<'a, Utc>
 }
 
 
 pub struct Day<'a, Tz: TimeZone> {
     date: Date<Tz>,
-    events: Vec<Event<'a>>,
+    events: Vec<Event<'a, FixedOffset>>,
 }
 
 pub struct Month<'a, Tz: TimeZone> {
@@ -53,29 +61,31 @@ pub struct NotAMonthError {}
 
 pub struct Year<'a, Tz: TimeZone> {
     year: i32,
-    begin: NaiveDate,
-    end: NaiveDate,
     months: [Month<'a, Tz>; 12]
 }
 
+
 impl<'a> Calendar<'a> {
     pub fn new(path: &'a Path, year: i32) -> io::Result<Calendar<'a>> {
-        Ok(Calendar {
-            path: PathBuf::from(path),
-            icals: fs::read_dir(path)?
-                .map(|rd| rd.map_or_else(
-                    |_| -> vobject::error::Result<ICalendar> {
-                        Err(vobject::error::VObjectErrorKind::NotAVCard)
-                    },
-                    |file| -> vobject::error::Result<ICalendar> {
-                        ICalendar::build(file.path().to_str().unwrap_or(""))
-                    }
-                ))
-                .filter_map(|c| c.ok())
-                .collect(),
-            year: Year::new(year)
-        })
+        // Load all valid .ics files from 'path'
+        let cals: Vec<(PathBuf, _)> = fs::read_dir(path)?
+            .map(|rd| rd. map_or_else(
+                |_| -> std::io::Result<(PathBuf, _)> { Err(io::Error::from(io::ErrorKind::NotFound)) },
+                |file: std::fs::DirEntry| -> std::io::Result<(PathBuf,_)> {
+                    Ok((file.path(), ""))
+                }
+            ))
+            .filter_map(|c| c.ok())
+            .collect();
 
+
+        let mut calendar = Calendar {
+            path: PathBuf::from(path),
+            events: Vec::new(),
+            year: Year::new(year)
+        };
+
+        Ok(calendar)
     }
 
     pub fn year(&self) -> &Year<'a, Utc> {
@@ -107,10 +117,14 @@ impl<'a> Calendar<'a> {
 
         &mut self.year.months[naive_date.month0() as usize].days[naive_date.day0() as usize]
     }
+
+    pub fn all_events(&self) -> &Vec<Event<'a, FixedOffset>> {
+        &self.events
+    }
 }
 
 impl<'a, Tz: TimeZone> Day<'a, Tz> {
-    pub fn new(date: Date<Tz>, events: &[Event<'a>]) -> Day<'a, Tz> {
+    pub fn new(date: Date<Tz>, events: &[Event<'a, FixedOffset>]) -> Day<'a, Tz> {
         Day { date, events: events.to_vec() }
     }
 
@@ -125,6 +139,10 @@ impl<'a, Tz: TimeZone> Day<'a, Tz> {
     pub fn weekday(&self) -> Weekday {
         self.date.weekday()
     }
+
+    pub fn add_event(&mut self, event: Event<'a, FixedOffset>) {
+        self.events.push(event);
+    }
 }
 
 impl<'a, Tz: TimeZone> fmt::Display for Day<'a, Tz> {
@@ -136,6 +154,14 @@ impl<'a, Tz: TimeZone> fmt::Display for Day<'a, Tz> {
 impl<'a, Tz: TimeZone> Month<'a, Tz> {
     pub fn days(&self) -> &Vec<Day<'a, Tz>> {
         &self.days
+    }
+
+    pub fn day(&self, n: usize) -> &Day<'a, Tz> {
+        &self.days[n]
+    }
+    
+    pub fn day_mut(&mut self, n: usize) -> &mut Day<'a, Tz> {
+        &mut self.days[n]
     }
 
     pub fn name(&self) -> &'static str {
@@ -254,8 +280,6 @@ impl<'a> Year<'a, Utc> {
     fn new(year: i32) -> Year<'a, Utc> {
         let mut y = Year {
             year,
-            begin:  NaiveDate::from_ymd(year.try_into().unwrap(), 1, 1),
-            end:    NaiveDate::from_ymd(year.try_into().unwrap(), 12, 31),
             months: [
                 Month { value: MonthValue::January,     days: Vec::with_capacity(31)},
                 Month { value: MonthValue::February,    days: Vec::with_capacity(30)},
@@ -296,5 +320,13 @@ impl<'a> Year<'a, Utc> {
 
     pub fn num(&self) -> i32 {
         self.year
+    }
+
+    pub fn month(&self, month: MonthValue) -> &Month<'a, Utc> {
+        &self.months[month.ord() as usize]
+    }
+    
+    pub fn month_mut(&mut self, month: MonthValue) -> &mut Month<'a, Utc> {
+        &mut self.months[month.ord() as usize]
     }
 }
