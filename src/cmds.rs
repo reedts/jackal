@@ -9,7 +9,7 @@ pub enum Cmd {
     PrevDay,
     NextWeek,
     PrevWeek,
-    Exit
+    Exit,
 }
 
 pub type Result = result::Result<Cmd, CmdFailed>;

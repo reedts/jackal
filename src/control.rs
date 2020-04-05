@@ -8,13 +8,13 @@ pub trait Control {
 
 pub enum Mode {
     Normal,
-    Visual
+    Visual,
 }
 
 pub struct Controller<'a, C: Control> {
     mode: Mode,
     key_map: &'a KeyMap,
-    recvr: C
+    recvr: C,
 }
 
 impl<'a, C: Control> Controller<'a, C> {
@@ -22,21 +22,17 @@ impl<'a, C: Control> Controller<'a, C> {
         Controller {
             mode: Mode::Normal,
             key_map,
-            recvr
+            recvr,
         }
     }
 
     pub fn handle(&mut self, event: Event) -> Result {
         match event {
-            Event::Input(key) => {
-                match self.key_map.get(&key) {
-                    Some(cmd) => {
-                        self.recvr.send_cmd(*cmd)
-                    },
-                    None => Err(CmdFailed {})
-                }
+            Event::Input(key) => match self.key_map.get(&key) {
+                Some(cmd) => self.recvr.send_cmd(*cmd),
+                None => Err(CmdFailed {}),
             },
-            _ => Err(CmdFailed {})
+            _ => Err(CmdFailed {}),
         }
     }
 

@@ -1,10 +1,9 @@
-use crate::config;
 use crate::cmds;
+use crate::config;
 use std::io;
 use std::sync::{
-    mpsc,
     atomic::{AtomicBool, Ordering},
-    Arc,
+    mpsc, Arc,
 };
 
 use std::thread;
@@ -23,7 +22,7 @@ pub enum Event {
 pub struct Dispatcher {
     rx: mpsc::Receiver<Event>,
     input_handle: thread::JoinHandle<()>,
-    tick_handle: thread::JoinHandle<()>
+    tick_handle: thread::JoinHandle<()>,
 }
 
 impl Dispatcher {

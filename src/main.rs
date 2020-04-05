@@ -4,25 +4,21 @@ mod cmds;
 mod config;
 mod control;
 mod events;
+mod ical;
 mod ui;
 
 use chrono::{Datelike, Utc};
 use std::io;
 use std::path::Path;
-use tui::Terminal;
+use termion::{raw::IntoRawMode, screen::AlternateScreen};
 use tui::backend::TermionBackend;
 use tui::widgets::Widget;
-use termion::{
-    raw::IntoRawMode,
-    screen::AlternateScreen
-};
+use tui::Terminal;
 
 use app::App;
 use calendar::Calendar;
 use config::Config;
 use events::{Dispatcher, Event};
-use ui::calview::CalendarView;
-
 
 fn main() -> Result<(), io::Error> {
     let stdout = io::stdout().into_raw_mode()?;
@@ -36,10 +32,12 @@ fn main() -> Result<(), io::Error> {
     let dispatcher = Dispatcher::from_config(config.clone());
 
     let now = Utc::now();
-    let mut calendar = Calendar::new(Path::new("/home/reedts/.calendars/google/j.reedts@gmail.com/"), now.date().naive_utc().year())?;
-    let mut calendar_view = CalendarView::new(&mut calendar);
+    let calendar = Calendar::new(
+        Path::new("/home/reedts/.calendars/google/j.reedts@gmail.com/"),
+        now.date().naive_utc().year(),
+    )?;
 
-    let mut app = App::new(&config, calendar_view);
+    let mut app = App::new(&config, &mut calendar);
 
     loop {
         // Draw
@@ -47,13 +45,13 @@ fn main() -> Result<(), io::Error> {
             let size = f.size();
             app.render(&mut f, size);
         })?;
-        
+
         // Handle events
         match dispatcher.next().unwrap() {
             Event::Tick => {}
             Event::Input(key) => {
                 app.handle(Event::Input(key));
-            },
+            }
             _ => {}
         }
 
