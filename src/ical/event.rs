@@ -22,7 +22,6 @@ pub struct Event<Tz: TimeZone> {
 fn parse_prop_to_date_time(property: &Property) -> Option<DateTime<Utc>> {
     type DT = DateTime<FixedOffset>;
     let iso8601_2004_local_format = "%Y%M%DT%H%M%S";
-    println!("Parsing: {:?}", property);
     if !property.name.contains("^DT") {
         return None
     }

@@ -21,11 +21,6 @@ use config::Config;
 use events::{Dispatcher, Event};
 
 fn main() -> Result<(), io::Error> {
-    let stdout = io::stdout().into_raw_mode()?;
-    let stdout = AlternateScreen::from(stdout);
-    let backend = TermionBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    terminal.hide_cursor()?;
 
     let config = Config::default();
 
@@ -36,8 +31,13 @@ fn main() -> Result<(), io::Error> {
         Path::new("/home/reedts/.calendars/google/j.reedts@gmail.com/"),
         now.date().naive_utc().year(),
     )?;
-
     let mut app = App::new(&config, calendar);
+
+    let stdout = io::stdout().into_raw_mode()?;
+    let stdout = AlternateScreen::from(stdout);
+    let backend = TermionBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+    terminal.hide_cursor()?;
 
     loop {
         // Draw

@@ -1,3 +1,5 @@
+use std::cell::{Ref, RefCell};
+use std::rc::Rc;
 use crate::calendar::Calendar;
 use crate::cmds::{Cmd, Result};
 use crate::config::Config;
@@ -10,13 +12,13 @@ use tui::layout::{Constraint, Direction, Layout, Rect};
 use tui::widgets::{Block, Borders, Widget};
 
 pub enum View<'a> {
-    Calendar(Controller<'a, CalendarView<'a>>),
+    Calendar(Controller<'a, CalendarView>),
 }
 
 pub struct App<'a> {
     pub quit: bool,
     views: [View<'a>; 1],
-    calendar: Calendar<'a>,
+    calendar: Rc<RefCell<Calendar>>,
     active_view: usize,
     config: &'a Config,
 }
@@ -30,18 +32,20 @@ impl<'a> Control for View<'a> {
 }
 
 impl<'a> App<'a> {
-    pub fn new(config: &'a Config, calendar: Calendar<'a>) -> App<'a> {
+    pub fn new(config: &'a Config, calendar: Calendar) -> App<'a> {
+        let calendar = Rc::new(RefCell::new(calendar));
+        let calview = CalendarView::new(calendar.clone());
         App {
             quit: false,
-            views: [View::Calendar(Controller::new(&config.key_map))],
+            views: [View::Calendar(Controller::new(&config.key_map, calview))],
             calendar,
             active_view: 0,
             config,
         }
     }
 
-    pub fn calendar(&self) -> &Calendar {
-        &self.calendar
+    pub fn calendar(&self) -> Ref<Calendar> {
+        self.calendar.borrow()
     }
 
     fn active_view_mut(&mut self) -> &mut View<'a> {

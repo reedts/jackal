@@ -1,7 +1,6 @@
 use chrono::naive::NaiveDate;
 use chrono::{
     Date,
-    DateTime,
     Datelike,
     FixedOffset,
     TimeZone,
@@ -34,6 +33,7 @@ pub struct Month<Tz: TimeZone> {
     days: Vec<Day<Tz>>,
 }
 
+#[derive(Clone, Copy)]
 pub enum MonthName {
     January,
     February,
@@ -167,7 +167,11 @@ impl<Tz: TimeZone> Month<Tz> {
         &mut self.days[n]
     }
 
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> MonthName {
+        self.name
+    }
+
+    pub fn to_str(&self) -> &'static str {
         self.name.name()
     }
 

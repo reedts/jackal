@@ -40,8 +40,6 @@ impl Calendar<Utc> {
             }
         };
 
-        println!("Loading from: {}", path.to_str().unwrap_or(""));
-
         let events: Vec<Event<Utc>> = ical
             .events
             .iter()

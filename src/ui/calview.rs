@@ -1,4 +1,6 @@
-use crate::calendar::{Calendar, Day, Month};
+use std::cell::RefCell;
+use std::rc::Rc;
+use crate::calendar::{Calendar, Day};
 use crate::cmds::{Cmd, Result};
 use crate::control::Control;
 
@@ -11,58 +13,54 @@ use tui::widgets::{Block, Borders, Paragraph, Text, Widget};
 
 use crate::ui::Selection;
 
-struct DayBlock<'a> {
-    day: &'a Day<'a, Utc>,
+pub struct DayBlock<'a> {
+    day: &'a Day<Utc>,
     selected: bool,
 }
 
-pub struct CalendarView<'a> {
-    calendar: &'a Calendar<'a>,
-    selected_month: &'a Month<'a, Utc>,
-    day_blocks: Vec<DayBlock<'a>>,
+pub struct CalendarView {
+    calendar: Rc<RefCell<Calendar>>,
+    selected_month_idx: usize,
     selected_day_idx: usize,
 }
 
-impl<'a> CalendarView<'a> {
-    pub fn new(calendar: &'a Calendar<'a>) -> CalendarView<'a> {
-        let curr_month = calendar.curr_month();
-        let curr_day = calendar.curr_day().day_num();
+impl<'a> DayBlock<'a> {
+    pub fn select(&mut self) {
+        self.selected = true;
+    }
 
-        let mut view = CalendarView {
-            calendar,
-            selected_month: curr_month,
-            day_blocks: curr_month
-                .days()
-                .iter()
-                .map(|d| DayBlock {
-                    day: d,
-                    selected: false,
-                })
-                .collect(),
+    pub fn unselect(&mut self) {
+        self.selected = false;
+    }
+
+    pub fn day(&self) -> &Day<Utc> {
+        self.day
+    }
+}
+
+impl CalendarView {
+    pub fn new(calendar: Rc<RefCell<Calendar>>) -> Self {
+        let curr_month = calendar.borrow().curr_month().ord();
+        let curr_day = calendar.borrow().curr_day().day_num();
+
+        CalendarView {
+            calendar: calendar.clone(),
+            selected_month_idx: curr_month,
             selected_day_idx: (curr_day - 1) as usize,
-        };
-
-        view.day_blocks[view.selected_day_idx].select();
-
-        view
+        }
     }
 
-    fn selected_block(&self) -> &DayBlock<'a> {
-        &self.day_blocks[self.selected_day_idx]
-    }
+    // pub fn selected_month(&self) -> &Month<Utc> {
+    //     self.calendar.borrow().month_from_idx(self.selected_month_idx).unwrap()
+    // }
 
-    fn selected_block_mut(&mut self) -> &mut DayBlock<'a> {
-        &mut self.day_blocks[self.selected_day_idx]
-    }
-
-    pub fn selected_day(&self) -> &Day<'a, Utc> {
-        self.day_blocks[self.selected_day_idx].day()
-    }
+    // pub fn selected_day(&self) -> &Day<Utc> {
+    //     &self.calendar.borrow().month_from_idx(self.selected_month_idx).unwrap().days()[self.selected_day_idx]
+    // }
 
     fn checked_select_n_next(&mut self, n: usize) {
-        self.selected_block_mut().unselect();
         self.selected_day_idx = if let Some(i) = self.selected_day_idx.checked_add(n) {
-            if i < self.day_blocks.len() {
+            if i < self.calendar.borrow().month_from_idx(self.selected_month_idx).unwrap().days().len() {
                 i
             } else {
                 self.selected_day_idx
@@ -70,21 +68,18 @@ impl<'a> CalendarView<'a> {
         } else {
             self.selected_day_idx
         };
-        self.selected_block_mut().select();
     }
 
     fn checked_select_n_prev(&mut self, n: usize) {
-        self.selected_block_mut().unselect();
         self.selected_day_idx = if let Some(i) = self.selected_day_idx.checked_sub(n) {
             i
         } else {
             self.selected_day_idx
         };
-        self.selected_block_mut().select();
     }
 }
 
-impl<'a> Control for CalendarView<'a> {
+impl Control for CalendarView {
     fn send_cmd(&mut self, cmd: Cmd) -> Result {
         match cmd {
             Cmd::NextDay => {
@@ -108,7 +103,7 @@ impl<'a> Control for CalendarView<'a> {
     }
 }
 
-impl<'a> Selection for CalendarView<'a> {
+impl Selection for CalendarView {
     fn move_left(&mut self) {
         self.checked_select_n_prev(1);
     }
@@ -142,20 +137,6 @@ impl<'a> Selection for CalendarView<'a> {
     }
 }
 
-impl<'a> DayBlock<'a> {
-    pub fn select(&mut self) {
-        self.selected = true;
-    }
-
-    pub fn unselect(&mut self) {
-        self.selected = false;
-    }
-
-    pub fn day(&self) -> &Day<'a, Utc> {
-        self.day
-    }
-}
-
 impl<'a> Widget for DayBlock<'a> {
     fn draw(&mut self, area: Rect, buf: &mut Buffer) {
         let style = match self.selected {
@@ -169,14 +150,16 @@ impl<'a> Widget for DayBlock<'a> {
     }
 }
 
-impl<'a> Widget for CalendarView<'a> {
+impl Widget for CalendarView {
     fn draw(&mut self, area: Rect, buf: &mut Buffer) {
+        let cal = self.calendar.borrow();
+        let selected_month = cal.month_from_idx(self.selected_month_idx).unwrap_or(cal.curr_month());
         Block::default()
             .borders(Borders::ALL)
             .title(&format!(
                 "{} {}",
-                self.selected_month.name(),
-                self.calendar.year().num()
+                selected_month.name().name(),
+                cal.year().num()
             ))
             .draw(area, buf);
 
@@ -232,8 +215,14 @@ impl<'a> Widget for CalendarView<'a> {
                 .draw(*col, buf);
         }
 
+        let mut day_blocks: Vec<DayBlock> = cal.month_from_idx(self.selected_month_idx).unwrap().days().iter()
+            .map(|day| DayBlock {day, selected: false})
+            .collect();
+
+        day_blocks[self.selected_day_idx].select();
+
         let mut row: usize = 1;
-        for day in self.day_blocks.iter_mut() {
+        for day in day_blocks.iter_mut() {
             let col = day.day().weekday().num_days_from_monday() as usize;
             day.draw(rows[row][col], buf);
 
