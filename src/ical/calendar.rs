@@ -1,5 +1,5 @@
 use crate::ical::event::Event;
-use chrono::{FixedOffset, TimeZone};
+use chrono::{TimeZone, Utc};
 use ical::parser::ical::component::IcalCalendar;
 use ical::parser::ical::IcalParser;
 use std::fs::File;
@@ -12,8 +12,8 @@ pub struct Calendar<Tz: TimeZone> {
     events: Vec<Event<Tz>>,
 }
 
-impl Calendar<FixedOffset> {
-    pub fn from(path: &Path) -> io::Result<Calendar<FixedOffset>> {
+impl Calendar<Utc> {
+    pub fn from(path: &Path) -> io::Result<Calendar<Utc>> {
         let buf = io::BufReader::new(File::open(path)?);
 
         let mut reader = IcalParser::new(buf);
@@ -40,7 +40,9 @@ impl Calendar<FixedOffset> {
             }
         };
 
-        let events: Vec<Event<FixedOffset>> = ical
+        println!("Loading from: {}", path.to_str().unwrap_or(""));
+
+        let events: Vec<Event<Utc>> = ical
             .events
             .iter()
             .map(|ev| Event::from(ev.clone()))
@@ -54,7 +56,11 @@ impl Calendar<FixedOffset> {
         })
     }
 
-    pub fn events(&self) -> &Vec<Event<FixedOffset>> {
+    pub fn events(&self) -> &Vec<Event<Utc>> {
         &self.events
+    }
+
+    pub fn events_mut(&mut self) -> &mut Vec<Event<Utc>> {
+        &mut self.events
     }
 }
