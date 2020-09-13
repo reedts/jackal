@@ -42,8 +42,7 @@ fn main() -> Result<(), io::Error> {
     loop {
         // Draw
         terminal.draw(|mut f| {
-            let size = f.size();
-            app.render(&mut f, size);
+            app::draw(&mut f, &mut app);
         })?;
 
         // Handle events
@@ -55,9 +54,9 @@ fn main() -> Result<(), io::Error> {
             _ => {}
         }
 
-        if app.quit {
-            break;
-        }
+        //if app.quit {
+        //    break;
+        //}
     }
 
     Ok(())

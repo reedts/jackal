@@ -5,14 +5,36 @@ use crate::cmds::{Cmd, Result};
 use crate::config::Config;
 use crate::control::{Control, Controller};
 use crate::events::Event;
-use crate::ui::calview::CalendarView;
+use crate::ui::calview::{CalendarView, CalendarViewState};
 
+use tui::Frame;
+use tui::backend::Backend;
 use tui::buffer::Buffer;
 use tui::layout::{Constraint, Direction, Layout, Rect};
 use tui::widgets::{Block, Borders, Widget};
 
+pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
+    let layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .margin(1)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+        .split(f.size());
+
+    for view in app.views.iter_mut() {
+        match view {
+            View::Calendar(ctrlr) => f.render_stateful_widget(CalendarView::new(&app.calendar.borrow()), layout[0], ctrlr.inner_mut()),
+        }
+    }
+
+    let block = Block::default()
+        .title("Events")
+        .borders(Borders::ALL);
+
+    f.render_widget(block, layout[1]);
+}
+
 pub enum View<'a> {
-    Calendar(Controller<'a, CalendarView>),
+    Calendar(Controller<'a, CalendarViewState>),
 }
 
 pub struct App<'a> {
@@ -34,10 +56,11 @@ impl<'a> Control for View<'a> {
 impl<'a> App<'a> {
     pub fn new(config: &'a Config, calendar: Calendar) -> App<'a> {
         let calendar = Rc::new(RefCell::new(calendar));
-        let calview = CalendarView::new(calendar.clone());
         App {
             quit: false,
-            views: [View::Calendar(Controller::new(&config.key_map, calview))],
+            views: [
+                View::Calendar(Controller::new(&config.key_map, CalendarViewState::new(calendar.clone())))
+            ],
             calendar,
             active_view: 0,
             config,
@@ -67,25 +90,5 @@ impl<'a> App<'a> {
             _ => Ok(Cmd::Noop),
         }
     }
-}
 
-impl<'a> Widget for App<'a> {
-    fn draw(&mut self, area: Rect, buf: &mut Buffer) {
-        let layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .margin(1)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-            .split(area);
-
-        for view in self.views.iter_mut() {
-            match view {
-                View::Calendar(ctrlr) => ctrlr.inner_mut().draw(layout[0], buf),
-            }
-        }
-
-        Block::default()
-            .title("Events")
-            .borders(Borders::ALL)
-            .draw(layout[1], buf);
-    }
 }

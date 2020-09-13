@@ -25,7 +25,7 @@ pub struct Calendar {
 
 pub struct Day<Tz: TimeZone> {
     date: Date<Tz>,
-    events: Vec<ical::Event<FixedOffset>>,
+    events: Vec<ical::Event<Tz>>,
 }
 
 pub struct Month<Tz: TimeZone> {
@@ -95,8 +95,8 @@ impl Calendar {
         &self.year.months[name.ord() as usize]
     }
 
-    pub fn month_from_idx(&self, idx: usize) -> Option<&Month<Utc>> {
-        self.year.months.get(idx)
+    pub fn month_from_idx(&self, idx: u32) -> Option<&Month<Utc>> {
+        self.year.months.get(idx as usize)
     }
 
     pub fn curr_month_mut(&mut self) -> &mut Month<Utc> {
@@ -128,7 +128,7 @@ impl Calendar {
 }
 
 impl<Tz: TimeZone> Day<Tz> {
-    pub fn new(date: Date<Tz>, events: &[ical::Event<FixedOffset>]) -> Day<Tz> {
+    pub fn new(date: Date<Tz>, events: &[ical::Event<Tz>]) -> Day<Tz> {
         Day {
             date,
             events: events.to_vec(),
@@ -145,6 +145,10 @@ impl<Tz: TimeZone> Day<Tz> {
 
     pub fn weekday(&self) -> Weekday {
         self.date.weekday()
+    }
+
+    pub fn events(&self) -> &Vec<ical::Event<Tz>> {
+        &self.events
     }
 }
 
@@ -179,60 +183,60 @@ impl<Tz: TimeZone> Month<Tz> {
         self.name.num() as u32
     }
 
-    pub fn ord(&self) -> usize {
-        self.name.ord() as usize
+    pub fn ord(&self) -> u32 {
+        self.name.ord() as u32
     }
 }
 
 impl MonthName {
     pub fn ord(&self) -> u8 {
         match *self {
-            MonthName::January => 0,
-            MonthName::February => 1,
-            MonthName::March => 2,
-            MonthName::April => 3,
-            MonthName::May => 4,
-            MonthName::June => 5,
-            MonthName::July => 6,
-            MonthName::August => 7,
+            MonthName::January   => 0,
+            MonthName::February  => 1,
+            MonthName::March     => 2,
+            MonthName::April     => 3,
+            MonthName::May       => 4,
+            MonthName::June      => 5,
+            MonthName::July      => 6,
+            MonthName::August    => 7,
             MonthName::September => 8,
-            MonthName::October => 9,
-            MonthName::November => 10,
-            MonthName::December => 11,
+            MonthName::October   => 9,
+            MonthName::November  => 10,
+            MonthName::December  => 11,
         }
     }
 
     pub fn num(&self) -> u8 {
         match *self {
-            MonthName::January => 1,
-            MonthName::February => 2,
-            MonthName::March => 3,
-            MonthName::April => 4,
-            MonthName::May => 5,
-            MonthName::June => 6,
-            MonthName::July => 7,
-            MonthName::August => 8,
+            MonthName::January   => 1,
+            MonthName::February  => 2,
+            MonthName::March     => 3,
+            MonthName::April     => 4,
+            MonthName::May       => 5,
+            MonthName::June      => 6,
+            MonthName::July      => 7,
+            MonthName::August    => 8,
             MonthName::September => 9,
-            MonthName::October => 10,
-            MonthName::November => 11,
-            MonthName::December => 12,
+            MonthName::October   => 10,
+            MonthName::November  => 11,
+            MonthName::December  => 12,
         }
     }
 
     pub fn name(&self) -> &'static str {
         match *self {
-            MonthName::January => "January",
-            MonthName::February => "February",
-            MonthName::March => "March",
-            MonthName::April => "April",
-            MonthName::May => "May",
-            MonthName::June => "June",
-            MonthName::July => "July",
-            MonthName::August => "August",
+            MonthName::January   => "January",
+            MonthName::February  => "February",
+            MonthName::March     => "March",
+            MonthName::April     => "April",
+            MonthName::May       => "May",
+            MonthName::June      => "June",
+            MonthName::July      => "July",
+            MonthName::August    => "August",
             MonthName::September => "September",
-            MonthName::October => "October",
-            MonthName::November => "November",
-            MonthName::December => "December",
+            MonthName::October   => "October",
+            MonthName::November  => "November",
+            MonthName::December  => "December",
         }
     }
 }
@@ -262,19 +266,19 @@ impl TryFrom<u32> for MonthName {
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
-            1 => Ok(MonthName::January),
-            2 => Ok(MonthName::February),
-            3 => Ok(MonthName::March),
-            4 => Ok(MonthName::April),
-            5 => Ok(MonthName::May),
-            6 => Ok(MonthName::June),
-            7 => Ok(MonthName::July),
-            8 => Ok(MonthName::August),
-            9 => Ok(MonthName::September),
+            1  => Ok(MonthName::January),
+            2  => Ok(MonthName::February),
+            3  => Ok(MonthName::March),
+            4  => Ok(MonthName::April),
+            5  => Ok(MonthName::May),
+            6  => Ok(MonthName::June),
+            7  => Ok(MonthName::July),
+            8  => Ok(MonthName::August),
+            9  => Ok(MonthName::September),
             10 => Ok(MonthName::October),
             11 => Ok(MonthName::November),
             12 => Ok(MonthName::December),
-            _ => Err(Self::Error {}),
+            _  => Err(Self::Error {}),
         }
     }
 }

@@ -115,4 +115,19 @@ impl Event<Utc> {
             ical_event,
         })
     }
+
+    pub fn summary(&self) -> &str {
+        self.ical_event.properties.iter()
+            .find(|prop| prop.name == "SUMMARY")
+            .unwrap()
+            .value.as_ref().unwrap().as_str()
+    }
+
+    pub fn begin(&self) -> &DateTime<Utc> {
+        &self.begin
+    }
+
+    pub fn end(&self) -> &DateTime<Utc> {
+        &self.end
+    }
 }
