@@ -164,7 +164,7 @@ impl<'a> StatefulWidget for CalendarView<'a> {
 impl CalendarViewState {
     pub fn new(calendar: Rc<RefCell<Calendar>>) -> Self {
         let curr_month = calendar.borrow().curr_month().ord();
-        let curr_day = calendar.borrow().curr_day().day_num();
+        let curr_day = calendar.borrow().curr_day().ord();
 
         CalendarViewState {
             calendar,

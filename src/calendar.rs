@@ -142,6 +142,10 @@ impl<Tz: TimeZone> Day<Tz> {
     pub fn day_num(&self) -> u32 {
         self.date.naive_utc().day()
     }
+    
+    pub fn ord(&self) -> u32 {
+        self.date.naive_utc().day0()
+    }
 
     pub fn weekday(&self) -> Weekday {
         self.date.weekday()
