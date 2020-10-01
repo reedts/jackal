@@ -5,14 +5,16 @@ pub mod evtlistview;
 pub use calview::CalendarView;
 pub use evtview::EventView;
 
-pub trait Selection {
-    fn move_left(&mut self);
-    fn move_right(&mut self);
-    fn move_up(&mut self);
-    fn move_down(&mut self);
+use crate::context::Context;
 
-    fn move_n_left(&mut self, n: u32);
-    fn move_n_right(&mut self, n: u32);
-    fn move_n_up(&mut self, n: u32);
-    fn move_n_down(&mut self, n: u32);
+pub trait Selection {
+    fn move_left(&mut self,  context: &mut Context);
+    fn move_right(&mut self, context: &mut Context);
+    fn move_up(&mut self,    context: &mut Context);
+    fn move_down(&mut self,  context: &mut Context);
+
+    fn move_n_left(&mut self,  n: u32, context: &mut Context);
+    fn move_n_right(&mut self, n: u32, context: &mut Context);
+    fn move_n_up(&mut self,    n: u32, context: &mut Context);
+    fn move_n_down(&mut self,  n: u32, context: &mut Context);
 }

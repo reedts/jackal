@@ -1,31 +1,103 @@
 use chrono::Utc;
-use std::cell::RefCell;
-use std::rc::Rc;
 use tui::buffer::Buffer;
-use tui::layout::Rect;
-use tui::widgets::{List, ListState, Widget};
-use crate::calendar::{Day, Calendar};
+use tui::layout::{Layout, Direction, Rect, Constraint};
+use tui::style::Style;
+use tui::widgets::{ListState, StatefulWidget, Widget};
+use crate::calendar::Day;
+use crate::cmds::{Cmd, Result};
+use crate::context::Context;
+use crate::control::Control;
+use crate::ui::Selection;
+use crate::ui::evtview::EventView;
 
-pub struct EvtListView<'a> {
-    calendar: Rc<RefCell<Calendar>>,
-    day: Option<&'a Day<Utc>>,
-    state: ListState
+pub struct EvtListView {
+    style: Style,
+    focus_style: Style,
 }
 
-impl<'a> EvtListView<'a> {
-    pub fn new(calendar: Rc<RefCell<Calendar>>) -> Self{
-        EvtListView { calendar, day: None, state: ListState::default() }
-    }
+pub struct EvtListViewState {
+    selected: u32
+}
 
-    pub fn for_day(&mut self, day: &'a Day<Utc>) {
-        self.day = Some(day);
-
-        let events = self.day.unwrap().events();
+impl EvtListView {
+    pub fn default() -> Self {
+        EvtListView { style: Style::default(), focus_style: Style::default() }
     }
 }
 
-impl<'a> Widget for EvtListView<'a> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+impl StatefulWidget for EvtListView {
+    type State = Context;
 
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        let day = state.get_selected_day();
+
+        let list = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(area.width), Constraint::Length(area.height)].as_ref())
+            .split(area);
+
+        for (i, ev) in day.events().iter().enumerate() {
+            let evtview = EventView::with(ev);
+            evtview.render(list[i], buf);
+        }
+    }
+}
+
+
+impl EvtListViewState {
+    pub fn new(idx: u32) -> Self {
+        EvtListViewState { selected: idx }
+    }
+
+    pub fn default() -> Self {
+        EvtListViewState { selected: 0 }
+    }
+
+    fn checked_select_n_prev(&mut self, n: u32, context: &mut Context) {
+        self.selected = std::cmp::max(0, self.selected - n)
+    }
+
+    fn checked_select_n_next(&mut self, n: u32, context: &mut Context) {
+        self.selected = std::cmp::min(context.get_selected_day().events().len() as u32, self.selected - n)
+    }
+}
+
+impl Control for EvtListViewState {
+    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> Result {
+        Ok(Cmd::Noop)
+    }
+}
+
+impl Selection for EvtListViewState {
+    fn move_left(&mut self, context: &mut Context) {
+        self.checked_select_n_prev(1, context);
+    }
+
+    fn move_right(&mut self, context: &mut Context) {
+        self.checked_select_n_next(1, context);
+    }
+
+    fn move_up(&mut self, context: &mut Context) {
+        self.checked_select_n_prev(7, context);
+    }
+
+    fn move_down(&mut self, context: &mut Context) {
+        self.checked_select_n_next(7, context);
+    }
+
+    fn move_n_left(&mut self, n: u32, context: &mut Context) {
+        self.checked_select_n_prev(n, context);
+    }
+
+    fn move_n_right(&mut self, n: u32, context: &mut Context) {
+        self.checked_select_n_next(n, context);
+    }
+
+    fn move_n_up(&mut self, n: u32, context: &mut Context) {
+        self.checked_select_n_prev(n * 7, context);
+    }
+
+    fn move_n_down(&mut self, n: u32, context: &mut Context) {
+        self.checked_select_n_next(n * 7, context);
     }
 }

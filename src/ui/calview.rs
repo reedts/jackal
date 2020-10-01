@@ -1,8 +1,7 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use crate::calendar::{Calendar, Day};
+use crate::calendar::Day;
 use crate::cmds::{Cmd, Result};
 use crate::control::Control;
+use crate::context::Context;
 
 use chrono::{Utc, Weekday};
 
@@ -25,14 +24,10 @@ pub struct DayBlock<'a> {
     selected: bool,
 }
 
-pub struct CalendarView<'a> {
-    calendar: &'a Calendar,
+pub struct CalendarView {
 }
 
 pub struct CalendarViewState {
-    calendar: Rc<RefCell<Calendar>>,
-    month_idx: u32,
-    day_idx: u32,
 }
 
 impl<'a> DayBlock<'a> {
@@ -63,28 +58,27 @@ impl<'a> Widget for DayBlock<'a> {
 }
 
 
-impl<'a> CalendarView<'a> {
-    pub fn new(calendar: &'a Calendar) -> Self {
+impl CalendarView {
+    pub fn default() -> Self {
         CalendarView {
-            calendar
         }
     }
 }
 
-impl<'a> StatefulWidget for CalendarView<'a> {
-    type State = CalendarViewState;
+impl StatefulWidget for CalendarView {
+    type State = Context;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let day_idx        = state.day_idx();
-        let month_idx      = state.month_idx();
-        let selected_month = self.calendar.month_from_idx(month_idx).unwrap_or(self.calendar.curr_month());
+        let day_idx        = state.selected_day_idx;
+        let month_idx      = state.selected_month_idx;
+        let selected_month = state.calendar.month_from_idx(month_idx).unwrap_or(state.calendar.curr_month());
 
         Block::default()
             .borders(Borders::ALL)
             .title(&format!(
                 "{} {}",
                 selected_month.name().name(),
-                self.calendar.year().num()
+                state.calendar.year().num()
             ))
             .render(area, buf);
 
@@ -140,7 +134,7 @@ impl<'a> StatefulWidget for CalendarView<'a> {
                 .render(*col, buf);
         }
 
-        let mut day_blocks: Vec<DayBlock> = self.calendar.month_from_idx(month_idx).unwrap().days().iter()
+        let mut day_blocks: Vec<DayBlock> = state.calendar.month_from_idx(month_idx).unwrap().days().iter()
             .map(|day| DayBlock {day, selected: false})
             .collect();
 
@@ -162,63 +156,49 @@ impl<'a> StatefulWidget for CalendarView<'a> {
 }
 
 impl CalendarViewState {
-    pub fn new(calendar: Rc<RefCell<Calendar>>) -> Self {
-        let curr_month = calendar.borrow().curr_month().ord();
-        let curr_day = calendar.borrow().curr_day().ord();
-
+    pub fn default() -> Self {
         CalendarViewState {
-            calendar,
-            month_idx: curr_month,
-            day_idx:   curr_day
         }
     }
 
-    fn checked_select_n_next(&mut self, n: u32) {
-        self.day_idx = if let Some(i) = self.day_idx.checked_add(n) {
-            if i < self.calendar.borrow().month_from_idx(self.month_idx).unwrap().days().len() as u32 {
+    fn checked_select_n_next(&mut self, n: u32, context: &mut Context) {
+        context.selected_day_idx = if let Some(i) = context.selected_day_idx.checked_add(n) {
+            if i < context.calendar.month_from_idx(context.selected_month_idx).unwrap().days().len() as u32 {
                 i
             } else {
-                self.day_idx
+                context.selected_day_idx
             }
         } else {
-            self.day_idx
+            context.selected_day_idx
         };
     }
 
-    fn checked_select_n_prev(&mut self, n: u32) {
-        self.day_idx = if let Some(i) = self.day_idx.checked_sub(n) {
+    fn checked_select_n_prev(&mut self, n: u32, context: &mut Context) {
+        context.selected_day_idx = if let Some(i) = context.selected_day_idx.checked_sub(n) {
             i
         } else {
-            self.day_idx
+            context.selected_day_idx
         };
-    }
-
-    pub fn day_idx(&self) -> u32 {
-        self.day_idx
-    }
-
-    pub fn month_idx(&self) -> u32 {
-        self.month_idx
     }
 }
 
 impl Control for CalendarViewState {
-    fn send_cmd(&mut self, cmd: Cmd) -> Result {
+    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> Result {
         match cmd {
             Cmd::NextDay => {
-                self.move_right();
+                self.move_right(context);
                 Ok(Cmd::Noop)
             }
             Cmd::PrevDay => {
-                self.move_left();
+                self.move_left(context);
                 Ok(Cmd::Noop)
             }
             Cmd::NextWeek => {
-                self.move_down();
+                self.move_down(context);
                 Ok(Cmd::Noop)
             }
             Cmd::PrevWeek => {
-                self.move_up();
+                self.move_up(context);
                 Ok(Cmd::Noop)
             }
             _ => Ok(cmd),
@@ -227,36 +207,36 @@ impl Control for CalendarViewState {
 }
 
 impl Selection for CalendarViewState {
-    fn move_left(&mut self) {
-        self.checked_select_n_prev(1);
+    fn move_left(&mut self, context: &mut Context) {
+        self.checked_select_n_prev(1, context);
     }
 
-    fn move_right(&mut self) {
-        self.checked_select_n_next(1);
+    fn move_right(&mut self, context: &mut Context) {
+        self.checked_select_n_next(1, context);
     }
 
-    fn move_up(&mut self) {
-        self.checked_select_n_prev(7);
+    fn move_up(&mut self, context: &mut Context) {
+        self.checked_select_n_prev(7, context);
     }
 
-    fn move_down(&mut self) {
-        self.checked_select_n_next(7);
+    fn move_down(&mut self, context: &mut Context) {
+        self.checked_select_n_next(7, context);
     }
 
-    fn move_n_left(&mut self, n: u32) {
-        self.checked_select_n_prev(n);
+    fn move_n_left(&mut self, n: u32, context: &mut Context) {
+        self.checked_select_n_prev(n, context);
     }
 
-    fn move_n_right(&mut self, n: u32) {
-        self.checked_select_n_next(n);
+    fn move_n_right(&mut self, n: u32, context: &mut Context) {
+        self.checked_select_n_next(n, context);
     }
 
-    fn move_n_up(&mut self, n: u32) {
-        self.checked_select_n_prev(n * 7);
+    fn move_n_up(&mut self, n: u32, context: &mut Context) {
+        self.checked_select_n_prev(n * 7, context);
     }
 
-    fn move_n_down(&mut self, n: u32) {
-        self.checked_select_n_next(n * 7);
+    fn move_n_down(&mut self, n: u32, context: &mut Context) {
+        self.checked_select_n_next(n * 7, context);
     }
 }
 

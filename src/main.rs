@@ -2,6 +2,7 @@ mod app;
 mod calendar;
 mod cmds;
 mod config;
+mod context;
 mod control;
 mod events;
 mod ical;
