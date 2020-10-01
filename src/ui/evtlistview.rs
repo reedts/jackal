@@ -1,9 +1,7 @@
-use chrono::Utc;
 use tui::buffer::Buffer;
 use tui::layout::{Layout, Direction, Rect, Constraint};
 use tui::style::Style;
-use tui::widgets::{ListState, StatefulWidget, Widget};
-use crate::calendar::Day;
+use tui::widgets::{Block, Borders, List, ListItem, ListState, StatefulWidget};
 use crate::cmds::{Cmd, Result};
 use crate::context::Context;
 use crate::control::Control;
@@ -31,15 +29,12 @@ impl StatefulWidget for EvtListView {
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let day = state.get_selected_day();
 
-        let list = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(area.width), Constraint::Length(area.height)].as_ref())
-            .split(area);
+        let items: Vec<ListItem> = day.events().iter().map(|ev| ListItem::new(EventView::with(ev))).collect();
 
-        for (i, ev) in day.events().iter().enumerate() {
-            let evtview = EventView::with(ev);
-            evtview.render(list[i], buf);
-        }
+        List::new(items)
+            .block(Block::default().title("Events").borders(Borders::ALL))
+            .highlight_symbol(">")
+            .render(area, buf, &mut ListState::default());
     }
 }
 

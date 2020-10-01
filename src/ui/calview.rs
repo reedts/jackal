@@ -8,12 +8,12 @@ use chrono::{Utc, Weekday};
 use tui::buffer::Buffer;
 use tui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Style};
+use tui::text::Text;
 use tui::widgets::{
     Block,
     Borders,
     Paragraph,
     StatefulWidget,
-    Text,
     Widget
 };
 
@@ -51,7 +51,7 @@ impl<'a> Widget for DayBlock<'a> {
             false => Style::default(),
         };
 
-        Paragraph::new([Text::styled(format!("{}", self.day.day_num()), style)].iter())
+        Paragraph::new(Text::styled(format!("{}", self.day.day_num()), style))
             .alignment(Alignment::Right)
             .render(area, buf);
     }
@@ -75,11 +75,11 @@ impl StatefulWidget for CalendarView {
 
         Block::default()
             .borders(Borders::ALL)
-            .title(&format!(
+            .title(format!(
                 "{} {}",
                 selected_month.name().name(),
-                state.calendar.year().num()
-            ))
+                state.calendar.year().num())
+            )
             .render(area, buf);
 
         let rows = Layout::default()
@@ -129,7 +129,7 @@ impl StatefulWidget for CalendarView {
         let header_style = Style::default().fg(Color::Yellow);
 
         for (col, header) in rows.first_mut().unwrap().iter_mut().zip(header.iter()) {
-            Paragraph::new([Text::styled(*header, header_style)].iter())
+            Paragraph::new(Text::styled(*header, header_style))
                 .alignment(Alignment::Right)
                 .render(*col, buf);
         }
