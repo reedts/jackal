@@ -1,7 +1,8 @@
 use tui::buffer::Buffer;
 use tui::layout::{Layout, Direction, Rect, Constraint};
-use tui::style::Style;
-use tui::widgets::{Block, Borders, List, ListItem, ListState, StatefulWidget};
+use tui::style::{Color, Modifier, Style};
+use tui::text::Text;
+use tui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, StatefulWidget, Widget};
 use crate::cmds::{Cmd, Result};
 use crate::context::Context;
 use crate::control::Control;
@@ -31,10 +32,17 @@ impl StatefulWidget for EvtListView {
 
         let items: Vec<ListItem> = day.events().iter().map(|ev| ListItem::new(EventView::with(ev))).collect();
 
-        List::new(items)
-            .block(Block::default().title("Events").borders(Borders::ALL))
-            .highlight_symbol(">")
-            .render(area, buf, &mut ListState::default());
+        if items.is_empty() {
+            Paragraph::new(Text::styled("No events", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)))
+                .block(Block::default().title("Events").borders(Borders::ALL))
+                .render(area, buf);
+
+        } else {
+            StatefulWidget::render(List::new(items)
+                .block(Block::default().title("Events").borders(Borders::ALL))
+                .highlight_symbol(">"),
+                area, buf, &mut ListState::default());
+        }
     }
 }
 
