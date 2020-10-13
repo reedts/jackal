@@ -3,19 +3,12 @@ use tui::layout::{Layout, Direction, Rect, Constraint};
 use tui::style::{Color, Modifier, Style};
 use tui::text::Text;
 use tui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, StatefulWidget, Widget};
-use crate::cmds::{Cmd, Result};
-use crate::context::Context;
-use crate::control::Control;
-use crate::ui::Selection;
+use crate::ctx::Context;
 use crate::ui::evtview::EventView;
 
 pub struct EvtListView {
     style: Style,
     focus_style: Style,
-}
-
-pub struct EvtListViewState {
-    selected: u32
 }
 
 impl EvtListView {
@@ -47,60 +40,3 @@ impl StatefulWidget for EvtListView {
 }
 
 
-impl EvtListViewState {
-    pub fn new(idx: u32) -> Self {
-        EvtListViewState { selected: idx }
-    }
-
-    pub fn default() -> Self {
-        EvtListViewState { selected: 0 }
-    }
-
-    fn checked_select_n_prev(&mut self, n: u32, context: &mut Context) {
-        self.selected = std::cmp::max(0, self.selected - n)
-    }
-
-    fn checked_select_n_next(&mut self, n: u32, context: &mut Context) {
-        self.selected = std::cmp::min(context.get_selected_day().events().len() as u32, self.selected - n)
-    }
-}
-
-impl Control for EvtListViewState {
-    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> Result {
-        Ok(Cmd::Noop)
-    }
-}
-
-impl Selection for EvtListViewState {
-    fn move_left(&mut self, context: &mut Context) {
-        self.checked_select_n_prev(1, context);
-    }
-
-    fn move_right(&mut self, context: &mut Context) {
-        self.checked_select_n_next(1, context);
-    }
-
-    fn move_up(&mut self, context: &mut Context) {
-        self.checked_select_n_prev(7, context);
-    }
-
-    fn move_down(&mut self, context: &mut Context) {
-        self.checked_select_n_next(7, context);
-    }
-
-    fn move_n_left(&mut self, n: u32, context: &mut Context) {
-        self.checked_select_n_prev(n, context);
-    }
-
-    fn move_n_right(&mut self, n: u32, context: &mut Context) {
-        self.checked_select_n_next(n, context);
-    }
-
-    fn move_n_up(&mut self, n: u32, context: &mut Context) {
-        self.checked_select_n_prev(n * 7, context);
-    }
-
-    fn move_n_down(&mut self, n: u32, context: &mut Context) {
-        self.checked_select_n_next(n * 7, context);
-    }
-}

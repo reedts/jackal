@@ -1,7 +1,5 @@
 use crate::calendar::Day;
-use crate::cmds::{Cmd, Result};
-use crate::control::Control;
-use crate::context::Context;
+use crate::ctx::Context;
 
 use chrono::{Utc, Weekday};
 
@@ -17,18 +15,13 @@ use tui::widgets::{
     Widget
 };
 
-use crate::ui::Selection;
-
 pub struct DayBlock<'a> {
     day: &'a Day<Utc>,
     selected: bool,
 }
 
-pub struct CalendarView {
-}
+pub struct CalendarView {}
 
-pub struct CalendarViewState {
-}
 
 impl<'a> DayBlock<'a> {
     pub fn select(&mut self) {
@@ -69,8 +62,8 @@ impl StatefulWidget for CalendarView {
     type State = Context;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let day_idx        = state.selected_day_idx;
-        let month_idx      = state.selected_month_idx;
+        let day_idx        = state.calendar_context.selected_day;
+        let month_idx      = state.calendar_context.selected_month;
         let selected_month = state.calendar.month_from_idx(month_idx).unwrap_or(state.calendar.curr_month());
 
         Block::default()
@@ -155,88 +148,4 @@ impl StatefulWidget for CalendarView {
     }
 }
 
-impl CalendarViewState {
-    pub fn default() -> Self {
-        CalendarViewState {
-        }
-    }
-
-    fn checked_select_n_next(&mut self, n: u32, context: &mut Context) {
-        context.selected_day_idx = if let Some(i) = context.selected_day_idx.checked_add(n) {
-            if i < context.calendar.month_from_idx(context.selected_month_idx).unwrap().days().len() as u32 {
-                i
-            } else {
-                context.selected_day_idx
-            }
-        } else {
-            context.selected_day_idx
-        };
-    }
-
-    fn checked_select_n_prev(&mut self, n: u32, context: &mut Context) {
-        context.selected_day_idx = if let Some(i) = context.selected_day_idx.checked_sub(n) {
-            i
-        } else {
-            context.selected_day_idx
-        };
-    }
-}
-
-impl Control for CalendarViewState {
-    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> Result {
-        match cmd {
-            Cmd::NextDay => {
-                self.move_right(context);
-                Ok(Cmd::Noop)
-            }
-            Cmd::PrevDay => {
-                self.move_left(context);
-                Ok(Cmd::Noop)
-            }
-            Cmd::NextWeek => {
-                self.move_down(context);
-                Ok(Cmd::Noop)
-            }
-            Cmd::PrevWeek => {
-                self.move_up(context);
-                Ok(Cmd::Noop)
-            }
-            _ => Ok(cmd),
-        }
-    }
-}
-
-impl Selection for CalendarViewState {
-    fn move_left(&mut self, context: &mut Context) {
-        self.checked_select_n_prev(1, context);
-    }
-
-    fn move_right(&mut self, context: &mut Context) {
-        self.checked_select_n_next(1, context);
-    }
-
-    fn move_up(&mut self, context: &mut Context) {
-        self.checked_select_n_prev(7, context);
-    }
-
-    fn move_down(&mut self, context: &mut Context) {
-        self.checked_select_n_next(7, context);
-    }
-
-    fn move_n_left(&mut self, n: u32, context: &mut Context) {
-        self.checked_select_n_prev(n, context);
-    }
-
-    fn move_n_right(&mut self, n: u32, context: &mut Context) {
-        self.checked_select_n_next(n, context);
-    }
-
-    fn move_n_up(&mut self, n: u32, context: &mut Context) {
-        self.checked_select_n_prev(n * 7, context);
-    }
-
-    fn move_n_down(&mut self, n: u32, context: &mut Context) {
-        self.checked_select_n_next(n * 7, context);
-    }
-}
 

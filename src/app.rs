@@ -3,11 +3,11 @@ use std::rc::Rc;
 use crate::calendar::Calendar;
 use crate::cmds::{Cmd, Result};
 use crate::config::Config;
-use crate::context::Context;
-use crate::control::{Control, Controller};
+use crate::ctx::{Context, CalendarContext, EvtListContext};
+use crate::ctrl::{CalendarController, Control, Controller, EvtListController};
 use crate::events::Event;
-use crate::ui::calview::{CalendarView, CalendarViewState};
-use crate::ui::evtlistview::{EvtListView, EvtListViewState};
+use crate::ui::calview::CalendarView;
+use crate::ui::evtlistview::EvtListView;
 
 use tui::Frame;
 use tui::backend::Backend;
@@ -25,14 +25,14 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     for view in app.views.iter_mut() {
         match view {
             View::Calendar(_) => f.render_stateful_widget(CalendarView::default(), layout[0], &mut app.global_ctx),
-            View::Events(_) => f.render_stateful_widget(EvtListView::default(), layout[1], &mut app.global_ctx),
+            View::Events(_)   => f.render_stateful_widget(EvtListView::default(),  layout[1], &mut app.global_ctx),
         }
     }
 }
 
 pub enum View<'a> {
-    Calendar(Controller<'a, CalendarViewState>),
-    Events(Controller<'a, EvtListViewState>)
+    Calendar(Controller<'a, CalendarController>),
+    Events(Controller<'a, EvtListController>)
 }
 
 
@@ -59,8 +59,8 @@ impl<'a> App<'a> {
         App {
             quit: false,
             views: [
-                View::Calendar(Controller::new(&config.key_map, CalendarViewState::default())),
-                View::Events(Controller::new(&config.key_map, EvtListViewState::default()))
+                View::Calendar(Controller::new(&config.key_map, CalendarController::default())),
+                View::Events(Controller::new(&config.key_map, EvtListController::default()))
             ],
             active_view: 0,
             config,

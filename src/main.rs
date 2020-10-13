@@ -2,8 +2,8 @@ mod app;
 mod calendar;
 mod cmds;
 mod config;
-mod context;
-mod control;
+mod ctrl;
+mod ctx;
 mod events;
 mod ical;
 mod ui;
@@ -13,7 +13,6 @@ use std::io;
 use std::path::Path;
 use termion::{raw::IntoRawMode, screen::AlternateScreen};
 use tui::backend::TermionBackend;
-use tui::widgets::Widget;
 use tui::Terminal;
 
 use app::App;
