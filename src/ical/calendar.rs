@@ -39,17 +39,18 @@ impl Calendar<Utc> {
                 ))
             }
         };
-
+        
         let events: Vec<Event<Utc>> = ical
             .events
             .iter()
             .map(|ev| Event::from(ev.clone()))
+            .inspect(|ev| println!("ERROR: {:?}", ev.as_ref().err()))
             .filter_map(Result::ok)
             .collect();
 
         Ok(Calendar {
             path: path.into(),
-            ical, 
+            ical,
             events
         })
     }
