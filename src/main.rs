@@ -8,7 +8,7 @@ mod events;
 mod ical;
 mod ui;
 
-use chrono::{Datelike, Utc};
+use chrono::Utc;
 use std::io;
 use std::path::Path;
 use termion::{raw::IntoRawMode, screen::AlternateScreen};
@@ -32,31 +32,31 @@ fn main() -> Result<(), io::Error> {
     )?;
     let mut app = App::new(&config, calendar);
 
-    //let stdout = io::stdout().into_raw_mode()?;
+    let stdout = io::stdout().into_raw_mode()?;
     //let stdout = AlternateScreen::from(stdout);
-    //let backend = TermionBackend::new(stdout);
-    //let mut terminal = Terminal::new(backend)?;
-    //terminal.hide_cursor()?;
+    let backend = TermionBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+    terminal.hide_cursor()?;
 
-    //loop {
-    //    // Draw
-    //    terminal.draw(|mut f| {
-    //        app::draw(&mut f, &mut app);
-    //    })?;
+    loop {
+        // Draw
+        terminal.draw(|mut f| {
+            app::draw(&mut f, &mut app);
+        })?;
 
-    //    // Handle events
-    //    match dispatcher.next().unwrap() {
-    //        Event::Tick => {}
-    //        Event::Input(key) => {
-    //            app.handle(Event::Input(key));
-    //        }
-    //        _ => {}
-    //    }
+        // Handle events
+        match dispatcher.next().unwrap() {
+            Event::Tick => {}
+            Event::Input(key) => {
+                app.handle(Event::Input(key));
+            }
+            _ => {}
+        }
 
-    //    //if app.quit {
-    //    //    break;
-    //    //}
-    //}
+        //if app.quit {
+        //    break;
+        //}
+    }
 
     Ok(())
 }

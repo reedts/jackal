@@ -9,7 +9,7 @@ pub struct CalendarContext {
 impl CalendarContext {
     pub fn default() -> Self {
         CalendarContext {
-            day: 0,
+            day: 1,
             month: Month::from(1),
             year: 0
         }

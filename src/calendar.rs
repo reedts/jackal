@@ -119,8 +119,11 @@ impl Calendar {
 
     pub fn events_of_day(&self, day: u32, month: Month, year: i32) -> Day<Utc> {
         let date = Date::from_utc(NaiveDate::from_ymd(year, month.num() as u32, day), chrono::offset::Utc);
-        
-        Day::new(date, self.events.get(&date).unwrap())
+
+        match self.events.get(&date) {
+            Some(events) => Day::new(date, events),
+            None         => Day::new(date, &[])
+        }
     }
 }
 

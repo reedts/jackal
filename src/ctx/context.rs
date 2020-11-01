@@ -26,7 +26,7 @@ impl Context {
     pub fn select_today(&mut self) {
         let today = chrono::Utc::today();
 
-        self.calendar_context.day   = today.naive_utc().day0();
+        self.calendar_context.day   = today.naive_utc().day();
         self.calendar_context.month = Month::from(today.naive_utc().month());
         self.calendar_context.year  = today.naive_utc().year();
     }
