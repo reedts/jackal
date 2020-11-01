@@ -38,14 +38,14 @@ impl Selection for EvtListController {
     }
 
     fn move_n_up(&mut self, n: u32, context: &mut Context) {
-        let sel_evt = context.evtlist_context.selected_event;
-        context.evtlist_context.selected_event = sel_evt.checked_sub(n).unwrap_or(sel_evt);
+        let sel_evt = context.evtlist_context.event;
+        context.evtlist_context.event = sel_evt.checked_sub(n).unwrap_or(sel_evt);
     }
 
     fn move_n_down(&mut self, n: u32, context: &mut Context) {
-        let sel_evt = context.evtlist_context.selected_event;
-        context.evtlist_context.selected_event = std::cmp::min(
-            (context.get_selected_day().events().len() - 1) as u32,
+        let sel_evt = context.evtlist_context.event;
+        context.evtlist_context.event = std::cmp::min(
+            (context.get_day().events().len() - 1) as u32,
             sel_evt.checked_add(n).unwrap_or(sel_evt));
     }
 }

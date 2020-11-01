@@ -1,13 +1,17 @@
+use crate::calendar::Month;
+
 pub struct CalendarContext {
-    pub selected_day: u32,
-    pub selected_month: u32
+    pub day: u32,
+    pub month: Month,
+    pub year: i32
 }
 
 impl CalendarContext {
     pub fn default() -> Self {
         CalendarContext {
-            selected_day: 0,
-            selected_month: 0
+            day: 0,
+            month: Month::from(1),
+            year: 0
         }
     }
 }

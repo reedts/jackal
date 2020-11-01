@@ -1,4 +1,5 @@
 use chrono::{
+    Date,
     DateTime,
     FixedOffset,
     NaiveDateTime,
@@ -103,12 +104,20 @@ impl Event<Utc> {
             .value.as_ref().unwrap().as_str()
     }
 
+    pub fn begin_date(&self) -> Date<Utc> {
+        self.begin().date()
+    }
+
     pub fn begin(&self) -> &DateTime<Utc> {
         &self.begin
     }
 
     pub fn end(&self) -> &DateTime<Utc> {
         &self.end
+    }
+
+    pub fn ical_event(&self) -> &IcalEvent {
+        &self.ical_event
     }
 }
 

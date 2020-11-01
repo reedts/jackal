@@ -18,14 +18,6 @@ impl Context {
         }
     }
 
-    pub fn get_selected_day(&self) -> &Day<Utc> {
-        &self.calendar.month_from_idx(self.calendar_context.selected_month).unwrap().day(self.calendar_context.selected_day as usize)
-    }
-
-    pub fn get_selected_month(&self) -> &Month<Utc> {
-        &self.calendar.month_from_idx(self.calendar_context.selected_month).unwrap()
-    }
-
     pub fn with_today(mut self) -> Self {
         self.select_today();
         self
@@ -34,7 +26,20 @@ impl Context {
     pub fn select_today(&mut self) {
         let today = chrono::Utc::today();
 
-        self.calendar_context.selected_day = today.naive_utc().day0();
-        self.calendar_context.selected_month = today.naive_utc().month0();
+        self.calendar_context.day   = today.naive_utc().day0();
+        self.calendar_context.month = Month::from(today.naive_utc().month());
+        self.calendar_context.year  = today.naive_utc().year();
+    }
+
+    pub fn get_day(&self) -> Day<Utc> {
+        self.calendar.events_of_day(self.calendar_context.day, self.calendar_context.month, self.calendar_context.year)
+    }
+
+    pub fn get_month(&self) -> Month {
+        Month::from(self.calendar_context.month)
+    }
+
+    pub fn get_year(&self) -> i32 {
+        self.calendar_context.year
     }
 }

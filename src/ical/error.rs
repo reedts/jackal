@@ -1,6 +1,6 @@
+use std::convert::From;
 use std::error;
 use std::fmt;
-use std::convert::From;
 
 #[derive(Debug)]
 pub struct Error {
@@ -21,7 +21,7 @@ impl Error {
     pub fn new(kind: ErrorKind) -> Self {
         Error { kind, message: None }
     }
-    
+
     pub fn with_msg(mut self, message: &str) -> Self {
         self.message = Some(message.to_owned());
         self

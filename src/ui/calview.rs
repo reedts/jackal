@@ -1,7 +1,8 @@
-use crate::calendar::Day;
 use crate::ctx::Context;
+use crate::calendar::{Day, EventList, Month};
+use crate::ical::{Event};
 
-use chrono::{Utc, Weekday};
+use chrono::{Datelike, Utc, Weekday};
 
 use tui::buffer::Buffer;
 use tui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -16,8 +17,9 @@ use tui::widgets::{
 };
 
 pub struct DayBlock<'a> {
-    day: &'a Day<Utc>,
+    day_num: u32,
     selected: bool,
+    day: Day<'a, Utc>
 }
 
 pub struct CalendarView {}
@@ -32,8 +34,8 @@ impl<'a> DayBlock<'a> {
         self.selected = false;
     }
 
-    pub fn day(&self) -> &Day<Utc> {
-        self.day
+    pub fn day(&self) -> &Day<'a, Utc> {
+        &self.day
     }
 }
 
@@ -44,7 +46,7 @@ impl<'a> Widget for DayBlock<'a> {
             false => Style::default(),
         };
 
-        Paragraph::new(Text::styled(format!("{}", self.day.day_num()), style))
+        Paragraph::new(Text::styled(format!("{}", self.day_num), style))
             .alignment(Alignment::Right)
             .render(area, buf);
     }
@@ -62,16 +64,16 @@ impl StatefulWidget for CalendarView {
     type State = Context;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let day_idx        = state.calendar_context.selected_day;
-        let month_idx      = state.calendar_context.selected_month;
-        let selected_month = state.calendar.month_from_idx(month_idx).unwrap_or(state.calendar.curr_month());
+        let day        = state.calendar_context.day;
+        let month          = state.calendar_context.month;
+        let year           = state.calendar_context.year;
 
         Block::default()
             .borders(Borders::ALL)
             .title(format!(
                 "{} {}",
-                selected_month.name().name(),
-                state.calendar.year().num())
+                month.name(),
+                year)
             )
             .render(area, buf);
 
@@ -127,17 +129,17 @@ impl StatefulWidget for CalendarView {
                 .render(*col, buf);
         }
 
-        let mut day_blocks: Vec<DayBlock> = state.calendar.month_from_idx(month_idx).unwrap().days().iter()
-            .map(|day| DayBlock {day, selected: false})
+        let mut day_blocks: Vec<DayBlock> = (1..month.days(year) as u32)
+            .map(|day| DayBlock {day_num: day, selected: false, day: state.calendar.events_of_day(day, month, year)})
             .collect();
 
         // Mark selected day
-        day_blocks[day_idx as usize].select();
+        day_blocks[(day - 1) as usize].select();
 
         let mut row: usize = 1;
         for day in day_blocks.drain(..) {
-            let col = day.day().weekday().num_days_from_monday() as usize;
-            let weekday = day.day().weekday();
+            let col = day.day().date().weekday().num_days_from_monday() as usize;
+            let weekday = day.day().date().weekday();
             day.render(rows[row][col], buf);
 
             // If day was 'Sunday' switch to next week

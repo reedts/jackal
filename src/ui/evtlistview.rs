@@ -21,7 +21,7 @@ impl StatefulWidget for EvtListView {
     type State = Context;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let day = state.get_selected_day();
+        let day = state.get_day();
 
         let items: Vec<ListItem> = day.events().iter().map(|ev| ListItem::new(EventView::with(ev))).collect();
 
