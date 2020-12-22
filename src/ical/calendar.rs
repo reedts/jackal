@@ -39,7 +39,7 @@ impl Calendar<Utc> {
                 ))
             }
         };
-        
+
         let events: Vec<Event<Utc>> = ical
             .events
             .iter()
@@ -51,7 +51,7 @@ impl Calendar<Utc> {
         Ok(Calendar {
             path: path.into(),
             ical,
-            events
+            events,
         })
     }
 

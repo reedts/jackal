@@ -3,7 +3,7 @@ use crate::calendar::Month;
 pub struct CalendarContext {
     pub day: u32,
     pub month: Month,
-    pub year: i32
+    pub year: i32,
 }
 
 impl CalendarContext {
@@ -11,7 +11,7 @@ impl CalendarContext {
         CalendarContext {
             day: 1,
             month: Month::from(1),
-            year: 0
+            year: 0,
         }
     }
 }

@@ -1,6 +1,6 @@
-use crate::ctx::Context;
 use crate::calendar::{Day, EventList, Month};
-use crate::ical::{Event};
+use crate::ctx::Context;
+use crate::ical::Event;
 
 use chrono::{Datelike, Utc, Weekday};
 
@@ -8,22 +8,15 @@ use tui::buffer::Buffer;
 use tui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Style};
 use tui::text::Text;
-use tui::widgets::{
-    Block,
-    Borders,
-    Paragraph,
-    StatefulWidget,
-    Widget
-};
+use tui::widgets::{Block, Borders, Paragraph, StatefulWidget, Widget};
 
 pub struct DayBlock<'a> {
     day_num: u32,
     selected: bool,
-    day: Day<'a, Utc>
+    day: Day<'a, Utc>,
 }
 
 pub struct CalendarView {}
-
 
 impl<'a> DayBlock<'a> {
     pub fn select(&mut self) {
@@ -52,11 +45,9 @@ impl<'a> Widget for DayBlock<'a> {
     }
 }
 
-
 impl CalendarView {
     pub fn default() -> Self {
-        CalendarView {
-        }
+        CalendarView {}
     }
 }
 
@@ -64,17 +55,13 @@ impl StatefulWidget for CalendarView {
     type State = Context;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let day        = state.calendar_context.day;
-        let month          = state.calendar_context.month;
-        let year           = state.calendar_context.year;
+        let day = state.calendar_context.day;
+        let month = state.calendar_context.month;
+        let year = state.calendar_context.year;
 
         Block::default()
             .borders(Borders::ALL)
-            .title(format!(
-                "{} {}",
-                month.name(),
-                year)
-            )
+            .title(format!("{} {}", month.name(), year))
             .render(area, buf);
 
         let rows = Layout::default()
@@ -130,7 +117,11 @@ impl StatefulWidget for CalendarView {
         }
 
         let mut day_blocks: Vec<DayBlock> = (1..month.days(year) as u32)
-            .map(|day| DayBlock {day_num: day, selected: false, day: state.calendar.events_of_day(day, month, year)})
+            .map(|day| DayBlock {
+                day_num: day,
+                selected: false,
+                day: state.calendar.events_of_day(day, month, year),
+            })
             .collect();
 
         // Mark selected day
@@ -149,5 +140,3 @@ impl StatefulWidget for CalendarView {
         }
     }
 }
-
-

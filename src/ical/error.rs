@@ -5,7 +5,7 @@ use std::fmt;
 #[derive(Debug)]
 pub struct Error {
     pub kind: ErrorKind,
-    pub message: Option<String>
+    pub message: Option<String>,
 }
 
 #[derive(Debug)]
@@ -14,12 +14,15 @@ pub enum ErrorKind {
     CalendarMissingKey,
     EventParse,
     EventMissingKey,
-    TimeParse
+    TimeParse,
 }
 
 impl Error {
     pub fn new(kind: ErrorKind) -> Self {
-        Error { kind, message: None }
+        Error {
+            kind,
+            message: None,
+        }
     }
 
     pub fn with_msg(mut self, message: &str) -> Self {
@@ -38,7 +41,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.message {
             Some(msg) => write!(f, "{}: {}", self.kind.as_str(), msg),
-            None      => write!(f, "{}", self.kind.as_str())
+            None => write!(f, "{}", self.kind.as_str()),
         }
     }
 }
@@ -48,11 +51,11 @@ impl error::Error for Error {}
 impl ErrorKind {
     pub fn as_str(&self) -> &'static str {
         match *self {
-            ErrorKind::CalendarParse      => "invalid calendar format",
+            ErrorKind::CalendarParse => "invalid calendar format",
             ErrorKind::CalendarMissingKey => "missing key in calendar definition",
-            ErrorKind::EventParse         => "invalid event format",
-            ErrorKind::EventMissingKey    => "missing key in event definition",
-            ErrorKind::TimeParse          => "invalid time format"
+            ErrorKind::EventParse => "invalid event format",
+            ErrorKind::EventMissingKey => "missing key in event definition",
+            ErrorKind::TimeParse => "invalid time format",
         }
     }
 }

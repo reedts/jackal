@@ -1,7 +1,7 @@
 mod calendar;
-mod event;
 mod error;
+mod event;
 
 pub use calendar::Calendar;
-pub use event::Event;
 pub use error::{Error, ErrorKind};
+pub use event::Event;

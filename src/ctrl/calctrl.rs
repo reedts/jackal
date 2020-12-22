@@ -60,7 +60,8 @@ impl Selection for CalendarController {
         let sel_day = context.calendar_context.day;
         context.calendar_context.day = std::cmp::min(
             (context.get_month().days(context.get_year()) - 1) as u32,
-            sel_day.checked_add(n).unwrap_or(sel_day));
+            sel_day.checked_add(n).unwrap_or(sel_day),
+        );
     }
 
     fn move_n_up(&mut self, n: u32, context: &mut Context) {
@@ -72,7 +73,7 @@ impl Selection for CalendarController {
         let sel_day = context.calendar_context.day;
         context.calendar_context.day = std::cmp::min(
             (context.get_month().days(context.get_year()) - 1) as u32,
-            sel_day.checked_add(n * 7).unwrap_or(sel_day));
+            sel_day.checked_add(n * 7).unwrap_or(sel_day),
+        );
     }
 }
-

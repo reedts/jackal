@@ -1,5 +1,5 @@
 pub struct EvtListContext {
-    pub event: u32
+    pub event: u32,
 }
 
 impl EvtListContext {
@@ -11,4 +11,3 @@ impl EvtListContext {
         EvtListContext { event: 0 }
     }
 }
-
