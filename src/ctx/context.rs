@@ -1,7 +1,7 @@
 use crate::calendar::{Calendar, Day, Month};
 use crate::ctx::CalendarContext;
 use crate::ctx::EvtListContext;
-use chrono::{Datelike, Utc};
+use chrono::{Datelike, FixedOffset};
 
 pub struct Context {
     pub calendar: Calendar,
@@ -31,7 +31,7 @@ impl Context {
         self.calendar_context.year = today.naive_utc().year();
     }
 
-    pub fn get_day(&self) -> Day<Utc> {
+    pub fn get_day(&self) -> Day<FixedOffset> {
         self.calendar.events_of_day(
             self.calendar_context.day,
             self.calendar_context.month,

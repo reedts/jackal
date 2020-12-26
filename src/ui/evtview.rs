@@ -1,6 +1,5 @@
 use crate::ical::Event;
-use chrono::Utc;
-use std::borrow::Cow;
+use chrono::FixedOffset;
 use std::convert::Into;
 use tui::buffer::Buffer;
 use tui::layout::Rect;
@@ -10,11 +9,11 @@ use tui::widgets::{Block, Borders, Paragraph, Widget};
 
 pub struct EventView<'a> {
     style: Style,
-    event: &'a Event<Utc>,
+    event: &'a Event<FixedOffset>,
 }
 
 impl<'a> EventView<'a> {
-    pub fn with(event: &'a Event<Utc>) -> Self {
+    pub fn with(event: &'a Event<FixedOffset>) -> Self {
         EventView {
             style: Style::default(),
             event,

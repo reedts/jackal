@@ -1,8 +1,7 @@
-use crate::calendar::{Day, EventList, Month};
+use crate::calendar::Day;
 use crate::ctx::Context;
-use crate::ical::Event;
 
-use chrono::{Datelike, Utc, Weekday};
+use chrono::{Datelike, FixedOffset, Weekday};
 
 use tui::buffer::Buffer;
 use tui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -13,7 +12,7 @@ use tui::widgets::{Block, Borders, Paragraph, StatefulWidget, Widget};
 pub struct DayBlock<'a> {
     day_num: u32,
     selected: bool,
-    day: Day<'a, Utc>,
+    day: Day<'a, FixedOffset>,
 }
 
 pub struct CalendarView {}
@@ -27,7 +26,7 @@ impl<'a> DayBlock<'a> {
         self.selected = false;
     }
 
-    pub fn day(&self) -> &Day<'a, Utc> {
+    pub fn day(&self) -> &Day<'a, FixedOffset> {
         &self.day
     }
 }

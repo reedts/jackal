@@ -1,7 +1,7 @@
 use crate::ctx::Context;
 use crate::ui::evtview::EventView;
 use tui::buffer::Buffer;
-use tui::layout::{Constraint, Direction, Layout, Rect};
+use tui::layout::Rect;
 use tui::style::{Color, Modifier, Style};
 use tui::text::Text;
 use tui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, StatefulWidget, Widget};

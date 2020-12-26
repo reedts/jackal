@@ -1,5 +1,5 @@
 use chrono::naive::NaiveDate;
-use chrono::{Date, Datelike, Duration, TimeZone, Utc};
+use chrono::{Date, Datelike, Duration, FixedOffset, Offset, TimeZone, Utc};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::convert::From;
@@ -12,13 +12,13 @@ use std::path::{Path, PathBuf};
 
 use crate::ical;
 
-pub type EventList = Vec<ical::Event<Utc>>;
-pub type EventMap = BTreeMap<Date<Utc>, EventList>;
+pub type EventList = Vec<ical::Event<FixedOffset>>;
+pub type EventMap = BTreeMap<Date<FixedOffset>, EventList>;
 
 pub struct Calendar {
     path: PathBuf,
     name: String,
-    icals: Vec<ical::Calendar<Utc>>,
+    icals: Vec<ical::Calendar<FixedOffset>>,
     events: EventMap,
 }
 
@@ -49,11 +49,11 @@ pub struct NotAMonthError;
 impl Calendar {
     pub fn new(path: &Path) -> io::Result<Calendar> {
         // Load all valid .ics files from 'path'
-        let mut icals: Vec<ical::Calendar<Utc>> = fs::read_dir(path)?
+        let mut icals: Vec<ical::Calendar<FixedOffset>> = fs::read_dir(path)?
             .map(|dir| {
                 dir.map_or_else(
                     |_| -> std::io::Result<_> { Err(io::Error::from(io::ErrorKind::NotFound)) },
-                    |file: std::fs::DirEntry| -> std::io::Result<ical::Calendar<Utc>> {
+                    |file: std::fs::DirEntry| -> std::io::Result<ical::Calendar<FixedOffset>> {
                         ical::Calendar::from(file.path().as_path())
                     },
                 )
@@ -90,7 +90,7 @@ impl Calendar {
         date.naive_utc().year()
     }
 
-    pub fn all_events(&self) -> Vec<&ical::Event<Utc>> {
+    pub fn all_events(&self) -> Vec<&ical::Event<FixedOffset>> {
         self.icals
             .iter()
             .map(|cal| cal.events())
@@ -98,10 +98,14 @@ impl Calendar {
             .collect()
     }
 
-    pub fn events_of_month_and_year(&self, month: Month, year: i32) -> Vec<&ical::Event<Utc>> {
+    pub fn events_of_month_and_year(
+        &self,
+        month: Month,
+        year: i32,
+    ) -> Vec<&ical::Event<FixedOffset>> {
         let b_date = Date::from_utc(
             NaiveDate::from_ymd(year, month.num() as u32, 1),
-            chrono::offset::Utc,
+            chrono::offset::Utc.fix(),
         );
         let e_date = b_date + Duration::days(month.days(year) as i64);
 
@@ -111,17 +115,17 @@ impl Calendar {
             .collect()
     }
 
-    pub fn events_of_curr_month(&self) -> Vec<&ical::Event<Utc>> {
+    pub fn events_of_curr_month(&self) -> Vec<&ical::Event<FixedOffset>> {
         let curr_month = self.curr_month();
         let curr_year = self.curr_year();
 
         self.events_of_month_and_year(curr_month, curr_year)
     }
 
-    pub fn events_of_day(&self, day: u32, month: Month, year: i32) -> Day<Utc> {
+    pub fn events_of_day(&self, day: u32, month: Month, year: i32) -> Day<FixedOffset> {
         let date = Date::from_utc(
             NaiveDate::from_ymd(year, month.num() as u32, day),
-            chrono::offset::Utc,
+            chrono::offset::Utc.fix(),
         );
 
         match self.events.get(&date) {
@@ -131,19 +135,19 @@ impl Calendar {
     }
 }
 
-impl<'a> Day<'a, Utc> {
-    pub fn new(date: Date<Utc>, events: &'a [ical::Event<Utc>]) -> Self {
+impl<'a> Day<'a, FixedOffset> {
+    pub fn new(date: Date<FixedOffset>, events: &'a [ical::Event<FixedOffset>]) -> Self {
         Day {
             date,
             events: events.into_iter().collect(),
         }
     }
 
-    pub fn date(&self) -> &Date<Utc> {
+    pub fn date(&self) -> &Date<FixedOffset> {
         &self.date
     }
 
-    pub fn events(&self) -> &Vec<&ical::Event<Utc>> {
+    pub fn events(&self) -> &Vec<&ical::Event<FixedOffset>> {
         &self.events
     }
 }
