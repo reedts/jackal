@@ -1,10 +1,8 @@
 [package]
-name = "carla"
+name = "jackal"
 version = "0.1.0"
 authors = ["reedts <j.reedts@gmail.com>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 chrono = "0.4.0"
@@ -12,3 +10,7 @@ chrono-tz = "0.4.0"
 tui = "0.12"
 termion = "1.5"
 ical = "0.6.*"
+
+[[bin]]
+name = "jk"
+path = "src/main.rs"
