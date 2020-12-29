@@ -13,8 +13,8 @@ use chrono_tz::Tz;
 
 use ::ical::property::Property;
 
-const ISO8601_2004_LOCAL_FORMAT: &str = "%Y%M%DT%H%M%S";
-const ISO8601_2004_LOCAL_FORMAT_DATE: &str = "%Y%M%D";
+const ISO8601_2004_LOCAL_FORMAT: &str = "%Y%m%dT%H%M%S";
+const ISO8601_2004_LOCAL_FORMAT_DATE: &str = "%Y%m%d";
 
 pub(crate) fn prop_value_in_zulu(timestamp: &Property) -> bool {
     if let Some(v) = &timestamp.value {
@@ -45,9 +45,6 @@ pub(crate) fn parse_prop_to_date_time(property: &Property) -> IcalResult<DateTim
         }
     }
 
-    let params = &property.params;
-    println!("{:?}", params);
-
     // Unpack any parameters
     if let Some(params) = &property.params {
         for param in params {
@@ -58,7 +55,8 @@ pub(crate) fn parse_prop_to_date_time(property: &Property) -> IcalResult<DateTim
                     if let Ok(tz) = values.first().unwrap().parse::<Tz>() {
                         if let Some(dt) = found_str_dt {
                             let dt = NaiveDateTime::parse_from_str(&dt, ISO8601_2004_LOCAL_FORMAT)?;
-                            let offset = tz.offset_from_local_datetime(&dt).earliest().unwrap().fix();
+                            let offset =
+                                tz.offset_from_local_datetime(&dt).earliest().unwrap().fix();
                             return Ok(offset.from_local_datetime(&dt).earliest().unwrap());
                         }
                     } else {
@@ -66,7 +64,7 @@ pub(crate) fn parse_prop_to_date_time(property: &Property) -> IcalResult<DateTim
                             Error::new(ErrorKind::TimeParse).with_msg("Unable to parse timezone")
                         );
                     }
-                },
+                }
                 "VALUE" if values.first().unwrap() == "DATE" => {
                     // Date only
                     if let Some(date_str) = found_str_dt {
@@ -84,7 +82,7 @@ pub(crate) fn parse_prop_to_date_time(property: &Property) -> IcalResult<DateTim
                             .with_msg("Could not find valid timestamp"));
                     }
                 }
-                _ => continue
+                _ => continue,
             }
         }
     }
@@ -100,8 +98,6 @@ pub(crate) fn parse_prop_to_date_time(property: &Property) -> IcalResult<DateTim
             .fix();
         Ok(offset.from_local_datetime(&naive_local).earliest().unwrap())
     } else {
-        Err(
-            Error::new(ErrorKind::EventMissingKey).with_msg("Could not find valid timestamp")
-        )
+        Err(Error::new(ErrorKind::EventMissingKey).with_msg("Could not find valid timestamp"))
     }
 }
