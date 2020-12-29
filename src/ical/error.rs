@@ -39,7 +39,7 @@ impl From<ErrorKind> for Error {
 
 impl From<chrono::ParseError> for Error {
     fn from(parse_error: chrono::ParseError) -> Error {
-        Error::new(ErrorKind::TimeParse).with_msg(format!("Could not parse timestamp: {}", parse_error))
+        Error::new(ErrorKind::TimeParse).with_msg(format!("Could not parse timestamp: {}", parse_error).as_str())
     }
 }
 
