@@ -1,4 +1,5 @@
 mod app;
+mod args;
 mod calendar;
 mod cmds;
 mod config;
@@ -10,17 +11,21 @@ mod ui;
 
 use chrono::Utc;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use structopt::StructOpt;
 use termion::{raw::IntoRawMode, screen::AlternateScreen};
 use tui::backend::TermionBackend;
 use tui::Terminal;
 
 use app::App;
+use args::Args;
 use calendar::Calendar;
 use config::Config;
 use events::{Dispatcher, Event};
 
 fn main() -> Result<(), io::Error> {
+    let args = Args::from_args();
+
     let config = Config::default();
 
     let dispatcher = Dispatcher::from_config(config.clone());
