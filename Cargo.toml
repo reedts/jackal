@@ -10,6 +10,10 @@ chrono-tz = "0.4.0"
 tui = "0.12"
 termion = "1.5"
 ical = "0.6.*"
+clap = "2.33.3"
+
+[dev-dependencies]
+rusty-hook = "0.11.2"
 
 [[bin]]
 name = "jk"
