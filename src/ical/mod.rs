@@ -26,6 +26,7 @@ pub(crate) fn prop_value_in_zulu(timestamp: &Property) -> bool {
     false
 }
 
+// TODO: Make more ... sophisticated
 pub(crate) fn parse_prop_to_date_time(property: &Property) -> IcalResult<DateTime<FixedOffset>> {
     let mut found_str_dt: Option<&str> = None;
 
@@ -83,7 +84,7 @@ pub(crate) fn parse_prop_to_date_time(property: &Property) -> IcalResult<DateTim
                             .with_msg("Could not find valid timestamp"));
                     }
                 }
-                _ => return Err(Error::new(ErrorKind::CalendarParse))
+                _ => continue
             }
         }
     }
@@ -97,10 +98,10 @@ pub(crate) fn parse_prop_to_date_time(property: &Property) -> IcalResult<DateTim
             .earliest()
             .unwrap()
             .fix();
-        return Ok(offset.from_local_datetime(&naive_local).earliest().unwrap());
+        Ok(offset.from_local_datetime(&naive_local).earliest().unwrap())
     } else {
-        return Err(
+        Err(
             Error::new(ErrorKind::EventMissingKey).with_msg("Could not find valid timestamp")
-        );
+        )
     }
 }
