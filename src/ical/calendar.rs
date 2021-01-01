@@ -44,7 +44,11 @@ impl Calendar<FixedOffset> {
             .events
             .iter()
             .map(|ev| Event::from(ev.clone()))
-            .inspect(|ev| println!("ERROR: {:?}", ev.as_ref().err()))
+            .inspect(|ev| {
+                if let Err(e) = ev {
+                    println!("ERROR: {:?}", e)
+                }
+            })
             .filter_map(Result::ok)
             .collect();
 
