@@ -9,7 +9,7 @@ use structopt::StructOpt;
 )]
 pub struct Args {
     #[structopt(help = "input folder containing *.ics files", parse(from_os_str))]
-    input: Option<PathBuf>,
+    pub input: Option<PathBuf>,
 
     #[structopt(
         name = "CONFIG",
@@ -18,12 +18,12 @@ pub struct Args {
         help = "path to config file",
         parse(from_os_str)
     )]
-    configfile: Option<PathBuf>,
+    pub configfile: Option<PathBuf>,
 
     #[structopt(
         short = "s",
         long = "show",
         help = "only show calendar non-interactively"
     )]
-    show: bool,
+    pub show: bool,
 }

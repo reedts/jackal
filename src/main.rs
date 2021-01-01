@@ -30,37 +30,46 @@ fn main() -> Result<(), io::Error> {
 
     let dispatcher = Dispatcher::from_config(config.clone());
 
-    let now = Utc::now();
     let calendar = Calendar::new(Path::new(
         "/home/reedts/.calendars/google/j.reedts@gmail.com/",
     ))?;
     let mut app = App::new(&config, calendar);
 
-    let stdout = io::stdout().into_raw_mode()?;
-    //let stdout = AlternateScreen::from(stdout);
-    let backend = TermionBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    terminal.hide_cursor()?;
+    if args.show {
+        let stdout = io::stdout().into_raw_mode()?;
+        let backend = TermionBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
 
-    //loop {
-    //    // Draw
-    //    terminal.draw(|mut f| {
-    //        app::draw(&mut f, &mut app);
-    //    })?;
+        terminal.draw(|mut f| {
+            app::draw(&mut f, &mut app);
+        })?;
+    } else {
+        let stdout = io::stdout().into_raw_mode()?;
+        let stdout = AlternateScreen::from(stdout);
+        let backend = TermionBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+        terminal.hide_cursor()?;
 
-    //    // Handle events
-    //    match dispatcher.next().unwrap() {
-    //        Event::Tick => {}
-    //        Event::Input(key) => {
-    //            app.handle(Event::Input(key));
-    //        }
-    //        _ => {}
-    //    }
+        loop {
+            // Draw
+            terminal.draw(|mut f| {
+                app::draw(&mut f, &mut app);
+            })?;
 
-    //    //if app.quit {
-    //    //    break;
-    //    //}
-    //}
+            // Handle events
+            match dispatcher.next().unwrap() {
+                Event::Tick => {}
+                Event::Input(key) => {
+                    app.handle(Event::Input(key));
+                }
+                _ => {}
+            }
+
+            //if app.quit {
+            //    break;
+            //}
+        }
+    }
 
     Ok(())
 }
