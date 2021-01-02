@@ -1,12 +1,12 @@
 use crate::calendar::{Calendar, Day, Month};
 use crate::ctx::CalendarContext;
-use crate::ctx::EvtListContext;
 use chrono::{Datelike, FixedOffset};
+use tui::widgets::ListState;
 
 pub struct Context {
     pub calendar: Calendar,
     pub calendar_context: CalendarContext,
-    pub evtlist_context: EvtListContext,
+    pub evtlist_context: ListState,
 }
 
 impl Context {
@@ -14,7 +14,7 @@ impl Context {
         Context {
             calendar,
             calendar_context: CalendarContext::default(),
-            evtlist_context: EvtListContext::default(),
+            evtlist_context: ListState::default(),
         }
     }
 

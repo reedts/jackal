@@ -1,11 +1,8 @@
 use crate::ical::Event;
 use chrono::FixedOffset;
 use std::convert::Into;
-use tui::buffer::Buffer;
-use tui::layout::Rect;
 use tui::style::Style;
-use tui::text::Text;
-use tui::widgets::{Block, Borders, Paragraph, Widget};
+use tui::text::{Span, Spans, Text};
 
 pub struct EventView<'a> {
     style: Style,
@@ -21,16 +18,13 @@ impl<'a> EventView<'a> {
     }
 }
 
-impl<'a> Widget for EventView<'a> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        Paragraph::new(Text::raw(self.event.summary()))
-            .block(Block::default().borders(Borders::ALL))
-            .render(area, buf);
-    }
-}
-
 impl<'a> Into<Text<'a>> for EventView<'a> {
     fn into(self) -> Text<'a> {
-        Text::styled(self.event.summary(), self.style)
+        Text::from(vec![
+            Spans::from(vec![Span::raw(
+                self.event.begin().format("%Y-%m-%d").to_string(),
+            )]),
+            Spans::from(vec![Span::raw(self.event.summary())]),
+        ])
     }
 }

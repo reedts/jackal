@@ -4,7 +4,7 @@ use tui::buffer::Buffer;
 use tui::layout::Rect;
 use tui::style::{Color, Modifier, Style};
 use tui::text::Text;
-use tui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, StatefulWidget, Widget};
+use tui::widgets::{Block, Borders, List, ListItem, Paragraph, StatefulWidget, Widget};
 
 pub struct EvtListView {
     style: Style,
@@ -46,7 +46,8 @@ impl StatefulWidget for EvtListView {
                     .highlight_symbol(">"),
                 area,
                 buf,
-                &mut ListState::default(),
+                // FIXME: Cloning here really necessary?
+                &mut state.evtlist_context.clone(),
             );
         }
     }
