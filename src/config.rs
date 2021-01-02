@@ -55,9 +55,16 @@ pub(crate) fn find_configfile_locations() -> io::Result<Vec<PathBuf>> {
 }
 
 #[derive(Debug, Clone)]
+pub struct CalendarParams {
+    pub id: String,
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
 pub struct Config {
     pub key_map: KeyMap,
     pub tick_rate: Duration,
+    calendar_params: HashMap<String, CalendarParams>,
 }
 
 impl Default for Config {
@@ -65,6 +72,7 @@ impl Default for Config {
         let mut config = Config {
             key_map: HashMap::new(),
             tick_rate: Duration::from_millis(500),
+            calendar_params: HashMap::new(),
         };
 
         config.key_map.insert(Key::Char('l'), Cmd::NextDay);
@@ -77,4 +85,16 @@ impl Default for Config {
     }
 }
 
-impl Config {}
+impl Config {
+    pub fn calendar_params(&self) -> Option<Vec<&CalendarParams>> {
+        if self.calendar_params.is_empty() {
+            None
+        } else {
+            Some(self.calendar_params.values().collect())
+        }
+    }
+
+    pub fn calendar_params_for(&self, id: &str) -> Option<&CalendarParams> {
+        self.calendar_params.get(id)
+    }
+}
