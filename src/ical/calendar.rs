@@ -26,7 +26,7 @@ impl Calendar<FixedOffset> {
                         io::ErrorKind::InvalidInput,
                         format!(
                             "No calendar could be read from '{p}': {e}",
-                            p = path.to_str().unwrap_or(""),
+                            p = path.display(),
                             e = e
                         ),
                     ))
@@ -35,7 +35,7 @@ impl Calendar<FixedOffset> {
             None => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    format!("No calendar found in '{}'", path.to_str().unwrap_or("")),
+                    format!("No calendar found in '{}'", path.display()),
                 ))
             }
         };
@@ -46,7 +46,7 @@ impl Calendar<FixedOffset> {
             .map(|ev| Event::from(ev.clone()))
             .inspect(|ev| {
                 if let Err(e) = ev {
-                    println!("ERROR: {:?}", e)
+                    println!("ERROR: {:?} (in '{}')", e, path.display())
                 }
             })
             .filter_map(Result::ok)
