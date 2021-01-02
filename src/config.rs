@@ -1,5 +1,6 @@
 use crate::cmds;
 use cmds::Cmd;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::io;
@@ -60,7 +61,7 @@ pub struct CalendarParams {
     pub path: PathBuf,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub key_map: KeyMap,
     pub tick_rate: Duration,
@@ -86,6 +87,12 @@ impl Default for Config {
 }
 
 impl Config {
+    // pub fn load(path: Option<&Path>) -> Config {
+    //     if let Some(path) = path {
+    //     } else {
+    //     }
+    // }
+
     pub fn calendar_params(&self) -> Option<Vec<&CalendarParams>> {
         if self.calendar_params.is_empty() {
             None
