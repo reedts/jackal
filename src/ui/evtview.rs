@@ -4,27 +4,35 @@ use std::convert::Into;
 use tui::style::Style;
 use tui::text::{Span, Spans, Text};
 
-pub struct EventView<'a> {
+pub struct EventView {
     style: Style,
-    event: &'a Event<FixedOffset>,
+    date: String,
+    summary: String,
 }
 
-impl<'a> EventView<'a> {
-    pub fn with(event: &'a Event<FixedOffset>) -> Self {
+impl<'a> EventView {
+    pub fn with(event: &Event<FixedOffset>) -> Self {
         EventView {
             style: Style::default(),
-            event,
+            date: if event.is_allday() {
+                "Allday".to_owned()
+            } else {
+                event
+                    .begin()
+                    .inner_as_datetime()
+                    .format("%H:%m")
+                    .to_string()
+            },
+            summary: event.summary().to_owned(),
         }
     }
 }
 
-impl<'a> Into<Text<'a>> for EventView<'a> {
+impl<'a> Into<Text<'a>> for EventView {
     fn into(self) -> Text<'a> {
         Text::from(vec![
-            Spans::from(vec![Span::raw(
-                self.event.begin().format("%Y-%m-%d").to_string(),
-            )]),
-            Spans::from(vec![Span::raw(self.event.summary())]),
+            Spans::from(vec![Span::raw(self.date)]),
+            Spans::from(vec![Span::raw("  "), Span::raw(self.summary)]),
         ])
     }
 }

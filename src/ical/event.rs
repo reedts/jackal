@@ -1,23 +1,15 @@
-use chrono::{Date, DateTime, FixedOffset, NaiveDateTime, Offset, TimeZone, Utc};
-use chrono_tz::Tz;
-use std::error::Error;
+use chrono::{Date, FixedOffset, TimeZone};
 
 use ::ical::parser::ical::component::IcalEvent;
 
 use crate::ical;
-use crate::ical::IcalResult;
+use crate::ical::{IcalResult, Occurence};
 
 #[derive(Clone)]
 pub struct Event<Tz: TimeZone> {
-    begin: DateTime<Tz>,
-    end: DateTime<Tz>,
-    all_day: bool,
+    begin: Occurence<Tz>,
+    end: Occurence<Tz>,
     ical_event: IcalEvent,
-}
-
-#[derive(Debug)]
-pub struct EventParseError {
-    message: String,
 }
 
 impl Event<FixedOffset> {
@@ -43,7 +35,6 @@ impl Event<FixedOffset> {
         Ok(Event {
             begin: dstart,
             end: dend,
-            all_day: false,
             ical_event,
         })
     }
@@ -61,18 +52,22 @@ impl Event<FixedOffset> {
     }
 
     pub fn begin_date(&self) -> Date<FixedOffset> {
-        self.begin().date()
+        self.begin().inner_as_date()
     }
 
-    pub fn begin(&self) -> &DateTime<FixedOffset> {
+    pub fn begin(&self) -> &Occurence<FixedOffset> {
         &self.begin
     }
 
-    pub fn end(&self) -> &DateTime<FixedOffset> {
+    pub fn end(&self) -> &Occurence<FixedOffset> {
         &self.end
     }
 
     pub fn ical_event(&self) -> &IcalEvent {
         &self.ical_event
+    }
+
+    pub fn is_allday(&self) -> bool {
+        self.begin.is_allday()
     }
 }

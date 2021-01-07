@@ -24,13 +24,13 @@ impl StatefulWidget for EvtListView {
     type State = Context;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let day = state.get_day();
-
-        let items: Vec<ListItem> = day
-            .events()
-            .iter()
-            .map(|ev| ListItem::new(EventView::with(ev)))
-            .collect();
+        let items: Vec<ListItem> = {
+            let day = state.get_day();
+            day.events()
+                .iter()
+                .map(|ev| ListItem::new(EventView::with(ev)))
+                .collect()
+        };
 
         if items.is_empty() {
             Paragraph::new(Text::styled(
@@ -46,8 +46,7 @@ impl StatefulWidget for EvtListView {
                     .highlight_symbol(">"),
                 area,
                 buf,
-                // FIXME: Cloning here really necessary?
-                &mut state.evtlist_context.clone(),
+                &mut state.evtlist_context,
             );
         }
     }
