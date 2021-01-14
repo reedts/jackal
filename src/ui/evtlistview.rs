@@ -11,6 +11,10 @@ pub struct EvtListView {
     focus_style: Style,
 }
 
+pub struct EventListCursor {
+    style: Style,
+}
+
 impl EvtListView {
     pub fn default() -> Self {
         EvtListView {
