@@ -1,28 +1,20 @@
-use crate::ical::Event;
+use crate::ical::{Event, Occurrence};
 use chrono::FixedOffset;
 use std::convert::Into;
 use tui::style::Style;
 use tui::text::{Span, Spans, Text};
 
 pub struct EventView {
-    style: Style,
-    date: String,
-    summary: String,
+    pub style: Style,
+    pub date: Occurrence<FixedOffset>,
+    pub summary: String,
 }
 
 impl<'a> EventView {
     pub fn with(event: &Event<FixedOffset>) -> Self {
         EventView {
             style: Style::default(),
-            date: if event.is_allday() {
-                "Allday".to_owned()
-            } else {
-                event
-                    .begin()
-                    .inner_as_datetime()
-                    .format("%H:%m")
-                    .to_string()
-            },
+            date: event.begin().clone(),
             summary: event.summary().to_owned(),
         }
     }
@@ -30,8 +22,12 @@ impl<'a> EventView {
 
 impl<'a> Into<Text<'a>> for EventView {
     fn into(self) -> Text<'a> {
+        use Occurrence::*;
         Text::from(vec![
-            Spans::from(vec![Span::raw(self.date)]),
+            Spans::from(vec![Span::raw(match self.date {
+                Allday(_) => "Allday".to_owned(),
+                _ => self.date.inner_as_datetime().format("%H:%M").to_string(),
+            })]),
             Spans::from(vec![Span::raw("  "), Span::raw(self.summary)]),
         ])
     }

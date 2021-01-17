@@ -1,13 +1,13 @@
 use crate::calendar::{Calendar, Day, Month};
 use crate::ctx::CalendarContext;
-use chrono::{Datelike, FixedOffset, Local, NaiveDateTime};
+use chrono::{DateTime, Datelike, FixedOffset, Utc};
 use tui::widgets::ListState;
 
 pub struct Context {
     pub calendar: Calendar,
     pub calendar_context: CalendarContext,
     pub evtlist_context: ListState,
-    now: NaiveDateTime,
+    now: DateTime<Utc>,
 }
 
 impl Context {
@@ -16,7 +16,7 @@ impl Context {
             calendar,
             calendar_context: CalendarContext::default(),
             evtlist_context: ListState::default(),
-            now: Local::now().naive_local(),
+            now: Utc::now(),
         }
     }
 
@@ -49,11 +49,11 @@ impl Context {
         self.calendar_context.year
     }
 
-    pub fn now(&self) -> &NaiveDateTime {
+    pub fn now(&self) -> &DateTime<Utc> {
         &self.now
     }
 
     pub fn update(&mut self) {
-        self.now = Local::now().naive_local();
+        self.now = Utc::now();
     }
 }

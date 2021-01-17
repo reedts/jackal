@@ -1,9 +1,10 @@
 use crate::ctx::Context;
 use crate::ui::evtview::EventView;
+use chrono::{NaiveTime, Utc};
 use tui::buffer::Buffer;
 use tui::layout::Rect;
 use tui::style::{Color, Modifier, Style};
-use tui::text::Text;
+use tui::text::{Span, Spans, Text};
 use tui::widgets::{Block, Borders, List, ListItem, Paragraph, StatefulWidget, Widget};
 
 pub struct EvtListView {
@@ -11,8 +12,9 @@ pub struct EvtListView {
     focus_style: Style,
 }
 
-pub struct EventListCursor {
+struct EvtListCursor {
     style: Style,
+    time: NaiveTime,
 }
 
 impl EvtListView {
@@ -30,10 +32,33 @@ impl StatefulWidget for EvtListView {
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let items: Vec<ListItem> = {
             let day = state.get_day();
-            day.events()
+
+            // FIXME: worthy?
+            let evts = day.events();
+
+            let now = state.now();
+
+            let mut items: Vec<ListItem> = evts
                 .iter()
                 .map(|ev| ListItem::new(EventView::with(ev)))
-                .collect()
+                .collect();
+
+            if day.date().with_timezone(&Utc) == now.date() {
+                let pos = evts.binary_search_by(|&ev| {
+                    ev.begin()
+                        .inner_as_datetime()
+                        .with_timezone(&Utc)
+                        .time()
+                        .cmp(&now.time())
+                });
+                // FIXME: Ther must be a better way to unwrap
+                items.insert(
+                    pos.unwrap_or_else(std::convert::identity),
+                    ListItem::new(EvtListCursor::new(None, now.time())),
+                );
+            }
+
+            items
         };
 
         if items.is_empty() {
@@ -53,5 +78,23 @@ impl StatefulWidget for EvtListView {
                 &mut state.evtlist_context,
             );
         }
+    }
+}
+
+impl EvtListCursor {
+    fn new(style: Option<Style>, time: NaiveTime) -> Self {
+        EvtListCursor {
+            style: style.unwrap_or_default(),
+            time,
+        }
+    }
+}
+
+impl<'a> Into<Text<'a>> for EvtListCursor {
+    fn into(self) -> Text<'a> {
+        Text::from(Spans::from(vec![
+            Span::styled(" <-  ", self.style),
+            Span::styled(self.time.format("%H:%M").to_string(), self.style),
+        ]))
     }
 }

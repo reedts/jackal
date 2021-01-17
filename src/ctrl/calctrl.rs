@@ -53,7 +53,7 @@ impl Selection for CalendarController {
 
     fn move_n_left(&mut self, n: u32, context: &mut Context) {
         let sel_day = context.calendar_context.day;
-        context.calendar_context.day = sel_day.checked_sub(n).unwrap_or(sel_day);
+        context.calendar_context.day = std::cmp::max(sel_day.checked_sub(n).unwrap_or(sel_day), 1);
     }
 
     fn move_n_right(&mut self, n: u32, context: &mut Context) {
@@ -66,7 +66,8 @@ impl Selection for CalendarController {
 
     fn move_n_up(&mut self, n: u32, context: &mut Context) {
         let sel_day = context.calendar_context.day;
-        context.calendar_context.day = sel_day.checked_sub(n * 7).unwrap_or(sel_day);
+        context.calendar_context.day =
+            std::cmp::max(sel_day.checked_sub(n * 7).unwrap_or(sel_day), 1);
     }
 
     fn move_n_down(&mut self, n: u32, context: &mut Context) {

@@ -19,7 +19,7 @@ const ISO8601_2004_LOCAL_FORMAT: &str = "%Y%m%dT%H%M%S";
 const ISO8601_2004_LOCAL_FORMAT_DATE: &str = "%Y%m%d";
 
 #[derive(Clone)]
-pub enum Occurence<Tz: TimeZone> {
+pub enum Occurrence<Tz: TimeZone> {
     Allday(Date<Tz>),
     Onetime(DateTime<Tz>),
 }
@@ -35,8 +35,8 @@ pub(crate) fn prop_value_in_zulu(timestamp: &Property) -> bool {
 }
 
 // TODO: Make more ... sophisticated
-pub(crate) fn parse_prop_to_date_time(property: &Property) -> IcalResult<Occurence<FixedOffset>> {
-    use Occurence::*;
+pub(crate) fn parse_prop_to_date_time(property: &Property) -> IcalResult<Occurrence<FixedOffset>> {
+    use Occurrence::*;
 
     let mut found_str_dt: Option<&str> = None;
 
@@ -111,19 +111,19 @@ pub(crate) fn parse_prop_to_date_time(property: &Property) -> IcalResult<Occuren
     }
 }
 
-impl<Tz: TimeZone> Occurence<Tz> {
+impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn is_allday(&self) -> bool {
-        use Occurence::*;
+        use Occurrence::*;
         matches!(self, Allday(_))
     }
 
     pub fn is_onetime(&self) -> bool {
-        use Occurence::*;
+        use Occurrence::*;
         matches!(self, Onetime(_))
     }
 
     pub fn inner_as_date(&self) -> Date<Tz> {
-        use Occurence::*;
+        use Occurrence::*;
         match self {
             Allday(date) => date.clone(),
             Onetime(datetime) => datetime.date(),
@@ -131,7 +131,7 @@ impl<Tz: TimeZone> Occurence<Tz> {
     }
 
     pub fn inner_as_datetime(&self) -> DateTime<Tz> {
-        use Occurence::*;
+        use Occurrence::*;
         match self {
             Allday(date) => date.and_time(NaiveTime::from_hms(0, 0, 0)).unwrap(),
             Onetime(datetime) => datetime.clone(),

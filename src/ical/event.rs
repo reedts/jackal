@@ -3,12 +3,12 @@ use chrono::{Date, FixedOffset, TimeZone};
 use ::ical::parser::ical::component::IcalEvent;
 
 use crate::ical;
-use crate::ical::{IcalResult, Occurence};
+use crate::ical::{IcalResult, Occurrence};
 
 #[derive(Clone)]
 pub struct Event<Tz: TimeZone> {
-    begin: Occurence<Tz>,
-    end: Occurence<Tz>,
+    begin: Occurrence<Tz>,
+    end: Occurrence<Tz>,
     ical_event: IcalEvent,
 }
 
@@ -55,11 +55,11 @@ impl Event<FixedOffset> {
         self.begin().inner_as_date()
     }
 
-    pub fn begin(&self) -> &Occurence<FixedOffset> {
+    pub fn begin(&self) -> &Occurrence<FixedOffset> {
         &self.begin
     }
 
-    pub fn end(&self) -> &Occurence<FixedOffset> {
+    pub fn end(&self) -> &Occurrence<FixedOffset> {
         &self.end
     }
 
