@@ -1,5 +1,5 @@
 use chrono::naive::NaiveDate;
-use chrono::{Date, Datelike, Duration, FixedOffset, Offset, TimeZone, Utc};
+use chrono::{Date, DateTime, Datelike, Duration, FixedOffset, Offset, TimeZone, Utc};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::convert::From;
@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ical;
 
-pub type EventList = Vec<ical::Event<FixedOffset>>;
+pub type EventList = BTreeMap<DateTime<FixedOffset>, ical::Event<FixedOffset>>;
 pub type EventMap = BTreeMap<Date<FixedOffset>, EventList>;
 
 pub struct Calendar {
@@ -66,8 +66,8 @@ impl Calendar {
         for event in icals.iter_mut().flat_map(|cal| cal.events_mut().iter_mut()) {
             events
                 .entry(event.begin_date())
-                .or_insert(EventList::new())
-                .push(event.clone())
+                .or_insert_with(EventList::new)
+                .insert(event.begin().inner_as_datetime(), event.clone());
         }
 
         Ok(Calendar {
@@ -111,7 +111,7 @@ impl Calendar {
 
         self.events
             .range((Included(&b_date), Included(&e_date)))
-            .flat_map(|(k, v)| v.iter())
+            .flat_map(|(_, v)| v.values())
             .collect()
     }
 
@@ -129,17 +129,20 @@ impl Calendar {
         );
 
         match self.events.get(&date) {
-            Some(events) => Day::new(date, events),
-            None => Day::new(date, &[]),
+            Some(events) => Day::new(date, events.values()),
+            None => Day::new(date, [].iter()),
         }
     }
 }
 
 impl<'a> Day<'a, FixedOffset> {
-    pub fn new(date: Date<FixedOffset>, events: &'a [ical::Event<FixedOffset>]) -> Self {
+    pub fn new<Iter: Iterator<Item = &'a ical::Event<FixedOffset>>>(
+        date: Date<FixedOffset>,
+        events_it: Iter,
+    ) -> Self {
         Day {
             date,
-            events: events.into_iter().collect(),
+            events: events_it.collect(),
         }
     }
 
