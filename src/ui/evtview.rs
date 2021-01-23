@@ -42,10 +42,11 @@ impl<'a> Into<Text<'a>> for EventView {
                     },
                     self.style,
                 ),
+                Span::styled(if self.begin.is_allday() { "" } else { " - " }, self.style),
                 Span::styled(
-                    match self.begin {
+                    match self.end {
                         Allday(_) => "".to_owned(),
-                        _ => self.begin.inner_as_datetime().format("%H:%M").to_string(),
+                        _ => self.end.inner_as_datetime().format("%H:%M").to_string(),
                     },
                     self.style,
                 ),
@@ -55,6 +56,7 @@ impl<'a> Into<Text<'a>> for EventView {
                 Span::raw("  "),
                 Span::styled(self.summary, self.style),
             ]),
+            Spans::default(),
         ])
     }
 }

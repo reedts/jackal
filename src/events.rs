@@ -25,11 +25,13 @@ pub struct Dispatcher {
     tick_handle: thread::JoinHandle<()>,
 }
 
-impl Dispatcher {
-    pub fn new() -> Dispatcher {
+impl Default for Dispatcher {
+    fn default() -> Dispatcher {
         Dispatcher::from_config(Config::default())
     }
+}
 
+impl Dispatcher {
     pub fn from_config(config: Config) -> Dispatcher {
         let (tx, rx) = mpsc::channel();
         let input_handle = {
@@ -49,7 +51,6 @@ impl Dispatcher {
             })
         };
         let tick_handle = {
-            let tx = tx.clone();
             thread::spawn(move || {
                 let tx = tx.clone();
                 loop {
