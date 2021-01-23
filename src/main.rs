@@ -10,7 +10,6 @@ mod ical;
 mod ui;
 
 use std::io;
-use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 use termion::{raw::IntoRawMode, screen::AlternateScreen};
 use tui::backend::TermionBackend;
@@ -22,7 +21,7 @@ use calendar::Calendar;
 use config::Config;
 use events::{Dispatcher, Event};
 
-fn main() -> Result<(), io::Error> {
+fn main() -> io::Result<()> {
     let args = Args::from_args();
 
     let config = Config::default();
@@ -64,15 +63,18 @@ fn main() -> Result<(), io::Error> {
             })?;
 
             // Handle events
-            let result = match dispatcher.next().unwrap() {
-                Event::Tick => app.handle(Event::Tick),
-                Event::Input(key) => app.handle(Event::Input(key)),
-                _ => Ok(cmds::Cmd::Noop),
-            };
+            let result = match dispatcher.next() {
+                Ok(event) => match event {
+                    Event::Tick => app.handle(Event::Tick),
+                    Event::Input(key) => app.handle(Event::Input(key)),
+                    _ => Ok(cmds::Cmd::Noop),
+                },
+                Err(e) => Err(cmds::CmdError::new(format!("{}", e))),
+            }?;
 
-            //if app.quit {
-            //    break;
-            //}
+            if app.quit {
+                break;
+            }
         }
     }
 

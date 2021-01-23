@@ -1,4 +1,4 @@
-use crate::cmds::{Cmd, CmdFailed, CmdResult};
+use crate::cmds::{Cmd, CmdError, CmdResult};
 use crate::config::KeyMap;
 use crate::ctx::Context;
 use crate::events::Event;
@@ -31,9 +31,9 @@ impl<'a, C: Control> Controller<'a, C> {
         match event {
             Event::Input(key) => match self.key_map.get(&key) {
                 Some(cmd) => self.recvr.send_cmd(*cmd, context),
-                None => Err(CmdFailed {}),
+                None => Err(CmdError::new(format!("Could not find map for '{:?}'", key))),
             },
-            _ => Err(CmdFailed {}),
+            _ => Ok(Cmd::Noop),
         }
     }
 
