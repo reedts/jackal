@@ -13,11 +13,35 @@ pub struct DayBlock<'a> {
     day_num: u32,
     selected: bool,
     day: Day<'a, FixedOffset>,
+    style: Style,
+    focus_style: Style,
 }
 
-pub struct CalendarView {}
+pub struct CalendarView {
+    header_style: Style,
+}
 
 impl<'a> DayBlock<'a> {
+    pub fn new(day_num: u32, day: Day<'a, FixedOffset>) -> Self {
+        DayBlock {
+            day_num,
+            selected: false,
+            day,
+            style: Style::default(),
+            focus_style: Style::default().fg(Color::Red),
+        }
+    }
+
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    pub fn focus_style(mut self, style: Style) -> Self {
+        self.focus_style = style;
+        self
+    }
+
     pub fn select(&mut self) {
         self.selected = true;
     }
@@ -34,8 +58,8 @@ impl<'a> DayBlock<'a> {
 impl<'a> Widget for DayBlock<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let style = match self.selected {
-            true => Style::default().fg(Color::Red),
-            false => Style::default(),
+            true => self.focus_style,
+            false => self.style,
         };
 
         Paragraph::new(Text::styled(format!("{}", self.day_num), style))
@@ -44,9 +68,18 @@ impl<'a> Widget for DayBlock<'a> {
     }
 }
 
+impl Default for CalendarView {
+    fn default() -> Self {
+        CalendarView {
+            header_style: Style::default().fg(Color::Yellow),
+        }
+    }
+}
+
 impl CalendarView {
-    pub fn default() -> Self {
-        CalendarView {}
+    pub fn header_style(mut self, style: Style) -> Self {
+        self.header_style = style;
+        self
     }
 }
 
@@ -107,20 +140,14 @@ impl StatefulWidget for CalendarView {
 
         let header = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-        let header_style = Style::default().fg(Color::Yellow);
-
         for (col, header) in rows.first_mut().unwrap().iter_mut().zip(header.iter()) {
-            Paragraph::new(Text::styled(*header, header_style))
+            Paragraph::new(Text::styled(*header, self.header_style))
                 .alignment(Alignment::Right)
                 .render(*col, buf);
         }
 
         let mut day_blocks: Vec<DayBlock> = (1..month.days(year) as u32)
-            .map(|day| DayBlock {
-                day_num: day,
-                selected: false,
-                day: state.calendar.events_of_day(day, month, year),
-            })
+            .map(|day| DayBlock::new(day, state.calendar.events_of_day(day, month, year)))
             .collect();
 
         // Mark selected day
