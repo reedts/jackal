@@ -64,13 +64,11 @@ fn main() -> Result<(), io::Error> {
             })?;
 
             // Handle events
-            match dispatcher.next().unwrap() {
-                Event::Tick => {}
-                Event::Input(key) => {
-                    app.handle(Event::Input(key));
-                }
-                _ => {}
-            }
+            let result = match dispatcher.next().unwrap() {
+                Event::Tick => app.handle(Event::Tick),
+                Event::Input(key) => app.handle(Event::Input(key)),
+                _ => Ok(cmds::Cmd::Noop),
+            };
 
             //if app.quit {
             //    break;

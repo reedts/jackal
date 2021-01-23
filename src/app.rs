@@ -83,6 +83,10 @@ impl<'a> App<'a> {
 
     pub fn handle(&mut self, event: Event) -> Result {
         match event {
+            Event::Tick => {
+                self.global_ctx.update();
+                Ok(Cmd::Noop)
+            }
             Event::Input(key) => {
                 if let Cmd::Exit = self.config.key_map.get(&key).unwrap() {
                     self.quit = true;
