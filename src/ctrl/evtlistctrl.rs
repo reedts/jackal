@@ -51,7 +51,11 @@ impl Selection for EvtListController {
 
     fn move_n_down(&mut self, n: u32, context: &mut Context) {
         let sel_evt = if let Some(item) = context.evtlist_context.selected() {
-            std::cmp::min(item + n as usize, context.get_day().events().len() - 1)
+            if context.get_day().events().is_empty() {
+                0
+            } else {
+                std::cmp::max(item + n as usize, context.get_day().events().len() - 1)
+            }
         } else {
             0
         };
