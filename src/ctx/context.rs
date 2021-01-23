@@ -42,7 +42,7 @@ impl Context {
     }
 
     pub fn get_month(&self) -> Month {
-        Month::from(self.calendar_context.month)
+        self.calendar_context.month
     }
 
     pub fn get_year(&self) -> i32 {
