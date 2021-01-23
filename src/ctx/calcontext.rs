@@ -6,8 +6,8 @@ pub struct CalendarContext {
     pub year: i32,
 }
 
-impl CalendarContext {
-    pub fn default() -> Self {
+impl Default for CalendarContext {
+    fn default() -> Self {
         CalendarContext {
             day: 1,
             month: Month::from(1),

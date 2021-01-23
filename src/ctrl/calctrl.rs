@@ -1,17 +1,17 @@
-use crate::cmds::{Cmd, Result};
+use crate::cmds::{Cmd, CmdResult};
 use crate::ctrl::{Control, Selection};
 use crate::ctx::Context;
 
 pub struct CalendarController {}
 
-impl CalendarController {
-    pub fn default() -> Self {
+impl Default for CalendarController {
+    fn default() -> Self {
         CalendarController {}
     }
 }
 
 impl Control for CalendarController {
-    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> Result {
+    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> CmdResult {
         match cmd {
             Cmd::NextDay => {
                 self.move_right(context);

@@ -1,17 +1,17 @@
-use crate::cmds::{Cmd, Result};
+use crate::cmds::{Cmd, CmdResult};
 use crate::ctrl::{Control, Selection};
 use crate::ctx::Context;
 
 pub struct EvtListController {}
 
-impl EvtListController {
-    pub fn default() -> Self {
+impl Default for EvtListController {
+    fn default() -> Self {
         EvtListController {}
     }
 }
 
 impl Control for EvtListController {
-    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> Result {
+    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> CmdResult {
         Ok(Cmd::Noop)
     }
 }

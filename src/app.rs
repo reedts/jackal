@@ -1,18 +1,14 @@
 use crate::calendar::Calendar;
-use crate::cmds::{Cmd, Result};
+use crate::cmds::{Cmd, CmdResult};
 use crate::config::Config;
 use crate::ctrl::{CalendarController, Control, Controller, EvtListController};
 use crate::ctx::{CalendarContext, Context, EvtListContext};
 use crate::events::Event;
 use crate::ui::calview::CalendarView;
 use crate::ui::evtlistview::EvtListView;
-use std::cell::{Ref, RefCell, RefMut};
-use std::rc::Rc;
 
 use tui::backend::Backend;
-use tui::buffer::Buffer;
-use tui::layout::{Constraint, Direction, Layout, Rect};
-use tui::widgets::{Block, Borders, Widget};
+use tui::layout::{Constraint, Direction, Layout};
 use tui::Frame;
 
 pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
@@ -48,7 +44,7 @@ pub struct App<'a> {
 }
 
 impl<'a> Control for View<'a> {
-    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> Result {
+    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> CmdResult {
         match self {
             Self::Calendar(ctrlr) => ctrlr.inner_mut().send_cmd(cmd, context),
             Self::Events(ctrlr) => ctrlr.inner_mut().send_cmd(cmd, context),
@@ -81,7 +77,7 @@ impl<'a> App<'a> {
         &mut self.views[self.active_view]
     }
 
-    pub fn handle(&mut self, event: Event) -> Result {
+    pub fn handle(&mut self, event: Event) -> CmdResult {
         match event {
             Event::Tick => {
                 self.global_ctx.update();

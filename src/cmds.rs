@@ -12,7 +12,7 @@ pub enum Cmd {
     Exit,
 }
 
-pub type Result = result::Result<Cmd, CmdFailed>;
+pub type CmdResult = result::Result<Cmd, CmdFailed>;
 
 #[derive(Debug, Clone)]
 pub struct CmdFailed;

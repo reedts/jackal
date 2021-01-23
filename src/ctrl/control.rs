@@ -1,10 +1,10 @@
-use crate::cmds::{Cmd, CmdFailed, Result};
+use crate::cmds::{Cmd, CmdFailed, CmdResult};
 use crate::config::KeyMap;
 use crate::ctx::Context;
 use crate::events::Event;
 
 pub trait Control {
-    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> Result;
+    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> CmdResult;
 }
 
 pub enum Mode {
@@ -27,7 +27,7 @@ impl<'a, C: Control> Controller<'a, C> {
         }
     }
 
-    pub fn handle(&mut self, event: Event, context: &mut Context) -> Result {
+    pub fn handle(&mut self, event: Event, context: &mut Context) -> CmdResult {
         match event {
             Event::Input(key) => match self.key_map.get(&key) {
                 Some(cmd) => self.recvr.send_cmd(*cmd, context),
