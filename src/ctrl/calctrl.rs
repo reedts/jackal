@@ -11,7 +11,7 @@ impl Default for CalendarController {
 }
 
 impl Control for CalendarController {
-    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> CmdResult {
+    fn send_cmd(&mut self, cmd: &Cmd, context: &mut Context) -> CmdResult {
         match cmd {
             Cmd::NextDay => {
                 self.move_right(context);
@@ -29,7 +29,7 @@ impl Control for CalendarController {
                 self.move_up(context);
                 Ok(Cmd::Noop)
             }
-            _ => Ok(cmd),
+            _ => Ok(*cmd),
         }
     }
 }

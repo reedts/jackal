@@ -4,7 +4,7 @@ use crate::ctx::Context;
 use crate::events::Event;
 
 pub trait Control {
-    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> CmdResult;
+    fn send_cmd(&mut self, cmd: &Cmd, context: &mut Context) -> CmdResult;
 }
 
 pub enum Mode {
@@ -30,7 +30,7 @@ impl<'a, C: Control> Controller<'a, C> {
     pub fn handle(&mut self, event: Event, context: &mut Context) -> CmdResult {
         match event {
             Event::Input(key) => match self.key_map.get(&key) {
-                Some(cmd) => self.recvr.send_cmd(*cmd, context),
+                Some(cmd) => self.recvr.send_cmd(cmd, context),
                 None => Err(CmdError::new(format!("Could not find map for '{:?}'", key))),
             },
             _ => Ok(Cmd::Noop),

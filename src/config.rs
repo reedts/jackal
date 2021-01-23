@@ -80,6 +80,8 @@ impl Default for Config {
         config.key_map.insert(Key::Char('h'), Cmd::PrevDay);
         config.key_map.insert(Key::Char('j'), Cmd::NextWeek);
         config.key_map.insert(Key::Char('k'), Cmd::PrevWeek);
+        config.key_map.insert(Key::Char('J'), Cmd::NextEvent);
+        config.key_map.insert(Key::Char('K'), Cmd::PrevEvent);
         config.key_map.insert(Key::Char('q'), Cmd::Exit);
 
         config

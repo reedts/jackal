@@ -11,7 +11,14 @@ impl Default for EvtListController {
 }
 
 impl Control for EvtListController {
-    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> CmdResult {
+    fn send_cmd(&mut self, cmd: &Cmd, context: &mut Context) -> CmdResult {
+        use Cmd::*;
+        match cmd {
+            NextEvent => self.move_down(context),
+            PrevEvent => self.move_up(context),
+            _ => {}
+        }
+
         Ok(Cmd::Noop)
     }
 }
@@ -35,24 +42,19 @@ impl Selection for EvtListController {
 
     fn move_n_up(&mut self, n: u32, context: &mut Context) {
         let sel_evt = if let Some(item) = context.evtlist_context.selected() {
-            item
+            item.saturating_sub(n as usize)
         } else {
             0
         };
-        context
-            .evtlist_context
-            .select(sel_evt.checked_sub(n as usize).map(|v| v as usize));
+        context.evtlist_context.select(Some(sel_evt));
     }
 
     fn move_n_down(&mut self, n: u32, context: &mut Context) {
         let sel_evt = if let Some(item) = context.evtlist_context.selected() {
-            item
+            std::cmp::min(item + n as usize, context.get_day().events().len() - 1)
         } else {
             0
         };
-        context.evtlist_context.select(Some(std::cmp::min(
-            context.get_day().events().len() - 1,
-            sel_evt.checked_add(n as usize).unwrap_or(sel_evt),
-        )));
+        context.evtlist_context.select(Some(sel_evt));
     }
 }

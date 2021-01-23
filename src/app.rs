@@ -1,5 +1,5 @@
 use crate::calendar::Calendar;
-use crate::cmds::{Cmd, CmdResult};
+use crate::cmds::{Cmd, CmdError, CmdResult};
 use crate::config::Config;
 use crate::ctrl::{CalendarController, Control, Controller, EvtListController};
 use crate::ctx::{CalendarContext, Context, EvtListContext};
@@ -38,13 +38,12 @@ pub enum View<'a> {
 pub struct App<'a> {
     pub quit: bool,
     views: [View<'a>; 2],
-    active_view: usize,
     config: &'a Config,
     global_ctx: Context,
 }
 
 impl<'a> Control for View<'a> {
-    fn send_cmd(&mut self, cmd: Cmd, context: &mut Context) -> CmdResult {
+    fn send_cmd(&mut self, cmd: &Cmd, context: &mut Context) -> CmdResult {
         match self {
             Self::Calendar(ctrlr) => ctrlr.inner_mut().send_cmd(cmd, context),
             Self::Events(ctrlr) => ctrlr.inner_mut().send_cmd(cmd, context),
@@ -67,14 +66,9 @@ impl<'a> App<'a> {
                     EvtListController::default(),
                 )),
             ],
-            active_view: 0,
             config,
             global_ctx,
         }
-    }
-
-    fn active_view_mut(&mut self) -> &mut View<'a> {
-        &mut self.views[self.active_view]
     }
 
     pub fn handle(&mut self, event: Event) -> CmdResult {
@@ -84,14 +78,21 @@ impl<'a> App<'a> {
                 Ok(Cmd::Noop)
             }
             Event::Input(key) => {
-                if let Cmd::Exit = self.config.key_map.get(&key).unwrap() {
-                    self.quit = true;
-                    Ok(Cmd::Noop)
-                } else {
-                    match &mut self.views[self.active_view] {
-                        View::Calendar(ctrlr) => ctrlr.handle(event, &mut self.global_ctx),
-                        View::Events(ctrlr) => ctrlr.handle(event, &mut self.global_ctx),
+                if let Some(cmd) = self.config.key_map.get(&key) {
+                    if let Cmd::Exit = cmd {
+                        self.quit = true;
+                        Ok(Cmd::Noop)
+                    } else {
+                        for view in self.views.iter_mut() {
+                            view.send_cmd(cmd, &mut self.global_ctx)?;
+                        }
+                        Ok(Cmd::Noop)
                     }
+                } else {
+                    Err(CmdError::new(format!(
+                        "Could not handle input key '{:#?}'",
+                        key
+                    )))
                 }
             }
             _ => Ok(Cmd::Noop),

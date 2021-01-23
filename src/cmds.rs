@@ -11,6 +11,8 @@ pub enum Cmd {
     PrevDay,
     NextWeek,
     PrevWeek,
+    NextEvent,
+    PrevEvent,
     Exit,
 }
 
