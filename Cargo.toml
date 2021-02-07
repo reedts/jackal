@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 chrono = "0.4.0"
 chrono-tz = "0.4.0"
-tui = "0.12"
+tui = "0.14"
 termion = "1.5"
 ical = "0.6.*"
 structopt = "0.3"
