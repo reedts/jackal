@@ -2,7 +2,7 @@ use crate::calendar::Calendar;
 use crate::cmds::{Cmd, CmdError, CmdResult};
 use crate::config::Config;
 use crate::ctrl::{CalendarController, Control, Controller, EvtListController};
-use crate::ctx::{CalendarContext, Context, EvtListContext};
+use crate::ctx::{Context, EvtListContext};
 use crate::events::Event;
 use crate::ui::calview::CalendarView;
 use crate::ui::evtlistview::EvtListView;
@@ -86,6 +86,7 @@ impl<'a> App<'a> {
                         for view in self.views.iter_mut() {
                             view.send_cmd(cmd, &mut self.global_ctx)?;
                         }
+                        println!("{}", &self.global_ctx.cursor.format("%d-%m-%y_%H:%M"));
                         Ok(Cmd::Noop)
                     }
                 } else {

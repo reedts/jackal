@@ -22,7 +22,7 @@ pub struct Calendar {
     events: EventMap,
 }
 
-pub struct Day<'a, Tz: TimeZone> {
+pub struct EventsOfDay<'a, Tz: TimeZone> {
     date: Date<Tz>,
     events: Vec<&'a ical::Event<Tz>>,
 }
@@ -122,25 +122,20 @@ impl Calendar {
         self.events_of_month_and_year(curr_month, curr_year)
     }
 
-    pub fn events_of_day(&self, day: u32, month: Month, year: i32) -> Day<FixedOffset> {
-        let date = Date::from_utc(
-            NaiveDate::from_ymd(year, month.num() as u32, day),
-            chrono::offset::Utc.fix(),
-        );
-
+    pub fn events_of_day(&self, date: &Date<FixedOffset>) -> EventsOfDay<FixedOffset> {
         match self.events.get(&date) {
-            Some(events) => Day::new(date, events.values()),
-            None => Day::new(date, [].iter()),
+            Some(events) => EventsOfDay::new(*date, events.values()),
+            None => EventsOfDay::new(*date, [].iter()),
         }
     }
 }
 
-impl<'a> Day<'a, FixedOffset> {
+impl<'a> EventsOfDay<'a, FixedOffset> {
     pub fn new<Iter: Iterator<Item = &'a ical::Event<FixedOffset>>>(
         date: Date<FixedOffset>,
         events_it: Iter,
     ) -> Self {
-        Day {
+        EventsOfDay {
             date,
             events: events_it.collect(),
         }

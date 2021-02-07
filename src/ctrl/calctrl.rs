@@ -52,29 +52,18 @@ impl Selection for CalendarController {
     }
 
     fn move_n_left(&mut self, n: u32, context: &mut Context) {
-        let sel_day = context.calendar_context.day;
-        context.calendar_context.day = std::cmp::max(sel_day.checked_sub(n).unwrap_or(sel_day), 1);
+        context.cursor = context.cursor - chrono::Duration::days(n as i64);
     }
 
     fn move_n_right(&mut self, n: u32, context: &mut Context) {
-        let sel_day = context.calendar_context.day;
-        context.calendar_context.day = std::cmp::min(
-            (context.get_month().days(context.get_year()) - 1) as u32,
-            sel_day.checked_add(n).unwrap_or(sel_day),
-        );
+        context.cursor = context.cursor + chrono::Duration::days(n as i64);
     }
 
     fn move_n_up(&mut self, n: u32, context: &mut Context) {
-        let sel_day = context.calendar_context.day;
-        context.calendar_context.day =
-            std::cmp::max(sel_day.checked_sub(n * 7).unwrap_or(sel_day), 1);
+        context.cursor = context.cursor - chrono::Duration::days(7 * n as i64);
     }
 
     fn move_n_down(&mut self, n: u32, context: &mut Context) {
-        let sel_day = context.calendar_context.day;
-        context.calendar_context.day = std::cmp::min(
-            (context.get_month().days(context.get_year()) - 1) as u32,
-            sel_day.checked_add(n * 7).unwrap_or(sel_day),
-        );
+        context.cursor = context.cursor + chrono::Duration::days(7 * n as i64);
     }
 }
