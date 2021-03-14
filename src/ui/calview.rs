@@ -42,6 +42,8 @@ pub struct MonthView {
 
 pub struct CalendarView {
     header_style: Style,
+    horizontal_padding: u16,
+    vertical_padding: u16,
 }
 
 impl DayCell {
@@ -170,8 +172,8 @@ impl MonthView {
             cell_today_style: Style::default(),
             today_symbol: Some('*'),
             focus_symbol: None,
-            horizontal_padding: 10,
-            vertical_padding: 5,
+            horizontal_padding: 0,
+            vertical_padding: 0,
         }
     }
 
@@ -310,75 +312,6 @@ impl StatefulWidget for MonthView {
             area,
             buf,
         );
-
-        // prepend padding for input
-
-        // let rows = Layout::default()
-        //     .direction(Direction::Vertical)
-        //     .constraints(
-        //         [
-        //             Constraint::Length(1),
-        //             Constraint::Length(1),
-        //             Constraint::Length(1),
-        //             Constraint::Length(1),
-        //             Constraint::Length(1),
-        //             Constraint::Length(1),
-        //             Constraint::Length(1),
-        //         ]
-        //         .as_ref(),
-        //     )
-        //     .split(Rect {
-        //         x: area.x + (area.width / 2) - 35 / 2,
-        //         y: area.y + 2,
-        //         width: 35,
-        //         height: 30,
-        //     });
-
-        // let mut rows: Vec<Vec<Rect>> = rows
-        //     .iter()
-        //     .map(|r| {
-        //         Layout::default()
-        //             .direction(Direction::Horizontal)
-        //             .constraints(
-        //                 [
-        //                     Constraint::Length(5),
-        //                     Constraint::Length(5),
-        //                     Constraint::Length(5),
-        //                     Constraint::Length(5),
-        //                     Constraint::Length(5),
-        //                     Constraint::Length(5),
-        //                     Constraint::Length(5),
-        //                 ]
-        //                 .as_ref(),
-        //             )
-        //             .split(*r)
-        //     })
-        //     .collect();
-
-        // for (col, header) in rows.first_mut().unwrap().iter_mut().zip(header.iter()) {
-        //     Paragraph::new(Text::styled(*header, self.header_style))
-        //         .alignment(Alignment::Right)
-        //         .render(*col, buf);
-        // }
-
-        // let mut day_blocks: Vec<DayBlock> = (1..month.days(year) as u32)
-        //     .map(|day| DayBlock::new(day))
-        //     .collect();
-
-        // Mark selected day
-        // day_blocks[(day - 1) as usize].select();
-
-        // let mut row: usize = 1;
-        // for day in day_blocks.drain(..) {
-        //     let col = day.day().date().weekday().num_days_from_monday() as usize;
-        //     let weekday = day.day().date().weekday();
-        //     day.render(rows[row][col], buf);
-
-        //     // If day was 'Sunday' switch to next week
-        //     if weekday == Weekday::Sun {
-        //         row += 1;
-        //     }
-        // }
     }
 }
 
@@ -386,6 +319,8 @@ impl Default for CalendarView {
     fn default() -> Self {
         CalendarView {
             header_style: Style::default().fg(Color::Yellow),
+            horizontal_padding: 10,
+            vertical_padding: 5,
         }
     }
 }
@@ -395,10 +330,30 @@ impl CalendarView {
         self.header_style = style;
         self
     }
+
+    pub fn horizontal_padding(mut self, padding: u16) -> Self {
+        self.horizontal_padding = padding;
+        self
+    }
+
+    pub fn vertical_padding(mut self, padding: u16) -> Self {
+        self.vertical_padding = padding;
+        self
+    }
 }
 
 impl StatefulWidget for CalendarView {
     type State = Context;
 
-    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {}
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        let padded_area = Rect::new(
+            area.x + self.horizontal_padding,
+            area.y + self.vertical_padding,
+            area.width - (2 * self.horizontal_padding),
+            area.height - (2 * self.vertical_padding),
+        );
+
+        let cur_month = MonthView::new(state.get_selected_month(), state.get_selected_year());
+        cur_month.render(padded_area, buf, state);
+    }
 }
