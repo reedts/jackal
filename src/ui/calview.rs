@@ -308,8 +308,21 @@ impl StatefulWidget for MonthView {
             .collect();
 
         Widget::render(
-            Table::new(rows).header(Row::new(header.to_vec())),
-            area,
+            Table::new(rows).header(Row::new(header.to_vec())).widths(&[
+                Constraint::Length(5),
+                Constraint::Length(5),
+                Constraint::Length(5),
+                Constraint::Length(5),
+                Constraint::Length(5),
+                Constraint::Length(5),
+                Constraint::Length(5),
+            ]),
+            Rect::new(
+                area.x + self.horizontal_padding,
+                area.y + self.vertical_padding,
+                area.width - (2 * self.horizontal_padding),
+                area.height - (2 * self.vertical_padding),
+            ),
             buf,
         );
     }
@@ -319,8 +332,8 @@ impl Default for CalendarView {
     fn default() -> Self {
         CalendarView {
             header_style: Style::default().fg(Color::Yellow),
-            horizontal_padding: 10,
-            vertical_padding: 5,
+            horizontal_padding: 5,
+            vertical_padding: 10,
         }
     }
 }
