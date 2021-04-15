@@ -1,5 +1,6 @@
 use crate::calendar::{EventsOfDay, Month};
 use crate::ctx::Context;
+use crate::ui::{util, Measure};
 
 use std::convert::{From, Into};
 
@@ -157,6 +158,10 @@ impl<'a> Into<Cell<'a>> for DayCell {
 }
 
 impl MonthView {
+    const COLUMNS: u16 = 7;
+    const ROWS: u16 = 5;
+    const LABEL_ROWS: u16 = 2;
+
     pub fn new(month: Month, year: i32) -> Self {
         MonthView {
             month,
@@ -256,23 +261,12 @@ impl StatefulWidget for MonthView {
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let header = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        let centered_area = util::center_in(&self, &area).unwrap_or(area);
 
         let sel_day = state.cursor.day0();
         let sel_month = Month::from(state.cursor.month0());
         let sel_year = state.cursor.year();
         let tz = FixedOffset::from_offset(state.cursor.offset());
-
-        Block::default()
-            .borders(Borders::NONE)
-            .title(Span::styled(
-                format!("{} {}", self.month.name(), self.year),
-                if self.selected {
-                    self.label_focus_style
-                } else {
-                    self.label_style
-                },
-            ))
-            .render(area, buf);
 
         let offset = NaiveDate::from_ymd(self.year, self.month.ord(), 1)
             .weekday()
@@ -307,6 +301,18 @@ impl StatefulWidget for MonthView {
             .map(|row| Row::new(row.to_vec()))
             .collect();
 
+        Block::default()
+            .borders(Borders::NONE)
+            .title(Span::styled(
+                format!("{} {}", self.month.name(), self.year),
+                if self.selected {
+                    self.label_focus_style
+                } else {
+                    self.label_style
+                },
+            ))
+            .render(centered_area, buf);
+
         Widget::render(
             Table::new(rows).header(Row::new(header.to_vec())).widths(&[
                 Constraint::Length(5),
@@ -318,13 +324,24 @@ impl StatefulWidget for MonthView {
                 Constraint::Length(5),
             ]),
             Rect::new(
-                area.x + self.horizontal_padding,
-                area.y + self.vertical_padding,
-                area.width - (2 * self.horizontal_padding),
-                area.height - (2 * self.vertical_padding),
+                centered_area.x + self.horizontal_padding,
+                centered_area.y + MonthView::LABEL_ROWS + self.vertical_padding,
+                centered_area.width - (2 * self.horizontal_padding),
+                centered_area.height - (2 * self.vertical_padding),
             ),
             buf,
         );
+    }
+}
+
+impl Measure for MonthView {
+    fn width(&self) -> u16 {
+        // 7 days, length of 6 + column spacing of 1
+        MonthView::COLUMNS * 6 + 2 * self.vertical_padding
+    }
+
+    fn height(&self) -> u16 {
+        MonthView::ROWS + MonthView::LABEL_ROWS + 2 * self.horizontal_padding
     }
 }
 
