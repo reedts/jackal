@@ -1,16 +1,15 @@
-use crate::calendar::{EventsOfDay, Month};
-use crate::ctx::Context;
-use crate::ui::{util, Measure};
-
+use chrono::prelude::*;
+use num_traits::FromPrimitive;
 use std::convert::{From, Into};
-
-use chrono::{Datelike, FixedOffset, NaiveDate, TimeZone, Weekday};
-
 use tui::buffer::Buffer;
-use tui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use tui::layout::{Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Style};
 use tui::text::{Span, Spans, Text};
 use tui::widgets::{Block, Borders, Cell, Row, StatefulWidget, Table, Widget};
+
+use crate::calendar;
+use crate::ctx::Context;
+use crate::ui::{util, EstimatedWidgetSize, WidgetSize};
 
 pub struct DayCell {
     day_num: u8,
@@ -29,7 +28,6 @@ pub struct MonthView {
     selected: bool,
     header_style: Style,
     header_focus_style: Style,
-    header_bottom_margin: u16,
     label_style: Style,
     label_focus_style: Style,
     cell_style: Style,
@@ -37,14 +35,13 @@ pub struct MonthView {
     cell_today_style: Style,
     today_symbol: Option<char>,
     focus_symbol: Option<char>,
-    horizontal_padding: u16,
-    vertical_padding: u16,
 }
 
 pub struct CalendarView {
     header_style: Style,
     horizontal_padding: u16,
     vertical_padding: u16,
+    month_spacing: u16,
 }
 
 impl DayCell {
@@ -159,8 +156,8 @@ impl<'a> Into<Cell<'a>> for DayCell {
 
 impl MonthView {
     const COLUMNS: u16 = 7;
-    const ROWS: u16 = 5;
-    const LABEL_ROWS: u16 = 2;
+    const ROWS: u16 = 6;
+    const LABEL_ROWS: u16 = 1;
 
     pub fn new(month: Month, year: i32) -> Self {
         MonthView {
@@ -169,7 +166,6 @@ impl MonthView {
             selected: false,
             header_style: Style::default().fg(Color::Yellow),
             header_focus_style: Style::default().fg(Color::Yellow),
-            header_bottom_margin: 1,
             label_style: Style::default(),
             label_focus_style: Style::default(),
             cell_style: Style::default(),
@@ -177,8 +173,6 @@ impl MonthView {
             cell_today_style: Style::default(),
             today_symbol: Some('*'),
             focus_symbol: None,
-            horizontal_padding: 0,
-            vertical_padding: 0,
         }
     }
 
@@ -244,16 +238,6 @@ impl MonthView {
         self.focus_symbol = None;
         self
     }
-
-    pub fn horizontal_padding(mut self, padding: u16) -> Self {
-        self.horizontal_padding = padding;
-        self
-    }
-
-    pub fn vertical_padding(mut self, padding: u16) -> Self {
-        self.vertical_padding = padding;
-        self
-    }
 }
 
 impl StatefulWidget for MonthView {
@@ -261,18 +245,26 @@ impl StatefulWidget for MonthView {
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let header = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-        let centered_area = util::center_in(&self, &area).unwrap_or(area);
+        let centered_area = area; //util::center_in(&self, &area).unwrap_or(area);
 
         let sel_day = state.cursor.day0();
-        let sel_month = Month::from(state.cursor.month0());
+        let sel_month = Month::from_u32(state.cursor.month()).unwrap();
         let sel_year = state.cursor.year();
         let tz = FixedOffset::from_offset(state.cursor.offset());
 
-        let offset = NaiveDate::from_ymd(self.year, self.month.ord(), 1)
+        // set styles
+        let (label_style, header_style) = if self.selected {
+            (self.label_focus_style, self.header_focus_style)
+        } else {
+            (self.label_style, self.header_style)
+        };
+
+        let offset = NaiveDate::from_ymd(self.year, self.month.number_from_month(), 1)
             .weekday()
             .num_days_from_monday() as usize;
 
-        let mut cells: Vec<DayCell> = (1..self.month.days(self.year) as usize)
+        let mut cells: Vec<DayCell> = (1..(calendar::days_of_month(&self.month, self.year) + 1)
+            as usize)
             .map(|day_num| {
                 DayCell::new(day_num as u8)
                     .style(self.cell_style)
@@ -287,9 +279,9 @@ impl StatefulWidget for MonthView {
         }
 
         let cur_day = state.now.day0();
-        let cur_month = Month::from(state.now.month());
+        let cur_month = state.now.month();
         let cur_year = state.now.year();
-        if cur_month == self.month && cur_year == self.year {
+        if cur_month == self.month.number_from_month() && cur_year == self.year {
             cells[cur_day as usize].is_today(true);
         }
 
@@ -305,43 +297,51 @@ impl StatefulWidget for MonthView {
             .borders(Borders::NONE)
             .title(Span::styled(
                 format!("{} {}", self.month.name(), self.year),
-                if self.selected {
-                    self.label_focus_style
-                } else {
-                    self.label_style
-                },
+                label_style,
             ))
             .render(centered_area, buf);
 
         Widget::render(
-            Table::new(rows).header(Row::new(header.to_vec())).widths(&[
-                Constraint::Length(5),
-                Constraint::Length(5),
-                Constraint::Length(5),
-                Constraint::Length(5),
-                Constraint::Length(5),
-                Constraint::Length(5),
-                Constraint::Length(5),
-            ]),
+            Table::new(rows)
+                .header(Row::new(header.to_vec()).style(header_style))
+                .widths(&[
+                    Constraint::Length(5),
+                    Constraint::Length(5),
+                    Constraint::Length(5),
+                    Constraint::Length(5),
+                    Constraint::Length(5),
+                    Constraint::Length(5),
+                    Constraint::Length(5),
+                ]),
             Rect::new(
-                centered_area.x + self.horizontal_padding,
-                centered_area.y + MonthView::LABEL_ROWS + self.vertical_padding,
-                centered_area.width - (2 * self.horizontal_padding),
-                centered_area.height - (2 * self.vertical_padding),
+                centered_area.x,
+                centered_area.y + Self::LABEL_ROWS,
+                centered_area.width,
+                centered_area.height,
             ),
             buf,
         );
     }
 }
 
-impl Measure for MonthView {
+impl WidgetSize for MonthView {
     fn width(&self) -> u16 {
         // 7 days, length of 6 + column spacing of 1
-        MonthView::COLUMNS * 6 + 2 * self.vertical_padding
+        MonthView::COLUMNS * 6
     }
 
     fn height(&self) -> u16 {
-        MonthView::ROWS + MonthView::LABEL_ROWS + 2 * self.horizontal_padding
+        MonthView::ROWS + MonthView::LABEL_ROWS
+    }
+}
+
+impl EstimatedWidgetSize for MonthView {
+    fn est_width() -> u16 {
+        MonthView::COLUMNS * 6
+    }
+
+    fn est_height() -> u16 {
+        MonthView::ROWS + MonthView::LABEL_ROWS
     }
 }
 
@@ -349,8 +349,9 @@ impl Default for CalendarView {
     fn default() -> Self {
         CalendarView {
             header_style: Style::default().fg(Color::Yellow),
-            horizontal_padding: 5,
-            vertical_padding: 10,
+            horizontal_padding: 2,
+            vertical_padding: 2,
+            month_spacing: 1,
         }
     }
 }
@@ -370,6 +371,11 @@ impl CalendarView {
         self.vertical_padding = padding;
         self
     }
+
+    pub fn month_spacing(mut self, spacing: u16) -> Self {
+        self.month_spacing = spacing;
+        self
+    }
 }
 
 impl StatefulWidget for CalendarView {
@@ -383,7 +389,33 @@ impl StatefulWidget for CalendarView {
             area.height - (2 * self.vertical_padding),
         );
 
-        let cur_month = MonthView::new(state.get_selected_month(), state.get_selected_year());
-        cur_month.render(padded_area, buf, state);
+        let num_fitting_months = util::estimate_num_fits::<MonthView>(
+            Direction::Vertical,
+            &padded_area,
+            Some(self.month_spacing),
+        );
+
+        let month_views = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(
+                std::iter::repeat(Constraint::Length(
+                    MonthView::est_height() + 2 * self.month_spacing,
+                ))
+                .take(std::cmp::min(
+                    num_fitting_months,
+                    12 - state.selected_month().number_from_month() as u16,
+                ) as usize)
+                .collect::<Vec<_>>()
+                .as_ref(),
+            )
+            .split(padded_area);
+
+        for (i, &space) in month_views.iter().enumerate() {
+            MonthView::new(
+                Month::from_u32(state.selected_month().number_from_month() + i as u32).unwrap(),
+                state.selected_year(),
+            )
+            .render(space, buf, state);
+        }
     }
 }

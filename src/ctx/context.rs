@@ -1,6 +1,8 @@
-use crate::calendar::{Calendar, EventsOfDay, Month};
-use chrono::{DateTime, Datelike, FixedOffset, Local, TimeZone};
+use chrono::prelude::*;
+use num_traits::FromPrimitive;
 use tui::widgets::ListState;
+
+use crate::calendar::{Calendar, EventsOfDay};
 
 pub struct Context {
     pub calendar: Calendar,
@@ -28,22 +30,22 @@ impl Context {
         self.cursor = Local::now();
     }
 
-    pub fn get_events_of_day(&self) -> EventsOfDay<FixedOffset> {
+    pub fn events_of_day(&self) -> EventsOfDay<FixedOffset> {
         let tz = FixedOffset::from_offset(self.cursor.offset());
 
         self.calendar
             .events_of_day(&self.cursor.with_timezone(&tz).date())
     }
 
-    pub fn get_selected_day(&self) -> u32 {
+    pub fn selected_day(&self) -> u32 {
         self.cursor.day()
     }
 
-    pub fn get_selected_month(&self) -> Month {
-        Month::from(self.cursor.month())
+    pub fn selected_month(&self) -> Month {
+        Month::from_u32(self.cursor.month()).unwrap()
     }
 
-    pub fn get_selected_year(&self) -> i32 {
+    pub fn selected_year(&self) -> i32 {
         self.cursor.year()
     }
 

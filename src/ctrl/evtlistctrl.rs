@@ -53,7 +53,7 @@ impl Selection for EvtListController {
         let sel_evt = if let Some(item) = context.evtlist_context.selected() {
             std::cmp::min(
                 item + n as usize,
-                context.get_events_of_day().events().len() - 1,
+                context.events_of_day().events().len() - 1,
             )
         } else {
             0

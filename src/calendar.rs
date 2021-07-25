@@ -1,10 +1,8 @@
-use chrono::naive::NaiveDate;
-use chrono::{Date, DateTime, Datelike, Duration, FixedOffset, Offset, TimeZone, Utc};
-use std::cmp::Ordering;
+use chrono::prelude::*;
+use chrono::Duration;
+use num_traits::FromPrimitive;
 use std::collections::BTreeMap;
 use std::convert::From;
-use std::error::Error;
-use std::fmt;
 use std::fs;
 use std::io;
 use std::ops::Bound::Included;
@@ -27,24 +25,19 @@ pub struct EventsOfDay<'a, Tz: TimeZone> {
     events: Vec<&'a ical::Event<Tz>>,
 }
 
-#[derive(Clone, Copy)]
-pub enum Month {
-    January,
-    February,
-    March,
-    April,
-    May,
-    June,
-    July,
-    August,
-    September,
-    October,
-    November,
-    December,
+pub fn days_of_month(month: &Month, year: i32) -> u64 {
+    if month.number_from_month() == 12 {
+        NaiveDate::from_ymd(year + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd(year, month.number_from_month() as u32 + 1, 1)
+    }
+    .signed_duration_since(NaiveDate::from_ymd(
+        year,
+        month.number_from_month() as u32,
+        1,
+    ))
+    .num_days() as u64
 }
-
-#[derive(Debug)]
-pub struct NotAMonthError;
 
 impl Calendar {
     pub fn new(path: &Path) -> io::Result<Calendar> {
@@ -81,7 +74,7 @@ impl Calendar {
     pub fn curr_month(&self) -> Month {
         let date = Utc::now().date();
 
-        Month::from(date.naive_utc().month() - 1)
+        Month::from_u32(date.naive_utc().month()).unwrap()
     }
 
     pub fn curr_year(&self) -> i32 {
@@ -98,16 +91,12 @@ impl Calendar {
             .collect()
     }
 
-    pub fn events_of_month_and_year(
-        &self,
-        month: Month,
-        year: i32,
-    ) -> Vec<&ical::Event<FixedOffset>> {
+    pub fn events_of_month(&self, month: Month, year: i32) -> Vec<&ical::Event<FixedOffset>> {
         let b_date = Date::from_utc(
-            NaiveDate::from_ymd(year, month.num() as u32, 1),
+            NaiveDate::from_ymd(year, month.number_from_month() as u32, 1),
             chrono::offset::Utc.fix(),
         );
-        let e_date = b_date + Duration::days(month.days(year) as i64);
+        let e_date = b_date + Duration::days(days_of_month(&month, year) as i64);
 
         self.events
             .range((Included(&b_date), Included(&e_date)))
@@ -119,7 +108,7 @@ impl Calendar {
         let curr_month = self.curr_month();
         let curr_year = self.curr_year();
 
-        self.events_of_month_and_year(curr_month, curr_year)
+        self.events_of_month(curr_month, curr_year)
     }
 
     pub fn events_of_day(&self, date: &Date<FixedOffset>) -> EventsOfDay<FixedOffset> {
@@ -149,123 +138,3 @@ impl<'a> EventsOfDay<'a, FixedOffset> {
         &self.events
     }
 }
-
-impl Month {
-    pub fn ord(&self) -> u32 {
-        match *self {
-            Month::January => 0,
-            Month::February => 1,
-            Month::March => 2,
-            Month::April => 3,
-            Month::May => 4,
-            Month::June => 5,
-            Month::July => 6,
-            Month::August => 7,
-            Month::September => 8,
-            Month::October => 9,
-            Month::November => 10,
-            Month::December => 11,
-        }
-    }
-
-    pub fn num(&self) -> u32 {
-        match *self {
-            Month::January => 1,
-            Month::February => 2,
-            Month::March => 3,
-            Month::April => 4,
-            Month::May => 5,
-            Month::June => 6,
-            Month::July => 7,
-            Month::August => 8,
-            Month::September => 9,
-            Month::October => 10,
-            Month::November => 11,
-            Month::December => 12,
-        }
-    }
-
-    pub fn name(&self) -> &'static str {
-        match *self {
-            Month::January => "January",
-            Month::February => "February",
-            Month::March => "March",
-            Month::April => "April",
-            Month::May => "May",
-            Month::June => "June",
-            Month::July => "July",
-            Month::August => "August",
-            Month::September => "September",
-            Month::October => "October",
-            Month::November => "November",
-            Month::December => "December",
-        }
-    }
-
-    pub fn days(&self, year: i32) -> u64 {
-        if self.num() == 12 {
-            NaiveDate::from_ymd(year + 1, 1, 1)
-        } else {
-            NaiveDate::from_ymd(year, self.num() as u32 + 1, 1)
-        }
-        .signed_duration_since(NaiveDate::from_ymd(year, self.num() as u32, 1))
-        .num_days() as u64
-    }
-
-    pub fn next(&self) -> Month {
-        Month::from((self.num() % 12) + 1)
-    }
-
-    pub fn pred(&self) -> Month {
-        let pred = self.num() - 1;
-        Month::from(std::cmp::min(1, pred))
-    }
-}
-
-impl PartialOrd for Month {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for Month {
-    fn eq(&self, other: &Self) -> bool {
-        self.ord() == other.ord()
-    }
-}
-
-impl Eq for Month {}
-
-impl Ord for Month {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.ord().cmp(&other.ord())
-    }
-}
-
-impl From<u32> for Month {
-    fn from(value: u32) -> Self {
-        match value {
-            1 => Month::January,
-            2 => Month::February,
-            3 => Month::March,
-            4 => Month::April,
-            5 => Month::May,
-            6 => Month::June,
-            7 => Month::July,
-            8 => Month::August,
-            9 => Month::September,
-            10 => Month::October,
-            11 => Month::November,
-            12 => Month::December,
-            _ => Month::December,
-        }
-    }
-}
-
-impl fmt::Display for NotAMonthError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Value could not be converted to a month")
-    }
-}
-
-impl Error for NotAMonthError {}
