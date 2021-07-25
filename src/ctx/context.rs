@@ -1,22 +1,23 @@
-use crate::calendar::{Calendar, Day, Month};
-use crate::ctx::CalendarContext;
-use chrono::{DateTime, Datelike, FixedOffset, Utc};
+use chrono::prelude::*;
+use num_traits::FromPrimitive;
 use tui::widgets::ListState;
+
+use crate::calendar::{Calendar, EventsOfDay};
 
 pub struct Context {
     pub calendar: Calendar,
-    pub calendar_context: CalendarContext,
     pub evtlist_context: ListState,
-    now: DateTime<Utc>,
+    pub now: DateTime<Local>,
+    pub cursor: DateTime<Local>,
 }
 
 impl Context {
     pub fn new(calendar: Calendar) -> Self {
         Context {
             calendar,
-            calendar_context: CalendarContext::default(),
             evtlist_context: ListState::default(),
-            now: Utc::now(),
+            now: Local::now(),
+            cursor: Local::now(),
         }
     }
 
@@ -26,34 +27,33 @@ impl Context {
     }
 
     pub fn select_today(&mut self) {
-        let today = chrono::Utc::today();
-
-        self.calendar_context.day = today.naive_utc().day();
-        self.calendar_context.month = Month::from(today.naive_utc().month());
-        self.calendar_context.year = today.naive_utc().year();
+        self.cursor = Local::now();
     }
 
-    pub fn get_day(&self) -> Day<FixedOffset> {
-        self.calendar.events_of_day(
-            self.calendar_context.day,
-            self.calendar_context.month,
-            self.calendar_context.year,
-        )
+    pub fn events_of_day(&self) -> EventsOfDay<FixedOffset> {
+        let tz = FixedOffset::from_offset(self.cursor.offset());
+
+        self.calendar
+            .events_of_day(&self.cursor.with_timezone(&tz).date())
     }
 
-    pub fn get_month(&self) -> Month {
-        self.calendar_context.month
+    pub fn selected_day(&self) -> u32 {
+        self.cursor.day()
     }
 
-    pub fn get_year(&self) -> i32 {
-        self.calendar_context.year
+    pub fn selected_month(&self) -> Month {
+        Month::from_u32(self.cursor.month()).unwrap()
     }
 
-    pub fn now(&self) -> &DateTime<Utc> {
+    pub fn selected_year(&self) -> i32 {
+        self.cursor.year()
+    }
+
+    pub fn now(&self) -> &DateTime<Local> {
         &self.now
     }
 
     pub fn update(&mut self) {
-        self.now = Utc::now();
+        self.now = Local::now();
     }
 }

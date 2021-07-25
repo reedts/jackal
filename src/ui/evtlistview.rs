@@ -72,7 +72,7 @@ impl StatefulWidget for EvtListView {
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let items: Vec<ListItem> = {
-            let day = state.get_day();
+            let day = state.events_of_day();
 
             // FIXME: worthy?
             let evts = day.events();
