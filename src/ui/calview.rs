@@ -403,7 +403,7 @@ impl StatefulWidget for CalendarView {
                 ))
                 .take(std::cmp::min(
                     num_fitting_months,
-                    12 - state.selected_month().number_from_month() as u16,
+                    13 - state.selected_month().number_from_month() as u16,
                 ) as usize)
                 .collect::<Vec<_>>()
                 .as_ref(),
