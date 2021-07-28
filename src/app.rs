@@ -86,14 +86,10 @@ impl<'a> App<'a> {
                         for view in self.views.iter_mut() {
                             view.send_cmd(cmd, &mut self.global_ctx)?;
                         }
-                        //println!("{}", &self.global_ctx.cursor.format("%d-%m-%y_%H:%M"));
                         Ok(Cmd::Noop)
                     }
                 } else {
-                    Err(CmdError::new(format!(
-                        "Could not handle input key '{:#?}'",
-                        key
-                    )))
+                    Ok(Cmd::Noop)
                 }
             }
             _ => Ok(Cmd::Noop),
