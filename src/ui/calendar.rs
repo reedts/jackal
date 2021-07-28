@@ -8,7 +8,7 @@ use tui::text::{Span, Spans, Text};
 use tui::widgets::{Block, Borders, Cell, Row, StatefulWidget, Table, Widget};
 
 use crate::calendar;
-use crate::ctx::Context;
+use crate::context::Context;
 use crate::ui::{util, EstimatedWidgetSize, WidgetSize};
 
 pub struct DayCell {
@@ -20,28 +20,6 @@ pub struct DayCell {
     today_style: Style,
     focus_symbol: Option<char>,
     today_symbol: Option<char>,
-}
-
-pub struct MonthView {
-    month: Month,
-    year: i32,
-    selected: bool,
-    header_style: Style,
-    header_focus_style: Style,
-    label_style: Style,
-    label_focus_style: Style,
-    cell_style: Style,
-    cell_focus_style: Style,
-    cell_today_style: Style,
-    today_symbol: Option<char>,
-    focus_symbol: Option<char>,
-}
-
-pub struct CalendarView {
-    header_style: Style,
-    horizontal_padding: u16,
-    vertical_padding: u16,
-    month_spacing: u16,
 }
 
 impl DayCell {
@@ -152,6 +130,21 @@ impl<'a> Into<Cell<'a>> for DayCell {
             self.style
         })
     }
+}
+
+pub struct MonthView {
+    month: Month,
+    year: i32,
+    selected: bool,
+    header_style: Style,
+    header_focus_style: Style,
+    label_style: Style,
+    label_focus_style: Style,
+    cell_style: Style,
+    cell_focus_style: Style,
+    cell_today_style: Style,
+    today_symbol: Option<char>,
+    focus_symbol: Option<char>,
 }
 
 impl MonthView {
@@ -278,9 +271,9 @@ impl StatefulWidget for MonthView {
             cells[sel_day as usize].select();
         }
 
-        let cur_day = state.now.day0();
-        let cur_month = state.now.month();
-        let cur_year = state.now.year();
+        let cur_day = state.now().day0();
+        let cur_month = state.now().month();
+        let cur_year = state.now().year();
         if cur_month == self.month.number_from_month() && cur_year == self.year {
             cells[cur_day as usize].is_today(true);
         }
@@ -343,6 +336,17 @@ impl EstimatedWidgetSize for MonthView {
     fn est_height() -> u16 {
         MonthView::ROWS + MonthView::LABEL_ROWS
     }
+}
+
+pub struct CalendarViewState {
+    offset: usize,
+}
+
+pub struct CalendarView {
+    header_style: Style,
+    horizontal_padding: u16,
+    vertical_padding: u16,
+    month_spacing: u16,
 }
 
 impl Default for CalendarView {

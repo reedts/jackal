@@ -5,9 +5,10 @@ use tui::widgets::ListState;
 use crate::calendar::{Calendar, EventsOfDay};
 
 pub struct Context {
-    pub calendar: Calendar,
+    calendar: Calendar,
     pub evtlist_context: ListState,
-    pub now: DateTime<Local>,
+    pub monthview_context: ListState,
+    now: DateTime<Local>,
     pub cursor: DateTime<Local>,
 }
 
@@ -16,6 +17,7 @@ impl Context {
         Context {
             calendar,
             evtlist_context: ListState::default(),
+            monthview_context: ListState::default(),
             now: Local::now(),
             cursor: Local::now(),
         }

@@ -1,6 +1,6 @@
 use crate::cmds::{Cmd, CmdError, CmdResult};
 use crate::config::KeyMap;
-use crate::ctx::Context;
+use crate::context::Context;
 use crate::events::Event;
 
 pub trait Control {

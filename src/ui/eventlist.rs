@@ -1,5 +1,5 @@
-use crate::ctx::Context;
-use crate::ui::evtview::EventView;
+use crate::context::Context;
+use crate::ui::EventView;
 use chrono::{NaiveTime, Utc};
 use tui::buffer::Buffer;
 use tui::layout::{Layout, Rect};
@@ -7,7 +7,23 @@ use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans, Text};
 use tui::widgets::{Block, Borders, List, ListItem, Paragraph, StatefulWidget, Widget};
 
-pub struct EvtListView {
+pub struct EvtListContext {
+    event: u32,
+}
+
+impl Default for EvtListContext {
+    fn default() -> Self {
+        EvtListContext { event: 0 }
+    }
+}
+
+impl EvtListContext {
+    pub fn new(idx: u32) -> Self {
+        EvtListContext { event: idx }
+    }
+}
+
+pub struct EventListView {
     style: Style,
     focus_style: Style,
     vertical_padding: u16,
@@ -16,15 +32,9 @@ pub struct EvtListView {
     cursor_indent: u16,
 }
 
-struct EvtListCursor {
-    style: Style,
-    time: NaiveTime,
-    indent: u16,
-}
-
-impl Default for EvtListView {
+impl Default for EventListView {
     fn default() -> Self {
-        EvtListView {
+        EventListView {
             style: Style::default(),
             focus_style: Style::default(),
             vertical_padding: 5,
@@ -35,7 +45,7 @@ impl Default for EvtListView {
     }
 }
 
-impl EvtListView {
+impl EventListView {
     pub fn style(mut self, style: Style) -> Self {
         self.style = style;
         self
@@ -67,7 +77,7 @@ impl EvtListView {
     }
 }
 
-impl StatefulWidget for EvtListView {
+impl StatefulWidget for EventListView {
     type State = Context;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
@@ -95,7 +105,7 @@ impl StatefulWidget for EvtListView {
                 // FIXME: Ther must be a better way to unwrap
                 items.insert(
                     pos.unwrap_or_else(std::convert::identity),
-                    ListItem::new(EvtListCursor::new(now.time()).indent(self.cursor_indent)),
+                    ListItem::new(EventListCursor::new(now.time()).indent(self.cursor_indent)),
                 );
             }
 
@@ -129,9 +139,15 @@ impl StatefulWidget for EvtListView {
     }
 }
 
-impl EvtListCursor {
+struct EventListCursor {
+    style: Style,
+    time: NaiveTime,
+    indent: u16,
+}
+
+impl EventListCursor {
     fn new(time: NaiveTime) -> Self {
-        EvtListCursor {
+        EventListCursor {
             style: Style::default(),
             time,
             indent: 0,
@@ -149,7 +165,7 @@ impl EvtListCursor {
     }
 }
 
-impl<'a> Into<Text<'a>> for EvtListCursor {
+impl<'a> Into<Text<'a>> for EventListCursor {
     fn into(self) -> Text<'a> {
         Text::from(Spans::from(vec![
             Span::raw(" ".repeat(self.indent as usize)),

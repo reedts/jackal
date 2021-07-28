@@ -1,11 +1,10 @@
 use crate::calendar::Calendar;
-use crate::cmds::{Cmd, CmdError, CmdResult};
+use crate::cmds::{Cmd, CmdResult};
 use crate::config::Config;
-use crate::ctrl::{CalendarController, Control, Controller, EvtListController};
-use crate::ctx::{Context, EvtListContext};
+use crate::context::Context;
+use crate::control::{CalendarController, Control, Controller, EventListController};
 use crate::events::Event;
-use crate::ui::calview::CalendarView;
-use crate::ui::evtlistview::EvtListView;
+use crate::ui::{CalendarView, EventListView};
 
 use tui::backend::Backend;
 use tui::layout::{Constraint, Direction, Layout};
@@ -24,7 +23,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                 f.render_stateful_widget(CalendarView::default(), layout[0], &mut app.global_ctx)
             }
             View::Events(_) => {
-                f.render_stateful_widget(EvtListView::default(), layout[1], &mut app.global_ctx)
+                f.render_stateful_widget(EventListView::default(), layout[1], &mut app.global_ctx)
             }
         }
     }
@@ -32,7 +31,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
 pub enum View<'a> {
     Calendar(Controller<'a, CalendarController>),
-    Events(Controller<'a, EvtListController>),
+    Events(Controller<'a, EventListController>),
 }
 
 pub struct App<'a> {
@@ -63,7 +62,7 @@ impl<'a> App<'a> {
                 )),
                 View::Events(Controller::new(
                     &config.key_map,
-                    EvtListController::default(),
+                    EventListController::default(),
                 )),
             ],
             config,

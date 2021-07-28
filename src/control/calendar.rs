@@ -1,6 +1,6 @@
 use crate::cmds::{Cmd, CmdResult};
-use crate::ctrl::{Control, Selection};
-use crate::ctx::Context;
+use crate::context::Context;
+use crate::control::{Control, Selection};
 
 pub struct CalendarController {}
 

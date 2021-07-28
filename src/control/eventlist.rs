@@ -1,16 +1,16 @@
 use crate::cmds::{Cmd, CmdResult};
-use crate::ctrl::{Control, Selection};
-use crate::ctx::Context;
+use crate::context::Context;
+use crate::control::{Control, Selection};
 
-pub struct EvtListController {}
+pub struct EventListController {}
 
-impl Default for EvtListController {
+impl Default for EventListController {
     fn default() -> Self {
-        EvtListController {}
+        EventListController {}
     }
 }
 
-impl Control for EvtListController {
+impl Control for EventListController {
     fn send_cmd(&mut self, cmd: &Cmd, context: &mut Context) -> CmdResult {
         use Cmd::*;
         match cmd {
@@ -23,7 +23,7 @@ impl Control for EvtListController {
     }
 }
 
-impl Selection for EvtListController {
+impl Selection for EventListController {
     fn move_left(&mut self, _context: &mut Context) {}
 
     fn move_right(&mut self, _context: &mut Context) {}

@@ -1,11 +1,11 @@
-pub mod calview;
-pub mod evtlistview;
-pub mod evtview;
+pub mod calendar;
+pub mod event;
+pub mod eventlist;
+pub mod util;
 
-pub(crate) mod util;
-
-pub use calview::CalendarView;
-pub use evtview::EventView;
+pub use self::calendar::{CalendarView, CalendarViewState};
+pub use self::event::EventView;
+pub use self::eventlist::EventListView;
 
 pub trait WidgetSize {
     fn width(&self) -> u16;
