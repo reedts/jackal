@@ -1,6 +1,8 @@
 use chrono::prelude::*;
 use num_traits::FromPrimitive;
+use std::cmp::Ordering;
 use std::convert::{From, Into};
+use std::ops::{Add, Sub};
 use tui::buffer::Buffer;
 use tui::layout::{Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Style};
@@ -233,6 +235,12 @@ impl MonthView {
     }
 }
 
+impl From<MonthIndex> for MonthView {
+    fn from(v: MonthIndex) -> Self {
+        Self::new(v.index, v.year)
+    }
+}
+
 impl StatefulWidget for MonthView {
     type State = Context;
 
@@ -338,8 +346,152 @@ impl EstimatedWidgetSize for MonthView {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MonthIndex {
+    index: Month,
+    year: i32,
+}
+
+impl MonthIndex {
+    pub fn new(index: Month, year: i32) -> Self {
+        MonthIndex { index, year }
+    }
+
+    pub fn next(&self) -> Self {
+        let next_month = self.index.succ();
+
+        MonthIndex {
+            index: next_month,
+            year: if next_month.number_from_month() == 1 {
+                self.year + 1
+            } else {
+                self.year
+            },
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        let prev_month = self.index.succ();
+
+        MonthIndex {
+            index: prev_month,
+            year: if prev_month.number_from_month() == 12 {
+                self.year - 1
+            } else {
+                self.year
+            },
+        }
+    }
+}
+
+impl Default for MonthIndex {
+    fn default() -> Self {
+        MonthIndex {
+            index: Month::from_u32(Local::now().month()).unwrap_or(Month::January),
+            year: Local::now().year(),
+        }
+    }
+}
+
+impl<T: Datelike> From<T> for MonthIndex {
+    fn from(m: T) -> Self {
+        MonthIndex::new(Month::from_u32(m.month()).unwrap(), m.year())
+    }
+}
+
+impl Add<u32> for MonthIndex {
+    type Output = MonthIndex;
+    fn add(self, rhs: u32) -> Self::Output {
+        let month_sum = self.index.number_from_month() + rhs;
+        if month_sum <= 12 {
+            MonthIndex {
+                index: Month::from_u32(month_sum).unwrap(),
+                year: self.year,
+            }
+        } else {
+            let year_diff = month_sum / 12;
+            let new_month = (month_sum % 12) + 1;
+
+            MonthIndex {
+                index: Month::from_u32(new_month).unwrap(),
+                year: self.year + year_diff as i32,
+            }
+        }
+    }
+}
+
+impl Sub<u32> for MonthIndex {
+    type Output = MonthIndex;
+    fn sub(self, rhs: u32) -> Self::Output {
+        let month_number = self.index.number_from_month();
+        if rhs < month_number {
+            MonthIndex {
+                index: Month::from_u32(month_number - rhs).unwrap(),
+                year: self.year,
+            }
+        } else {
+            let month_diff = (month_number as i32 - rhs as i32).abs();
+            let year_diff = month_diff / 12;
+            let new_month = (month_diff % 12) + 1;
+
+            MonthIndex {
+                index: Month::from_u32(new_month as u32).unwrap(),
+                year: self.year - year_diff as i32,
+            }
+        }
+    }
+}
+
+impl PartialOrd for MonthIndex {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if self.year != other.year {
+            self.year.partial_cmp(&other.year)
+        } else {
+            self.index
+                .number_from_month()
+                .partial_cmp(&other.index.number_from_month())
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct CalendarViewState {
-    offset: usize,
+    offset: MonthIndex,
+    scrolloff: u32,
+}
+
+impl Default for CalendarViewState {
+    fn default() -> Self {
+        CalendarViewState {
+            offset: Local::today().naive_local().into(),
+            scrolloff: 1,
+        }
+    }
+}
+
+impl CalendarViewState {
+    pub fn new<T>(selected: T, scrolloff: u32) -> Self
+    where
+        MonthIndex: From<T>,
+    {
+        CalendarViewState {
+            offset: MonthIndex::from(selected.into()),
+            scrolloff,
+        }
+    }
+
+    pub fn select<T>(&mut self, idx: T, max: u32)
+    where
+        MonthIndex: From<T>,
+    {
+        let m_idx = MonthIndex::from(idx);
+
+        if m_idx >= ((self.offset + max) - self.scrolloff) {
+            self.offset = m_idx + self.scrolloff;
+        } else if m_idx < self.offset + self.scrolloff {
+            self.offset = m_idx - self.scrolloff;
+        }
+    }
 }
 
 pub struct CalendarView {
@@ -403,23 +555,22 @@ impl StatefulWidget for CalendarView {
             .direction(Direction::Vertical)
             .constraints(
                 std::iter::repeat(Constraint::Length(
-                    MonthView::est_height() + 2 * self.month_spacing,
+                    MonthView::est_height() + self.month_spacing,
                 ))
-                .take(std::cmp::min(
-                    num_fitting_months,
-                    13 - state.selected_month().number_from_month() as u16,
-                ) as usize)
+                .take(num_fitting_months as usize)
                 .collect::<Vec<_>>()
                 .as_ref(),
             )
             .split(padded_area);
 
+        state
+            .calendarview_context
+            .select(state.cursor, num_fitting_months as u32);
+
+        let month_iter = state.calendarview_context.offset;
+
         for (i, &space) in month_views.iter().enumerate() {
-            MonthView::new(
-                Month::from_u32(state.selected_month().number_from_month() + i as u32).unwrap(),
-                state.selected_year(),
-            )
-            .render(space, buf, state);
+            MonthView::from(month_iter + i as u32).render(space, buf, state);
         }
     }
 }

@@ -133,7 +133,7 @@ impl StatefulWidget for EventListView {
                     area.height - 2 * self.horizontal_padding,
                 ),
                 buf,
-                &mut state.evtlist_context,
+                &mut state.eventlist_context,
             );
         }
     }

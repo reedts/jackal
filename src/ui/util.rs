@@ -24,10 +24,10 @@ pub(crate) fn estimate_num_fits<T: EstimatedWidgetSize>(
 ) -> u16 {
     match direction {
         Direction::Horizontal => {
-            (space.width + additional_padding.unwrap_or_default()) / T::est_width()
+            space.width / (T::est_width() + additional_padding.unwrap_or_default())
         }
         Direction::Vertical => {
-            (space.height + additional_padding.unwrap_or_default()) / T::est_height()
+            space.height / (T::est_height() + additional_padding.unwrap_or_default())
         }
     }
 }

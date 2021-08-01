@@ -72,7 +72,7 @@ impl Default for Config {
     fn default() -> Config {
         let mut config = Config {
             key_map: HashMap::new(),
-            tick_rate: Duration::from_millis(500),
+            tick_rate: Duration::from_secs(60),
             calendar_params: HashMap::new(),
         };
 

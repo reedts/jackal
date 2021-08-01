@@ -3,11 +3,12 @@ use num_traits::FromPrimitive;
 use tui::widgets::ListState;
 
 use crate::calendar::{Calendar, EventsOfDay};
+use crate::ui::CalendarViewState;
 
 pub struct Context {
     calendar: Calendar,
-    pub evtlist_context: ListState,
-    pub monthview_context: ListState,
+    pub eventlist_context: ListState,
+    pub calendarview_context: CalendarViewState,
     now: DateTime<Local>,
     pub cursor: DateTime<Local>,
 }
@@ -16,8 +17,8 @@ impl Context {
     pub fn new(calendar: Calendar) -> Self {
         Context {
             calendar,
-            evtlist_context: ListState::default(),
-            monthview_context: ListState::default(),
+            eventlist_context: ListState::default(),
+            calendarview_context: CalendarViewState::new(Local::now(), 1),
             now: Local::now(),
             cursor: Local::now(),
         }
