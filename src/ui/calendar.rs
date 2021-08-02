@@ -492,7 +492,7 @@ impl CalendarViewState {
         let m_idx = MonthIndex::from(idx);
 
         if m_idx >= ((self.offset + max) - self.scrolloff) {
-            self.offset = m_idx + self.scrolloff;
+            self.offset = self.offset + self.scrolloff;
         } else if m_idx < self.offset + self.scrolloff {
             self.offset = m_idx - self.scrolloff;
         }
