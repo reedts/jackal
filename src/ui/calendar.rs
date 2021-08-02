@@ -410,7 +410,7 @@ impl Add<u32> for MonthIndex {
             }
         } else {
             let year_diff = month_sum / 12;
-            let new_month = (month_sum % 12) + 1;
+            let new_month = month_sum % 12;
 
             MonthIndex {
                 index: Month::from_u32(new_month).unwrap(),
@@ -429,10 +429,15 @@ impl Sub<u32> for MonthIndex {
                 index: Month::from_u32(month_number - rhs).unwrap(),
                 year: self.year,
             }
+        } else if rhs == month_number {
+            MonthIndex {
+                index: Month::December,
+                year: self.year - 1,
+            }
         } else {
-            let month_diff = (month_number as i32 - rhs as i32).abs();
-            let year_diff = month_diff / 12;
-            let new_month = (month_diff % 12) + 1;
+            let month_diff = month_number as i32 - rhs as i32;
+            let new_month = month_diff.rem_euclid(12);
+            let year_diff = month_diff.abs() / 12;
 
             MonthIndex {
                 index: Month::from_u32(new_month as u32).unwrap(),
