@@ -1,6 +1,5 @@
 mod agenda;
 mod app;
-mod args;
 mod cmds;
 mod config;
 mod context;
@@ -9,24 +8,49 @@ mod events;
 mod ical;
 mod ui;
 
-use std::io;
-use structopt::StructOpt;
-use termion::{raw::IntoRawMode, screen::AlternateScreen};
-use tui::backend::TermionBackend;
-use tui::Terminal;
-
 use agenda::Agenda;
 use app::App;
-use args::Args;
 use config::Config;
-use events::{Dispatcher, Event};
+use events::Dispatcher;
+use std::io::stdout;
+use std::path::PathBuf;
+use structopt::StructOpt;
+use unsegen::base::Terminal;
 
-fn main() -> io::Result<()> {
+#[derive(Debug, StructOpt)]
+#[structopt(
+    name = "jk",
+    author = "Julian Bigge <j.reedts@gmail.com>",
+    about = "Jackal - A TUI calendar application."
+)]
+pub struct Args {
+    #[structopt(help = "input folder containing *.ics files", parse(from_os_str))]
+    pub input: Option<PathBuf>,
+
+    #[structopt(
+        name = "CONFIG",
+        short = "c",
+        long = "config",
+        help = "path to config file",
+        parse(from_os_str)
+    )]
+    pub configfile: Option<PathBuf>,
+
+    #[structopt(
+        short = "s",
+        long = "show",
+        help = "only show calendar non-interactively"
+    )]
+    pub show: bool,
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
-
     let config = Config::default();
-
     let dispatcher = Dispatcher::from_config(config.clone());
+    // Setup unsegen terminal
+    let stdout = stdout();
+    let mut term = Terminal::new(stdout.lock())?;
 
     let calendar = if let Some(path) = args.input {
         Agenda::new(&path)?
@@ -41,42 +65,5 @@ fn main() -> io::Result<()> {
 
     let mut app = App::new(&config, calendar);
 
-    if args.show {
-        let stdout = io::stdout().into_raw_mode()?;
-        let backend = TermionBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-
-        terminal.draw(|mut f| {
-            app::draw(&mut f, &mut app);
-        })?;
-    } else {
-        let stdout = io::stdout().into_raw_mode()?;
-        let stdout = AlternateScreen::from(stdout);
-        let backend = TermionBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-        terminal.hide_cursor()?;
-
-        loop {
-            // Draw
-            terminal.draw(|mut f| {
-                app::draw(&mut f, &mut app);
-            })?;
-
-            // Handle events
-            let result = match dispatcher.next() {
-                Ok(event) => match event {
-                    Event::Tick => app.handle(Event::Tick),
-                    Event::Input(key) => app.handle(Event::Input(key)),
-                    _ => Ok(cmds::Cmd::Noop),
-                },
-                Err(e) => Err(cmds::CmdError::new(format!("{}", e))),
-            }?;
-
-            if app.quit {
-                break;
-            }
-        }
-    }
-
-    Ok(())
+    app.run(dispatcher, term)
 }

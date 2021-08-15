@@ -1,33 +1,11 @@
 use crate::agenda::Agenda;
-use crate::cmds::{Cmd, CmdResult};
+use crate::cmds::*;
 use crate::config::Config;
 use crate::context::Context;
-use crate::control::{CalendarController, Control, Controller, EventListController};
-use crate::events::Event;
-use crate::ui::{CalendarView, EventListView};
+use crate::control::*;
+use crate::events::{Dispatcher, Event};
 
-use tui::backend::Backend;
-use tui::layout::{Constraint, Direction, Layout};
-use tui::Frame;
-
-pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
-    let layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .margin(1)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-        .split(f.size());
-
-    for view in app.views.iter_mut() {
-        match view {
-            View::Calendar(_) => {
-                f.render_stateful_widget(CalendarView::default(), layout[0], &mut app.global_ctx)
-            }
-            View::Events(_) => {
-                f.render_stateful_widget(EventListView::default(), layout[1], &mut app.global_ctx)
-            }
-        }
-    }
-}
+use unsegen::base::Terminal;
 
 pub enum View<'a> {
     Calendar(Controller<'a, CalendarController>),
@@ -38,7 +16,7 @@ pub struct App<'a> {
     pub quit: bool,
     views: [View<'a>; 2],
     config: &'a Config,
-    global_ctx: Context,
+    global_ctx: Context<'a>,
 }
 
 impl<'a> Control for View<'a> {
@@ -93,5 +71,31 @@ impl<'a> App<'a> {
             }
             _ => Ok(Cmd::Noop),
         }
+    }
+
+    pub fn run(&mut self, dispatcher: Dispatcher, mut term: Terminal) -> Result<(), Box<dyn std::error::Error>>
+    {
+        loop {
+            // Handle events
+            let result = match dispatcher.next() {
+                Ok(event) => match event {
+                    Event::Tick => self.handle(Event::Tick),
+                    Event::Input(key) => self.handle(Event::Input(key)),
+                    _ => Ok(Cmd::Noop),
+                },
+                Err(e) => Err(CmdError::new(format!("{}", e))),
+            }?;
+
+            if self.quit {
+                break;
+            }
+            
+            // Draw
+            let root = term.create_root_window();
+
+            term.present();
+        }
+
+        Ok(())
     }
 }
