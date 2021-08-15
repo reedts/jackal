@@ -1,24 +1,19 @@
-use crate::ical::{Event, Occurrence};
-use chrono::FixedOffset;
+use crate::ical::{Event, OccurrenceSpec};
 use std::convert::Into;
 use tui::style::Style;
 use tui::text::{Span, Spans, Text};
 
 pub struct EventView {
     pub style: Style,
-    pub begin: Occurrence<FixedOffset>,
-    pub end: Occurrence<FixedOffset>,
-    pub summary: String,
+    pub event: Event,
     indent: u16,
 }
 
-impl<'a> EventView {
-    pub fn with(event: &Event<FixedOffset>) -> Self {
+impl EventView {
+    pub fn with(event: &Event) -> Self {
         EventView {
             style: Style::default(),
-            begin: event.begin().clone(),
-            end: event.end().clone(),
-            summary: event.summary().to_owned(),
+            event: event.clone(),
             indent: 0,
         }
     }
@@ -31,7 +26,7 @@ impl<'a> EventView {
 
 impl<'a> Into<Text<'a>> for EventView {
     fn into(self) -> Text<'a> {
-        use Occurrence::*;
+        use OccurrenceSpec::*;
         Text::from(vec![
             Spans::from(vec![
                 Span::raw(" ".repeat(self.indent as usize)),
@@ -54,7 +49,7 @@ impl<'a> Into<Text<'a>> for EventView {
             Spans::from(vec![
                 Span::raw(" ".repeat(self.indent as usize)),
                 Span::raw("  "),
-                Span::styled(self.summary, self.style),
+                Span::styled(self.event.summary(), self.style),
             ]),
             Spans::default(),
         ])

@@ -15,6 +15,7 @@ pub enum ErrorKind {
     EventParse,
     EventMissingKey,
     TimeParse,
+    DateParse
 }
 
 impl Error {

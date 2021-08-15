@@ -1,6 +1,5 @@
 use chrono::prelude::*;
 use num_traits::FromPrimitive;
-use std::cmp::Ordering;
 use std::convert::{From, Into};
 use std::ops::{Add, Sub};
 use tui::buffer::Buffer;
@@ -9,7 +8,6 @@ use tui::style::{Color, Style};
 use tui::text::{Span, Spans, Text};
 use tui::widgets::{Block, Borders, Cell, Row, StatefulWidget, Table, Widget};
 
-use crate::calendar;
 use crate::context::Context;
 use crate::ui::{util, EstimatedWidgetSize, WidgetSize};
 

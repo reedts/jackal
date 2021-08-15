@@ -1,6 +1,6 @@
+mod agenda;
 mod app;
 mod args;
-mod calendar;
 mod cmds;
 mod config;
 mod context;
@@ -15,9 +15,9 @@ use termion::{raw::IntoRawMode, screen::AlternateScreen};
 use tui::backend::TermionBackend;
 use tui::Terminal;
 
+use agenda::Agenda;
 use app::App;
 use args::Args;
-use calendar::Calendar;
 use config::Config;
 use events::{Dispatcher, Event};
 
@@ -29,10 +29,10 @@ fn main() -> io::Result<()> {
     let dispatcher = Dispatcher::from_config(config.clone());
 
     let calendar = if let Some(path) = args.input {
-        Calendar::new(&path)?
+        Agenda::new(&path)?
     } else if let Some(calendar_params) = config.calendar_params() {
         // TODO: Handle multiple calendars here. To be thought through...
-        Calendar::new(&(calendar_params[0].path))?
+        Agenda::new(&(calendar_params[0].path))?
     } else {
         // Not one calendar found
         println!("Nothing to do.");

@@ -1,4 +1,4 @@
-use crate::calendar::Calendar;
+use crate::agenda::Agenda;
 use crate::cmds::{Cmd, CmdResult};
 use crate::config::Config;
 use crate::context::Context;
@@ -51,7 +51,7 @@ impl<'a> Control for View<'a> {
 }
 
 impl<'a> App<'a> {
-    pub fn new(config: &'a Config, calendar: Calendar) -> App<'a> {
+    pub fn new(config: &'a Config, calendar: Agenda) -> App<'a> {
         let global_ctx = Context::new(calendar).with_today();
         App {
             quit: false,
