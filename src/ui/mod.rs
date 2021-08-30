@@ -1,3 +1,3 @@
-pub mod calendar_pane;
+pub mod calendar_window;
 
-pub use calendar_pane::*;
+pub use calendar_window::*;
