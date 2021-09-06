@@ -50,6 +50,7 @@ impl<'a> EventsOfDay<'a, FixedOffset> {
     }
 }
 
+#[derive(Clone)]
 pub struct Agenda<'a> {
     path: &'a Path,
     collections: Vec<ical::Collection<'a>>,

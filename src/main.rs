@@ -2,8 +2,6 @@ mod agenda;
 mod app;
 mod cmds;
 mod config;
-mod context;
-mod control;
 mod events;
 mod ical;
 mod ui;

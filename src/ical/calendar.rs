@@ -1,6 +1,5 @@
 use chrono::{
-    Date, DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone,
-    Timelike, Utc,
+    Date, DateTime, FixedOffset, Month, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc,
 };
 use chrono_tz::Tz;
 use ical::parser::ical::component::IcalCalendar;
@@ -8,7 +7,6 @@ use ical::parser::ical::IcalParser;
 use std::convert::TryFrom;
 use std::fs;
 use std::io;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -19,20 +17,7 @@ use crate::ical::{Error, ErrorKind};
 
 use super::{IcalResult, ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE};
 
-fn days_of_month(month: &Month, year: i32) -> u64 {
-    if month.number_from_month() == 12 {
-        NaiveDate::from_ymd(year + 1, 1, 1)
-    } else {
-        NaiveDate::from_ymd(year, month.number_from_month() as u32 + 1, 1)
-    }
-    .signed_duration_since(NaiveDate::from_ymd(
-        year,
-        month.number_from_month() as u32,
-        1,
-    ))
-    .num_days() as u64
-}
-
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct TimeSpan<'a> {
     begin: &'a DateTimeSpec,
     end: &'a DateTimeSpec,
@@ -256,6 +241,7 @@ impl Event {
     }
 }
 
+#[derive(Clone)]
 pub struct Calendar {
     path: PathBuf,
     ical: IcalCalendar,
@@ -325,6 +311,7 @@ impl Calendar {
     }
 }
 
+#[derive(Clone)]
 pub struct Collection<'a> {
     path: &'a Path,
     friendly_name: Option<&'a str>,

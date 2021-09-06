@@ -1,119 +1,147 @@
+use crate::ical::days_of_month;
+use chrono::{Datelike, Month, NaiveDate};
+use std::fmt::Display;
+use std::fmt::Write;
 use unsegen::base::*;
 use unsegen::widget::*;
 
-pub struct DayCell {
+use super::{Context, Theme};
+
+pub struct DayCell<'a> {
     day_num: u8,
     selected: bool,
     is_today: bool,
-    style: Style,
-    focus_style: StyleModifier,
-    today_style: StyleModifier,
-    focus_symbol: Option<char>,
-    today_symbol: Option<char>,
+    theme: &'a Theme,
 }
 
-impl DayCell {
+impl<'a> DayCell<'a> {
     const CELL_HEIGHT: usize = 1;
     const CELL_WIDTH: usize = 4;
 
-    pub fn new(day_num: u8) -> Self {
+    fn new(day_num: u8, theme: &'a Theme) -> Self {
         DayCell {
             day_num,
             selected: false,
             is_today: false,
-            style: Style::default(),
-            focus_style: StyleModifier::new().bg_color(Color::Blue),
-            today_style: StyleModifier::new(),
-            focus_symbol: None,
-            today_symbol: None,
+            theme,
         }
     }
 
-    pub fn style(mut self, style: Style) -> Self {
-        self.style = style;
-        self
-    }
-
-    pub fn focus_style(mut self, style: StyleModifier) -> Self {
-        self.focus_style = style;
-        self
-    }
-
-    pub fn today_style(mut self, style: StyleModifier) -> Self {
-        self.today_style = style;
-        self
-    }
-
-    pub fn focus_symbol(mut self, symbol: char) -> Self {
-        self.focus_symbol = Some(symbol);
-        self
-    }
-
-    pub fn focus_symbol_opt(mut self, symbol_opt: Option<char>) -> Self {
-        self.focus_symbol = symbol_opt;
-        self
-    }
-
-    pub fn today_symbol(mut self, symbol: char) -> Self {
-        self.today_symbol = Some(symbol);
-        self
-    }
-
-    pub fn today_symbol_opt(mut self, symbol_opt: Option<char>) -> Self {
-        self.today_symbol = symbol_opt;
-        self
-    }
-
-    pub fn select(&mut self) {
-        self.selected = true;
-    }
-
-    pub fn unselect(&mut self) {
-        self.selected = false;
-    }
-
-    pub fn selected(mut self, selected: bool) -> Self {
+    fn set_selected(&mut self, selected: bool) {
         self.selected = selected;
+    }
+
+    fn select(mut self, selected: bool) -> Self {
+        self.set_selected(selected);
         self
     }
 
-    pub fn is_today(&mut self, is_today: bool) {
+    fn set_today(&mut self, is_today: bool) {
         self.is_today = is_today;
     }
 
-    pub fn today(mut self, is_today: bool) -> Self {
-        self.is_today(is_today);
+    fn today(mut self, is_today: bool) -> Self {
+        self.set_today(is_today);
         self
     }
+}
 
-    pub fn day_num(&self) -> u8 {
-        self.day_num
+impl Display for DayCell<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let arg_today = if self.is_today {
+            &self.theme.today_day_char.unwrap_or(' ')
+        } else {
+            &' '
+        };
+
+        let arg_focus = if self.selected {
+            &self.theme.focus_day_char.unwrap_or(' ')
+        } else {
+            &' '
+        };
+
+        write!(f, "{}{}{:>2}", arg_today, arg_today, self.day_num)
     }
 }
 
-impl Widget for DayCell {
-    fn draw(&self, window: Window, hints: RenderingHints) {
-        let mut c = Cursor::new(&mut window);
-        c.move_by(ColDiff::new(1), RowDiff::new(0));
-        if self.is_today {
-            c.write(&self.today_symbol.unwrap_or('*').to_string());
-        }
-        c.style_modifier(if hints.active {
-            self.focus_style
-        } else {
-            StyleModifier::default()
-        })
-        .write(&self.day_num.to_string());
-    }
+#[derive(Clone)]
+pub struct MonthPane<'a, 'c : 'a> {
+    month: Month,
+    year: i32,
+    num_days: u8,
+    offset: u8,
+    context: &'a Context<'c>,
+}
 
+impl<'a, 'c: 'a> MonthPane<'a, 'c> {
+    const COLUMNS: usize = 7;
+    const ROWS: usize = 6;
+    const HEADER_ROWS: usize = 1;
+
+    const HEADER: &'static [&'static str] = &["Mon", "Tue", "Wen", "Thu", "Fri", "Sat", "Sun"];
+
+    fn new<'b: 'a>(month: Month, year: i32, context: &'b Context<'c>) -> Self {
+        let num_days = days_of_month(&month, year);
+        let offset = NaiveDate::from_ymd(year, month.number_from_month(), 1)
+            .weekday()
+            .num_days_from_monday() as u8;
+
+        MonthPane {
+            month,
+            year,
+            num_days: num_days as u8,
+            offset,
+            context,
+        }
+    }
+}
+
+impl<'a, 'c> Widget for MonthPane<'a, 'c> {
     fn space_demand(&self) -> Demand2D {
         Demand2D {
-            width: ColDemand::exact(DayCell::CELL_WIDTH),
-            height: RowDemand::exact(DayCell::CELL_HEIGHT),
+            width: ColDemand::exact(Self::COLUMNS * DayCell::CELL_WIDTH),
+            height: RowDemand::exact(Self::HEADER_ROWS + Self::ROWS * DayCell::CELL_HEIGHT),
         }
     }
-}
 
-struct DayRow {
+    fn draw(&self, window: Window, hints: RenderingHints) {
+        let theme = &self.context.tui_context().theme;
 
+        let mut cursor = Cursor::new(&mut window)
+            .wrapping_mode(WrappingMode::Wrap)
+            .style_modifier(
+                theme
+                    .month_header_style
+                    .format(theme.month_header_text_style),
+            );
+
+        // print Header first
+        for &head in Self::HEADER {
+            write!(&cursor, "{:>width$}", &head, width = DayCell::CELL_WIDTH);
+        }
+
+        // set offset for first row and set modifier
+        cursor
+            .style_modifier(theme.day_style.format(theme.day_text_style))
+            .move_by(
+                ColDiff::new((DayCell::CELL_WIDTH * self.offset as usize) as i32),
+                RowDiff::new(0),
+            );
+
+        for (idx, cell) in (1..self.num_days)
+            .into_iter()
+            .map(|idx| DayCell::new(idx, &theme))
+            .into_iter()
+            .enumerate()
+        {
+            write!(
+                &cursor,
+                "{}",
+                cell.select(false).today(
+                    &self.context.now().month() == &self.month.number_from_month()
+                        && self.context.now().day() == idx as u32 + 1
+                )
+            );
+        }
+    }
 }
