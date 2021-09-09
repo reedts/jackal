@@ -49,18 +49,18 @@ impl<'a> DayCell<'a> {
 impl Display for DayCell<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let arg_today = if self.is_today {
-            &self.theme.today_day_char.unwrap_or(' ')
+            self.theme.today_day_char.unwrap_or(' ')
         } else {
-            &' '
+            ' '
         };
 
         let arg_focus = if self.selected {
-            &self.theme.focus_day_char.unwrap_or(' ')
+            self.theme.focus_day_char.unwrap_or(' ')
         } else {
-            &' '
+            ' '
         };
 
-        write!(f, "{}{}{:>2}", arg_today, arg_today, self.day_num)
+        write!(f, "{}{}{:>2}", arg_today, arg_focus, self.day_num)
     }
 }
 
@@ -104,7 +104,7 @@ impl Widget for MonthPane<'_> {
         }
     }
 
-    fn draw(&self, window: Window, hints: RenderingHints) {
+    fn draw(&self, mut window: Window, hints: RenderingHints) {
         let theme = &self.context.tui_context().theme;
 
         let mut cursor = Cursor::new(&mut window)
@@ -117,16 +117,20 @@ impl Widget for MonthPane<'_> {
 
         // print Header first
         for &head in Self::HEADER {
-            write!(&cursor, "{:>width$}", &head, width = DayCell::CELL_WIDTH);
+            write!(
+                &mut cursor,
+                "{:>width$}",
+                &head,
+                width = DayCell::CELL_WIDTH
+            );
         }
 
         // set offset for first row and set modifier
-        cursor
-            .style_modifier(theme.day_style.format(theme.day_text_style))
-            .move_by(
-                ColDiff::new((DayCell::CELL_WIDTH * self.offset as usize) as i32),
-                RowDiff::new(0),
-            );
+        cursor.set_style_modifier(theme.day_style.format(theme.day_text_style));
+        cursor.move_by(
+            ColDiff::new((DayCell::CELL_WIDTH * self.offset as usize) as i32),
+            RowDiff::new(0),
+        );
 
         for (idx, cell) in (1..self.num_days)
             .into_iter()
@@ -135,7 +139,7 @@ impl Widget for MonthPane<'_> {
             .enumerate()
         {
             write!(
-                &cursor,
+                &mut cursor,
                 "{}",
                 cell.select(false).today(
                     &self.context.now().month() == &self.month.number_from_month()

@@ -15,7 +15,7 @@ pub enum ErrorKind {
     EventParse,
     EventMissingKey,
     TimeParse,
-    DateParse
+    DateParse,
 }
 
 impl Error {
@@ -64,6 +64,7 @@ impl ErrorKind {
             ErrorKind::EventParse => "invalid event format",
             ErrorKind::EventMissingKey => "missing key in event definition",
             ErrorKind::TimeParse => "invalid time format",
+            ErrorKind::DateParse => "invalid date format",
         }
     }
 }

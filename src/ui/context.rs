@@ -29,7 +29,7 @@ impl Default for TuiContext {
     fn default() -> Self {
         TuiContext {
             theme: Theme::default(),
-            cursor: Local::now()
+            cursor: Local::now(),
         }
     }
 }
@@ -38,7 +38,7 @@ impl TuiContext {
     pub fn new(cursor: DateTime<Local>) -> Self {
         TuiContext {
             theme: Theme::default(),
-            cursor
+            cursor,
         }
     }
 }
@@ -52,7 +52,7 @@ impl TuiContext {
     pub fn select_today(&mut self) {
         self.cursor = Local::now();
     }
-    
+
     pub fn selected_day(&self) -> u32 {
         self.cursor.day()
     }
@@ -85,7 +85,7 @@ impl<'a> Context<'a> {
             now: Local::now(),
         }
     }
-    
+
     pub fn tui_context(&self) -> &TuiContext {
         &self.tui_context
     }

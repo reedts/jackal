@@ -1,5 +1,5 @@
 use chrono::{
-    Date, DateTime, FixedOffset, Month, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc,
+    Date, DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc,
 };
 use chrono_tz::Tz;
 use ical::parser::ical::component::IcalCalendar;
@@ -15,7 +15,7 @@ use ical::property::Property;
 
 use crate::ical::{Error, ErrorKind};
 
-use super::{IcalResult, ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE};
+use super::{ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE};
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct TimeSpan<'a> {
@@ -40,38 +40,38 @@ impl OccurrenceSpec {
         matches!(self, Onetime(_, _))
     }
 
-    pub fn as_date<Tz: TimeZone>(&self, tz: &Tz) -> &Date<Tz> {
+    pub fn as_date<Tz: TimeZone>(&self, tz: &Tz) -> Date<Tz> {
         use OccurrenceSpec::*;
         match self {
-            Allday(date) => &date.as_date(tz),
-            Onetime(datetime, _) => &datetime.as_date(tz),
+            Allday(date) => date.as_date(tz),
+            Onetime(datetime, _) => datetime.as_date(tz),
         }
     }
 
-    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> &DateTime<Tz> {
+    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> DateTime<Tz> {
         use OccurrenceSpec::*;
         match self {
-            Allday(date) => &date
+            Allday(date) => date
                 .as_date(tz)
                 .and_time(NaiveTime::from_hms(0, 0, 0))
                 .unwrap(),
-            Onetime(datetime, _) => &datetime.as_datetime(tz),
+            Onetime(datetime, _) => datetime.as_datetime(tz).clone(),
         }
     }
 
-    pub fn begin<Tz: TimeZone>(&self, tz: &Tz) -> &DateTime<Tz> {
+    pub fn begin<Tz: TimeZone>(&self, tz: &Tz) -> DateTime<Tz> {
         use OccurrenceSpec::*;
         match self {
-            Allday(date) => &date.as_date(tz).and_hms(0, 0, 0),
-            Onetime(begin, _) => &begin.as_datetime(tz),
+            Allday(date) => date.as_date(tz).and_hms(0, 0, 0),
+            Onetime(begin, _) => begin.as_datetime(tz).clone(),
         }
     }
 
-    pub fn end<Tz: TimeZone>(&self, tz: &Tz) -> &DateTime<Tz> {
+    pub fn end<Tz: TimeZone>(&self, tz: &Tz) -> DateTime<Tz> {
         use OccurrenceSpec::*;
         match self {
-            Allday(date) => &date.as_date(tz).and_hms(23, 59, 59),
-            Onetime(_, end) => &end.as_datetime(tz),
+            Allday(date) => date.as_date(tz).and_hms(23, 59, 59),
+            Onetime(_, end) => end.as_datetime(tz).clone(),
         }
     }
 }
@@ -102,7 +102,7 @@ impl TryFrom<&IcalEvent> for OccurrenceSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum DateTimeSpec {
+pub enum DateTimeSpec {
     Date(NaiveDate),
     Floating(NaiveDateTime),
     Utc(DateTime<Utc>),
@@ -133,12 +133,13 @@ impl TryFrom<&Property> for DateTimeSpec {
     fn try_from(value: &Property) -> Result<Self, Self::Error> {
         let val = value
             .value
+            .as_ref()
             .ok_or(Self::Error::from(ErrorKind::DateParse).with_msg("Missing datetime value"))?;
 
-        let spec = val.parse::<Self>()?;
+        let mut spec = val.parse::<Self>()?;
 
         // check for TZID in options
-        if let Some(options) = value.params {
+        if let Some(options) = &value.params {
             if let Some(option) = options.iter().find(|o| o.0 == "TZID") {
                 let tz: Tz = option.1[0].parse().map_err(|err: String| {
                     Error::new(ErrorKind::DateParse).with_msg(err.as_str())
@@ -160,25 +161,25 @@ impl DateTimeSpec {
         }
     }
 
-    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> &DateTime<Tz> {
+    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> DateTime<Tz> {
         match *self {
-            DateTimeSpec::Date(dt) => &tz.from_utc_date(&dt).and_hms(0, 0, 0),
-            DateTimeSpec::Floating(dt) => &tz.from_utc_datetime(&dt),
-            DateTimeSpec::Utc(dt) => &dt.with_timezone(&tz),
-            DateTimeSpec::Local(dt) => &dt.with_timezone(&tz),
+            DateTimeSpec::Date(dt) => tz.from_utc_date(&dt).and_hms(0, 0, 0),
+            DateTimeSpec::Floating(dt) => tz.from_utc_datetime(&dt),
+            DateTimeSpec::Utc(dt) => dt.with_timezone(&tz),
+            DateTimeSpec::Local(dt) => dt.with_timezone(&tz),
         }
     }
 
-    pub fn as_date<Tz: TimeZone>(&self, tz: &Tz) -> &Date<Tz> {
+    pub fn as_date<Tz: TimeZone>(&self, tz: &Tz) -> Date<Tz> {
         match *self {
-            DateTimeSpec::Date(dt) => &tz.from_utc_date(&dt),
-            DateTimeSpec::Floating(dt) => &tz.from_utc_date(&dt.date()),
-            DateTimeSpec::Utc(dt) => &dt.with_timezone(tz).date(),
-            DateTimeSpec::Local(dt) => &dt.with_timezone(tz).date(),
+            DateTimeSpec::Date(dt) => tz.from_utc_date(&dt),
+            DateTimeSpec::Floating(dt) => tz.from_utc_date(&dt.date()),
+            DateTimeSpec::Utc(dt) => dt.with_timezone(tz).date(),
+            DateTimeSpec::Local(dt) => dt.with_timezone(tz).date(),
         }
     }
 
-    pub fn with_tz<Tz: TimeZone>(mut self, tz: &Tz) -> Self {
+    pub fn with_tz<Tz: TimeZone>(self, tz: &Tz) -> Self {
         match self {
             DateTimeSpec::Date(dt) => {
                 let offset = tz.offset_from_utc_date(&dt).fix();
