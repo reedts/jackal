@@ -1,5 +1,4 @@
 mod agenda;
-mod app;
 mod cmds;
 mod config;
 mod events;
@@ -7,7 +6,7 @@ mod ical;
 mod ui;
 
 use agenda::Agenda;
-use app::App;
+use ui::app::App;
 use config::Config;
 use events::Dispatcher;
 use std::io::stdout;

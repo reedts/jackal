@@ -65,22 +65,22 @@ impl Display for DayCell<'_> {
 }
 
 #[derive(Clone)]
-pub struct MonthPane<'a, 'c : 'a> {
+pub struct MonthPane<'a> {
     month: Month,
     year: i32,
     num_days: u8,
     offset: u8,
-    context: &'a Context<'c>,
+    context: &'a Context<'a>,
 }
 
-impl<'a, 'c: 'a> MonthPane<'a, 'c> {
+impl<'a> MonthPane<'a> {
     const COLUMNS: usize = 7;
     const ROWS: usize = 6;
     const HEADER_ROWS: usize = 1;
 
     const HEADER: &'static [&'static str] = &["Mon", "Tue", "Wen", "Thu", "Fri", "Sat", "Sun"];
 
-    fn new<'b: 'a>(month: Month, year: i32, context: &'b Context<'c>) -> Self {
+    pub fn new(month: Month, year: i32, context: &'a Context<'a>) -> Self {
         let num_days = days_of_month(&month, year);
         let offset = NaiveDate::from_ymd(year, month.number_from_month(), 1)
             .weekday()
@@ -96,7 +96,7 @@ impl<'a, 'c: 'a> MonthPane<'a, 'c> {
     }
 }
 
-impl<'a, 'c> Widget for MonthPane<'a, 'c> {
+impl Widget for MonthPane<'_> {
     fn space_demand(&self) -> Demand2D {
         Demand2D {
             width: ColDemand::exact(Self::COLUMNS * DayCell::CELL_WIDTH),
