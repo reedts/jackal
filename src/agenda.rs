@@ -57,9 +57,9 @@ pub struct Agenda<'a> {
     events: EventMap,
 }
 
-impl TryFrom<&Path> for Agenda<'_> {
+impl<'a> TryFrom<&'a Path> for Agenda<'a> {
     type Error = std::io::Error;
-    fn try_from(path: &Path) -> Result<Self, Self::Error> {
+    fn try_from(path: &'a Path) -> Result<Self, Self::Error> {
         let collections = vec![ical::Collection::try_from(path)?];
 
         Ok(Agenda {
@@ -83,13 +83,13 @@ impl Agenda<'_> {
         date.naive_utc().year()
     }
 
-    pub fn all_events(&self) -> Vec<&ical::Event> {
-        self.icals
-            .iter()
-            .map(|cal| cal.events())
-            .flatten()
-            .collect()
-    }
+    // pub fn all_events(&self) -> Vec<&ical::Event> {
+    //     self.icals
+    //         .iter()
+    //         .map(|cal| cal.events())
+    //         .flatten()
+    //         .collect()
+    // }
 
     pub fn events_of_month(&self, month: Month, year: i32) -> Vec<&ical::Event> {
         let b_date = Date::from_utc(

@@ -7,8 +7,7 @@ use crate::events::{Dispatcher, Event};
 
 use super::{Context, MonthPane};
 
-use unsegen::{widget::*, base::Terminal};
-
+use unsegen::{base::Terminal, widget::*};
 
 pub struct App<'a> {
     config: &'a Config,
@@ -18,20 +17,27 @@ pub struct App<'a> {
 impl<'a> App<'a> {
     pub fn new(config: &'a Config, agenda: Agenda<'a>) -> App<'a> {
         let global_ctx = Context::new(agenda);
-        App {
-            config,
-            global_ctx,
-        }
+        App { config, global_ctx }
     }
 
-    fn as_widget<'w>(&self) -> impl Widget + 'w where 'a: 'w {
-        let mut layout = HLayout::new().widget(MonthPane::new(self.global_ctx.current_month(), self.global_ctx.current_year(), &self.global_ctx));
+    fn as_widget<'w>(&'w self) -> impl Widget + 'w
+    where
+        'a: 'w,
+    {
+        let mut layout = HLayout::new().widget(MonthPane::new(
+            self.global_ctx.current_month(),
+            self.global_ctx.current_year(),
+            &self.global_ctx,
+        ));
 
         layout
     }
 
-    pub fn run(&mut self, dispatcher: Dispatcher, mut term: Terminal) -> Result<(), Box<dyn std::error::Error>>
-    {
+    pub fn run(
+        &mut self,
+        dispatcher: Dispatcher,
+        mut term: Terminal,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut run = true;
 
         while run {
@@ -47,7 +53,7 @@ impl<'a> App<'a> {
 
             // Draw
             let root = term.create_root_window();
-                
+
             term.present();
         }
 

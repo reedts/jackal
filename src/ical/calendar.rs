@@ -319,9 +319,9 @@ pub struct Collection<'a> {
     calendars: Vec<Calendar>,
 }
 
-impl TryFrom<&Path> for Collection<'_> {
+impl<'a> TryFrom<&'a Path> for Collection<'a> {
     type Error = io::Error;
-    fn try_from(path: &Path) -> Result<Self, Self::Error> {
+    fn try_from(path: &'a Path) -> Result<Self, Self::Error> {
         // Load all valid .ics files from 'path'
         let mut calendars: Vec<Calendar> = fs::read_dir(path)?
             .map(|dir| {
