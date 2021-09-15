@@ -1,28 +1,24 @@
-use crate::cmds;
 use crate::config;
 use std::io;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc, Arc,
 };
-
 use std::thread;
 
-use termion::event::Key;
-use termion::input::TermRead;
+use unsegen::input::Input;
 
 use config::Config;
 
 pub enum Event {
-    Input(Key),
-    Cmd(cmds::Cmd),
-    Tick,
+    Input(Input),
+    Update,
 }
 
 pub struct Dispatcher {
     rx: mpsc::Receiver<Event>,
-    input_handle: thread::JoinHandle<()>,
-    tick_handle: thread::JoinHandle<()>,
+    _input_handle: thread::JoinHandle<()>,
+    _update_handle: thread::JoinHandle<()>,
 }
 
 impl Default for Dispatcher {
@@ -38,7 +34,8 @@ impl Dispatcher {
             let tx = tx.clone();
             thread::spawn(move || {
                 let stdin = io::stdin();
-                for evt in stdin.keys() {
+                let stdin = stdin.lock();
+                for evt in Input::read_all(stdin) {
                     match evt {
                         Ok(key) => {
                             if let Err(_) = tx.send(Event::Input(key)) {
@@ -50,19 +47,19 @@ impl Dispatcher {
                 }
             })
         };
-        let tick_handle = {
+        let update_handle = {
             thread::spawn(move || {
                 let tx = tx.clone();
                 loop {
-                    tx.send(Event::Tick).unwrap();
+                    tx.send(Event::Update).unwrap();
                     thread::sleep(config.tick_rate);
                 }
             })
         };
         Dispatcher {
             rx,
-            input_handle,
-            tick_handle,
+            _input_handle: input_handle,
+            _update_handle: update_handle,
         }
     }
 

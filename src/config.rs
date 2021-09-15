@@ -1,16 +1,9 @@
-use crate::cmds;
-use cmds::Cmd;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::io;
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-
-use termion::event::Key;
-
-pub type KeyMap = HashMap<Key, Cmd>;
 
 const CONFIG_PATH_ENV_VAR: &str = "JACKAL_CONFIG_FILE";
 
@@ -63,38 +56,20 @@ pub struct CalendarParams {
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub key_map: KeyMap,
     pub tick_rate: Duration,
     calendar_params: HashMap<String, CalendarParams>,
 }
 
 impl Default for Config {
     fn default() -> Config {
-        let mut config = Config {
-            key_map: HashMap::new(),
+        Config {
             tick_rate: Duration::from_secs(60),
             calendar_params: HashMap::new(),
-        };
-
-        config.key_map.insert(Key::Char('l'), Cmd::NextDay);
-        config.key_map.insert(Key::Char('h'), Cmd::PrevDay);
-        config.key_map.insert(Key::Char('j'), Cmd::NextWeek);
-        config.key_map.insert(Key::Char('k'), Cmd::PrevWeek);
-        config.key_map.insert(Key::Char('J'), Cmd::NextEvent);
-        config.key_map.insert(Key::Char('K'), Cmd::PrevEvent);
-        config.key_map.insert(Key::Char('q'), Cmd::Exit);
-
-        config
+        }
     }
 }
 
 impl Config {
-    // pub fn load(path: Option<&Path>) -> Config {
-    //     if let Some(path) = path {
-    //     } else {
-    //     }
-    // }
-
     pub fn calendar_params(&self) -> Option<Vec<&CalendarParams>> {
         if self.calendar_params.is_empty() {
             None

@@ -1,5 +1,4 @@
 mod agenda;
-mod cmds;
 mod config;
 mod events;
 mod ical;
