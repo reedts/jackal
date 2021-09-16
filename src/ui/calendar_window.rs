@@ -1,9 +1,12 @@
 use crate::ical::days_of_month;
-use chrono::{Datelike, Month, NaiveDate};
+use chrono::{Datelike, Local, Month, NaiveDate};
+use num_traits::FromPrimitive;
 use std::fmt::Display;
 use std::fmt::Write;
+use std::ops::{Add, Sub};
 use unsegen::base::*;
 use unsegen::widget::*;
+use unsegen::input::{OperationResult, Scrollable};
 
 use super::{Context, Theme};
 
@@ -104,7 +107,7 @@ impl Widget for MonthPane<'_> {
         }
     }
 
-    fn draw(&self, mut window: Window, hints: RenderingHints) {
+    fn draw(&self, mut window: Window, _hints: RenderingHints) {
         let theme = &self.context.tui_context().theme;
 
         let mut cursor = Cursor::new(&mut window)
@@ -122,7 +125,7 @@ impl Widget for MonthPane<'_> {
                 "{:>width$}",
                 &head,
                 width = DayCell::CELL_WIDTH
-            );
+            ).unwrap();
         }
 
         // set offset for first row and set modifier
@@ -145,7 +148,172 @@ impl Widget for MonthPane<'_> {
                     &self.context.now().month() == &self.month.number_from_month()
                         && self.context.now().day() == idx as u32 + 1
                 )
-            );
+            ).unwrap();
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct MonthIndex {
+    index: Month,
+    year: i32
+}
+
+impl MonthIndex {
+    pub fn new(index: Month, year: i32) -> Self {
+        MonthIndex { index, year }
+    }
+
+    pub fn next(&self) -> Self {
+        let next_month = self.index.succ();
+
+        MonthIndex {
+            index: next_month,
+            year: if next_month.number_from_month() == 1 {
+                self.year + 1
+            } else {
+                self.year
+            },
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        let prev_month = self.index.succ();
+
+        MonthIndex {
+            index: prev_month,
+            year: if prev_month.number_from_month() == 12 {
+                self.year - 1
+            } else {
+                self.year
+            },
+        }
+    }
+}
+
+impl Default for MonthIndex {
+    fn default() -> Self {
+        MonthIndex {
+            index: Month::from_u32(Local::now().month()).unwrap_or(Month::January),
+            year: Local::now().year(),
+        }
+    }
+}
+
+impl<T: Datelike> From<T> for MonthIndex {
+    fn from(m: T) -> Self {
+        MonthIndex::new(Month::from_u32(m.month()).unwrap(), m.year())
+    }
+}
+
+impl Add<u32> for MonthIndex {
+    type Output = MonthIndex;
+    fn add(self, rhs: u32) -> Self::Output {
+        let month_sum = self.index.number_from_month() + rhs;
+        if month_sum <= 12 {
+            MonthIndex {
+                index: Month::from_u32(month_sum).unwrap(),
+                year: self.year,
+            }
+        } else {
+            let year_diff = month_sum / 12;
+            let new_month = month_sum % 12;
+
+            MonthIndex {
+                index: Month::from_u32(new_month).unwrap(),
+                year: self.year + year_diff as i32,
+            }
+        }
+    }
+}
+
+impl Sub<u32> for MonthIndex {
+    type Output = MonthIndex;
+    fn sub(self, rhs: u32) -> Self::Output {
+        let month_number = self.index.number_from_month();
+        if rhs < month_number {
+            MonthIndex {
+                index: Month::from_u32(month_number - rhs).unwrap(),
+                year: self.year,
+            }
+        } else if rhs == month_number {
+            MonthIndex {
+                index: Month::December,
+                year: self.year - 1,
+            }
+        } else {
+            let month_diff = month_number as i32 - rhs as i32;
+            let new_month = month_diff.rem_euclid(12);
+            let year_diff = month_diff.abs() / 12;
+
+            MonthIndex {
+                index: Month::from_u32(new_month as u32).unwrap(),
+                year: self.year - year_diff as i32,
+            }
+        }
+    }
+}
+
+impl PartialOrd for MonthIndex {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if self.year != other.year {
+            self.year.partial_cmp(&other.year)
+        } else {
+            self.index
+                .number_from_month()
+                .partial_cmp(&other.index.number_from_month())
+        }
+    }
+}
+
+#[derive(Clone)]
+struct CalendarWindow<'a> {
+    context: &'a Context<'a>,
+    offset: MonthIndex,
+    scrolloff: u32,
+}
+
+impl<'a> CalendarWindow<'a> {
+ pub fn new<T>(context: &'a Context<'a>, selected: T, scrolloff: u32) -> Self
+    where
+        MonthIndex: From<T>,
+    {
+        CalendarWindow {
+            context,
+            offset: MonthIndex::from(selected.into()),
+            scrolloff,
+        }
+    }
+
+    pub fn select<T>(&mut self, idx: T, max: u32)
+    where
+        MonthIndex: From<T>,
+    {
+        let m_idx = MonthIndex::from(idx);
+
+        if m_idx >= ((self.offset + max) - self.scrolloff) {
+            self.offset = self.offset + self.scrolloff;
+        } else if m_idx < self.offset + self.scrolloff {
+            self.offset = m_idx - self.scrolloff;
+        }
+    }
+}
+
+impl Scrollable for CalendarWindow<'_> {
+    fn scroll_backwards(&mut self) -> OperationResult {
+        Ok(())
+    }
+
+    fn scroll_to_beginning(&mut self) -> OperationResult {
+        Ok(())
+    }
+
+    fn scroll_forwards(&mut self) -> OperationResult {
+        Ok(())
+    }
+
+    fn scroll_to_end(&mut self) -> OperationResult {
+        Ok(())
+    }
+}
+
