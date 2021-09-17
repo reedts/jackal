@@ -6,7 +6,6 @@ use std::fmt::Write;
 use std::ops::{Add, Sub};
 use unsegen::base::*;
 use unsegen::widget::*;
-use unsegen::input::{OperationResult, Scrollable};
 
 use super::{Context, Theme};
 
@@ -125,7 +124,8 @@ impl Widget for MonthPane<'_> {
                 "{:>width$}",
                 &head,
                 width = DayCell::CELL_WIDTH
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         // set offset for first row and set modifier
@@ -148,7 +148,8 @@ impl Widget for MonthPane<'_> {
                     &self.context.now().month() == &self.month.number_from_month()
                         && self.context.now().day() == idx as u32 + 1
                 )
-            ).unwrap();
+            )
+            .unwrap();
         }
     }
 }
@@ -156,7 +157,7 @@ impl Widget for MonthPane<'_> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct MonthIndex {
     index: Month,
-    year: i32
+    year: i32,
 }
 
 impl MonthIndex {
@@ -274,7 +275,7 @@ struct CalendarWindow<'a> {
 }
 
 impl<'a> CalendarWindow<'a> {
- pub fn new<T>(context: &'a Context<'a>, selected: T, scrolloff: u32) -> Self
+    pub fn new<T>(context: &'a Context<'a>, selected: T, scrolloff: u32) -> Self
     where
         MonthIndex: From<T>,
     {
@@ -298,22 +299,3 @@ impl<'a> CalendarWindow<'a> {
         }
     }
 }
-
-impl Scrollable for CalendarWindow<'_> {
-    fn scroll_backwards(&mut self) -> OperationResult {
-        Ok(())
-    }
-
-    fn scroll_to_beginning(&mut self) -> OperationResult {
-        Ok(())
-    }
-
-    fn scroll_forwards(&mut self) -> OperationResult {
-        Ok(())
-    }
-
-    fn scroll_to_end(&mut self) -> OperationResult {
-        Ok(())
-    }
-}
-
