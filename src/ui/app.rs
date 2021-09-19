@@ -4,7 +4,7 @@ use crate::agenda::Agenda;
 use crate::config::Config;
 use crate::events::{Dispatcher, Event};
 
-use super::{Context, MonthPane, TuiContext};
+use super::{CalendarWindow, Context, MonthPane, TuiContext};
 
 use unsegen::base::{Cursor, Terminal};
 use unsegen::input::{Input, Key, Navigatable, NavigateBehavior, OperationResult};
@@ -63,6 +63,11 @@ impl<'a> App<'a> {
 
             // Draw
             let mut root = term.create_root_window();
+
+            let mut layout = HLayout::new()
+                .widget(CalendarWindow::new(&self.context))
+                .draw(root, RenderingHints::new());
+
             term.present();
         }
 

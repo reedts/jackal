@@ -82,6 +82,9 @@ impl<'a> MonthPane<'a> {
 
     const HEADER: &'static [&'static str] = &["Mon", "Tue", "Wen", "Thu", "Fri", "Sat", "Sun"];
 
+    const WIDTH: usize = Self::COLUMNS * DayCell::CELL_WIDTH;
+    const HEIGHT: usize = (Self::ROWS + Self::HEADER_ROWS) * DayCell::CELL_HEIGHT;
+
     pub fn new(month: Month, year: i32, context: &'a Context<'a>) -> Self {
         let num_days = days_of_month(&month, year);
         let offset = NaiveDate::from_ymd(year, month.number_from_month(), 1)
@@ -95,6 +98,10 @@ impl<'a> MonthPane<'a> {
             offset,
             context,
         }
+    }
+
+    pub fn from_month_index(index: MonthIndex, context: &'a Context<'a>) -> Self {
+        Self::new(index.index, index.year, context)
     }
 }
 
@@ -128,6 +135,8 @@ impl Widget for MonthPane<'_> {
             .unwrap();
         }
 
+        cursor.fill_and_wrap_line();
+
         // set offset for first row and set modifier
         cursor.set_style_modifier(theme.day_style.format(theme.day_text_style));
         cursor.move_by(
@@ -135,7 +144,7 @@ impl Widget for MonthPane<'_> {
             RowDiff::new(0),
         );
 
-        for (idx, cell) in (1..self.num_days)
+        for (idx, cell) in (1..self.num_days + 1)
             .into_iter()
             .map(|idx| DayCell::new(idx, &theme))
             .into_iter()
@@ -155,9 +164,9 @@ impl Widget for MonthPane<'_> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct MonthIndex {
-    index: Month,
-    year: i32,
+pub struct MonthIndex {
+    pub index: Month,
+    pub year: i32,
 }
 
 impl MonthIndex {
@@ -268,34 +277,49 @@ impl PartialOrd for MonthIndex {
 }
 
 #[derive(Clone)]
-struct CalendarWindow<'a> {
+pub struct CalendarWindow<'a> {
     context: &'a Context<'a>,
     offset: MonthIndex,
-    scrolloff: u32,
 }
 
 impl<'a> CalendarWindow<'a> {
-    pub fn new<T>(context: &'a Context<'a>, selected: T, scrolloff: u32) -> Self
-    where
-        MonthIndex: From<T>,
-    {
+    pub fn new(context: &'a Context<'a>) -> Self {
         CalendarWindow {
             context,
-            offset: MonthIndex::from(selected.into()),
-            scrolloff,
+            offset: context.now().clone().into(),
+        }
+    }
+}
+
+impl Widget for CalendarWindow<'_> {
+    fn space_demand(&self) -> Demand2D {
+        Demand2D {
+            width: ColDemand::at_least(MonthPane::WIDTH),
+            height: RowDemand::at_least(MonthPane::HEIGHT),
         }
     }
 
-    pub fn select<T>(&mut self, idx: T, max: u32)
-    where
-        MonthIndex: From<T>,
-    {
-        let m_idx = MonthIndex::from(idx);
+    fn draw(&self, mut window: Window, hints: RenderingHints) {
+        let num_fitting_months = window.get_height() / MonthPane::HEIGHT;
 
-        if m_idx >= ((self.offset + max) - self.scrolloff) {
-            self.offset = self.offset + self.scrolloff;
-        } else if m_idx < self.offset + self.scrolloff {
-            self.offset = m_idx - self.scrolloff;
+        let (subwindow_x, subwindow_y) = (
+            (window.get_width().raw_value() - MonthPane::WIDTH as i32) / 2,
+            0,
+        );
+        let pane = window.create_subwindow(
+            ColIndex::new(subwindow_x)..ColIndex::new(subwindow_x + MonthPane::WIDTH as i32),
+            RowIndex::new(subwindow_y)..RowIndex::new(window.get_height().raw_value()),
+        );
+
+        let mut layout = VLayout::new();
+
+        for i in 0..num_fitting_months.raw_value() {
+            layout = layout.widget(MonthPane::from_month_index(
+                self.offset + i as u32,
+                &self.context,
+            ));
         }
+
+        layout.draw(pane, hints);
     }
 }
