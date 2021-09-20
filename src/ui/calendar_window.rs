@@ -78,7 +78,7 @@ pub struct MonthPane<'a> {
 impl<'a> MonthPane<'a> {
     const COLUMNS: usize = 7;
     const ROWS: usize = 6;
-    const HEADER_ROWS: usize = 1;
+    const HEADER_ROWS: usize = 2;
 
     const HEADER: &'static [&'static str] = &["Mon", "Tue", "Wen", "Thu", "Fri", "Sat", "Sun"];
 
@@ -125,6 +125,8 @@ impl Widget for MonthPane<'_> {
             );
 
         // print Header first
+        writeln!(&mut cursor, "{} {}", &self.month.name(), self.year).unwrap();
+
         for &head in Self::HEADER {
             write!(
                 &mut cursor,
@@ -144,21 +146,39 @@ impl Widget for MonthPane<'_> {
             RowDiff::new(0),
         );
 
+        let is_current_month = self.context.now().month() == self.month.number_from_month();
+        let is_selected_month = self.context.cursor().month() == self.month.number_from_month();
+
         for (idx, cell) in (1..self.num_days + 1)
             .into_iter()
             .map(|idx| DayCell::new(idx, &theme))
             .into_iter()
             .enumerate()
         {
-            write!(
-                &mut cursor,
-                "{}",
-                cell.select(false).today(
-                    &self.context.now().month() == &self.month.number_from_month()
-                        && self.context.now().day() == idx as u32 + 1
-                )
-            )
-            .unwrap();
+            let is_today = is_current_month && idx == self.context.now().day() as usize;
+            let is_selected = is_selected_month && idx == self.context.cursor().day() as usize;
+
+            let saved_style = if is_today || is_selected {
+                Some(cursor.get_style_modifier())
+            } else {
+                None
+            };
+
+            if is_today {
+                cursor
+                    .apply_style_modifier(theme.today_day_style.format(theme.today_day_text_style));
+            }
+
+            if is_selected {
+                cursor
+                    .apply_style_modifier(theme.focus_day_style.format(theme.focus_day_text_style));
+            }
+
+            write!(&mut cursor, "{}", cell.select(is_selected).today(is_today)).unwrap();
+
+            if let Some(style) = saved_style {
+                cursor.set_style_modifier(style);
+            }
         }
     }
 }

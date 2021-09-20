@@ -5,7 +5,7 @@ use crate::agenda::{Agenda, EventsOfDay};
 
 use unsegen::base::style::*;
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct Theme {
     pub day_style: StyleModifier,
     pub day_text_style: TextFormatModifier,
@@ -17,6 +17,23 @@ pub struct Theme {
     pub today_day_char: Option<char>,
     pub month_header_style: StyleModifier,
     pub month_header_text_style: TextFormatModifier,
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Theme {
+            day_style: StyleModifier::default(),
+            day_text_style: TextFormatModifier::default(),
+            focus_day_style: StyleModifier::default(),
+            focus_day_text_style: TextFormatModifier::default(),
+            focus_day_char: Some('*'),
+            today_day_style: StyleModifier::default().bg_color(Color::Blue),
+            today_day_text_style: TextFormatModifier::default(),
+            today_day_char: None,
+            month_header_style: StyleModifier::default(),
+            month_header_text_style: TextFormatModifier::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
