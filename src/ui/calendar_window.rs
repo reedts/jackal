@@ -146,7 +146,8 @@ impl Widget for MonthPane<'_> {
             RowDiff::new(0),
         );
 
-        let is_current_month = self.context.now().month() == self.month.number_from_month();
+        let is_current_month = self.context.now().month() == self.month.number_from_month()
+            && self.context.now().year() == self.year;
         let is_selected_month = self.context.cursor().month() == self.month.number_from_month();
 
         for (idx, cell) in (1..self.num_days + 1)
@@ -299,15 +300,11 @@ impl PartialOrd for MonthIndex {
 #[derive(Clone)]
 pub struct CalendarWindow<'a> {
     context: &'a Context<'a>,
-    offset: MonthIndex,
 }
 
 impl<'a> CalendarWindow<'a> {
     pub fn new(context: &'a Context<'a>) -> Self {
-        CalendarWindow {
-            context,
-            offset: context.now().clone().into(),
-        }
+        CalendarWindow { context }
     }
 }
 
@@ -320,7 +317,12 @@ impl Widget for CalendarWindow<'_> {
     }
 
     fn draw(&self, mut window: Window, hints: RenderingHints) {
+        // Calculate number of fitting month panes and prepare
+        // subwindows accordingly
         let num_fitting_months = window.get_height() / MonthPane::HEIGHT;
+
+        let offset: MonthIndex = MonthIndex::from(self.context.tui_context().cursor.clone())
+            - (num_fitting_months.raw_value() / 2) as u32;
 
         let (subwindow_x, subwindow_y) = (
             (window.get_width().raw_value() - MonthPane::WIDTH as i32) / 2,
@@ -331,11 +333,14 @@ impl Widget for CalendarWindow<'_> {
             RowIndex::new(subwindow_y)..RowIndex::new(window.get_height().raw_value()),
         );
 
+        // Check for correct offset
+        //
+        //
         let mut layout = VLayout::new();
 
         for i in 0..num_fitting_months.raw_value() {
             layout = layout.widget(MonthPane::from_month_index(
-                self.offset + i as u32,
+                offset + i as u32,
                 &self.context,
             ));
         }

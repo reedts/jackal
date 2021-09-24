@@ -30,7 +30,7 @@ impl Default for Theme {
             today_day_style: StyleModifier::default().bg_color(Color::Blue),
             today_day_text_style: TextFormatModifier::default(),
             today_day_char: None,
-            month_header_style: StyleModifier::default(),
+            month_header_style: StyleModifier::default().fg_color(Color::Yellow),
             month_header_text_style: TextFormatModifier::default(),
         }
     }
