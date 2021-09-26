@@ -145,14 +145,14 @@ impl Widget for MonthPane<'_> {
             RowDiff::new(0),
         );
 
-        let is_current_month = self.context.now().month() == self.month.number_from_month()
-            && self.context.now().year() == self.year;
-        let is_selected_month = self.context.cursor().month() == self.month.number_from_month()
-            && self.context.cursor().year() == self.year;
+        let is_current_month = (self.context.now().month() == self.month.number_from_month())
+            && (self.context.now().year() == self.year);
+        let is_selected_month = (self.context.cursor().month() == self.month.number_from_month())
+            && (self.context.cursor().year() == self.year);
 
         for (idx, cell) in (1..=self.num_days).map(|idx| (idx, DayCell::new(idx, &theme))) {
-            let is_today = is_current_month && idx as u32 == self.context.now().day();
-            let is_selected = is_selected_month && idx as u32 == self.context.cursor().day();
+            let is_today = is_current_month && (idx as u32 == self.context.now().day());
+            let is_selected = is_selected_month && (idx as u32 == self.context.cursor().day());
 
             let saved_style = if is_today || is_selected {
                 Some(cursor.get_style_modifier())
@@ -243,7 +243,7 @@ impl Add<u32> for MonthIndex {
             }
         } else {
             let year_diff = month_sum / 12;
-            let new_month = month_sum % 12;
+            let new_month = month_sum - year_diff * 12;
 
             MonthIndex {
                 index: Month::from_u32(new_month).unwrap(),
@@ -269,8 +269,8 @@ impl Sub<u32> for MonthIndex {
             }
         } else {
             let month_diff = month_number as i32 - rhs as i32;
-            let new_month = month_diff.rem_euclid(12);
-            let year_diff = month_diff.abs() / 12;
+            let year_diff = 1 + month_diff.abs() / 12;
+            let new_month = 12 - (month_diff.abs() - (year_diff - 1) * 12);
 
             MonthIndex {
                 index: Month::from_u32(new_month as u32).unwrap(),
