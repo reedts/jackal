@@ -136,7 +136,6 @@ impl Widget for MonthPane<'_> {
             )
             .unwrap();
         }
-
         cursor.fill_and_wrap_line();
 
         // set offset for first row and set modifier
@@ -148,16 +147,12 @@ impl Widget for MonthPane<'_> {
 
         let is_current_month = self.context.now().month() == self.month.number_from_month()
             && self.context.now().year() == self.year;
-        let is_selected_month = self.context.cursor().month() == self.month.number_from_month();
+        let is_selected_month = self.context.cursor().month() == self.month.number_from_month()
+            && self.context.cursor().year() == self.year;
 
-        for (idx, cell) in (1..self.num_days + 1)
-            .into_iter()
-            .map(|idx| DayCell::new(idx, &theme))
-            .into_iter()
-            .enumerate()
-        {
-            let is_today = is_current_month && idx == self.context.now().day() as usize;
-            let is_selected = is_selected_month && idx == self.context.cursor().day() as usize;
+        for (idx, cell) in (1..=self.num_days).map(|idx| (idx, DayCell::new(idx, &theme))) {
+            let is_today = is_current_month && idx as u32 == self.context.now().day();
+            let is_selected = is_selected_month && idx as u32 == self.context.cursor().day();
 
             let saved_style = if is_today || is_selected {
                 Some(cursor.get_style_modifier())
