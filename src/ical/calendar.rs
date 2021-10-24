@@ -303,6 +303,10 @@ impl TryFrom<&Path> for Calendar {
 }
 
 impl Calendar {
+    pub fn events_iter<'a>(&'a self) -> impl Iterator<Item = &'a Event> {
+        self.events.iter()
+    }
+
     pub fn events(&self) -> &Vec<Event> {
         &self.events
     }
@@ -318,6 +322,16 @@ pub struct Collection<'a> {
     friendly_name: Option<&'a str>,
     tz: Tz,
     calendars: Vec<Calendar>,
+}
+
+impl<'a> Collection<'a> {
+    pub fn event_iter(&'a self) -> impl Iterator<Item = &'a Event> {
+        self.calendars.iter().flat_map(|c| c.events_iter())
+    }
+
+    pub fn tz(&self) -> &Tz {
+        &self.tz
+    }
 }
 
 impl<'a> TryFrom<&'a Path> for Collection<'a> {

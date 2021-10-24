@@ -3,13 +3,15 @@ use chrono::Duration;
 use num_traits::FromPrimitive;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
+use std::iter::FromIterator;
+use std::marker::PhantomPinned;
 use std::ops::Bound::Included;
 use std::path::Path;
+use std::pin::Pin;
 
 use crate::ical;
 
-pub type EventList = BTreeMap<DateTime<FixedOffset>, ical::Event>;
-pub type EventMap = BTreeMap<Date<FixedOffset>, EventList>;
+pub type EventMap<'a> = BTreeMap<DateTime<Local>, Vec<&'a ical::Event>>;
 
 fn days_of_month(month: &Month, year: i32) -> u64 {
     if month.number_from_month() == 12 {
@@ -54,19 +56,42 @@ impl<'a> EventsOfDay<'a, FixedOffset> {
 pub struct Agenda<'a> {
     path: &'a Path,
     collections: Vec<ical::Collection<'a>>,
-    events: EventMap,
+    events: EventMap<'a>,
+    // Allow self referencing
+    _pin: PhantomPinned,
 }
 
-impl<'a> TryFrom<&'a Path> for Agenda<'a> {
+impl<'a> TryFrom<&'a Path> for Pin<Box<Agenda<'a>>> {
     type Error = std::io::Error;
     fn try_from(path: &'a Path) -> Result<Self, Self::Error> {
         let collections = vec![ical::Collection::try_from(path)?];
 
-        Ok(Agenda {
+        let res = Agenda {
             path,
             collections,
             events: EventMap::new(),
-        })
+            _pin: PhantomPinned,
+        };
+
+        let mut boxed = Box::pin(res);
+
+        // Fill up eventmap. This is safe, even if we cannot explain this
+        // to the compiler...
+        unsafe {
+            let mut_ref: Pin<&mut Agenda> = Pin::as_mut(&mut boxed);
+            let mut event_map = &Pin::get_unchecked_mut(mut_ref).events;
+
+            for (dt, ev) in boxed
+                .collections
+                .iter()
+                .flat_map(|c| c.event_iter())
+                .map(|ev| (ev.occurence().as_datetime(&Local{}), ev))
+            {
+                event_map.entry(dt).or_default().push(ev)
+            }
+        }
+
+        Ok(boxed)
     }
 }
 
@@ -82,14 +107,6 @@ impl Agenda<'_> {
 
         date.naive_utc().year()
     }
-
-    // pub fn all_events(&self) -> Vec<&ical::Event> {
-    //     self.icals
-    //         .iter()
-    //         .map(|cal| cal.events())
-    //         .flatten()
-    //         .collect()
-    // }
 
     pub fn events_of_month(&self, month: Month, year: i32) -> Vec<&ical::Event> {
         let b_date = Date::from_utc(
