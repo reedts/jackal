@@ -1,10 +1,10 @@
-use std::fmt::Write;
+use std::pin::Pin;
 
 use crate::agenda::Agenda;
 use crate::config::Config;
 use crate::events::{Dispatcher, Event};
 
-use super::{CalendarWindow, Context, MonthPane, TuiContext};
+use super::{CalendarWindow, Context, EventWindow, MonthPane, TuiContext};
 
 use unsegen::base::{Cursor, Terminal};
 use unsegen::input::{Input, Key, Navigatable, NavigateBehavior, OperationResult};
@@ -16,7 +16,7 @@ pub struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    pub fn new(config: &'a Config, agenda: Agenda<'a>) -> App<'a> {
+    pub fn new(config: &'a Config, agenda: Pin<Box<Agenda<'a>>>) -> App<'a> {
         let context = Context::new(agenda);
         App { config, context }
     }
@@ -25,11 +25,9 @@ impl<'a> App<'a> {
     where
         'a: 'w,
     {
-        let mut layout = HLayout::new().widget(MonthPane::new(
-            self.context.current_month(),
-            self.context.current_year(),
-            &self.context,
-        ));
+        let mut layout = HLayout::new()
+            .widget(CalendarWindow::new(&self.context))
+            .widget(EventWindow::new(&self.context));
 
         layout
     }
@@ -65,7 +63,7 @@ impl<'a> App<'a> {
             let mut root = term.create_root_window();
 
             let mut layout = HLayout::new()
-                .widget(CalendarWindow::new(&self.context))
+                .widget(self.as_widget())
                 .draw(root, RenderingHints::new());
 
             term.present();
