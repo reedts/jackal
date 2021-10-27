@@ -1,8 +1,9 @@
+use chrono::Local;
 use std::fmt::{Display, Write};
 use unsegen::base::*;
 use unsegen::widget::*;
 
-use crate::ical::Event;
+use crate::ical::{Event, OccurrenceSpec};
 use crate::ui::Context;
 
 struct EventEntry<'a> {
@@ -17,7 +18,16 @@ impl<'a> EventEntry<'a> {
 
 impl Display for EventEntry<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "X - X: {}", self.event.summary())
+        let time = match self.event.occurence() {
+            OccurrenceSpec::Allday(_) => "Allday".to_owned(),
+            OccurrenceSpec::Onetime(start, end) => format!(
+                "{} - {}",
+                start.as_datetime(&Local {}).time().format("%H:%M"),
+                end.as_datetime(&Local {}).time().format("%H:%M")
+            ),
+        };
+
+        write!(f, "{}: {}", time, self.event.summary())
     }
 }
 

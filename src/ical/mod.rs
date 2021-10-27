@@ -1,7 +1,7 @@
 mod calendar;
 mod error;
 
-pub use calendar::{Calendar, Collection, Event, OccurrenceSpec};
+pub use calendar::{Calendar, Collection, DateTimeSpec, Event, OccurrenceSpec};
 pub use error::{Error, ErrorKind};
 
 use chrono::{Month, NaiveDate};
