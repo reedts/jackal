@@ -332,6 +332,10 @@ impl<'a> Collection<'a> {
     pub fn tz(&self) -> &Tz {
         &self.tz
     }
+
+    pub fn calendars(&self) -> &Vec<Calendar> {
+        &self.calendars
+    }
 }
 
 impl<'a> TryFrom<&'a Path> for Collection<'a> {

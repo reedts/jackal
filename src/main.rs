@@ -10,7 +10,6 @@ use events::Dispatcher;
 use std::convert::TryFrom;
 use std::io::stdout;
 use std::path::PathBuf;
-use std::pin::Pin;
 use structopt::StructOpt;
 use ui::app::App;
 use unsegen::base::Terminal;
@@ -51,10 +50,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut term = Terminal::new(stdout.lock())?;
 
     let calendar = if let Some(path) = args.input.as_ref() {
-        Pin::<Box<Agenda>>::try_from(path.as_path())?
+        Agenda::try_from(path.as_path())?
     } else if let Some(calendar_params) = config.calendar_params() {
         // TODO: Handle multiple calendars here. To be thought through...
-        Pin::<Box<Agenda>>::try_from(calendar_params[0].path.as_path())?
+        Agenda::try_from(calendar_params[0].path.as_path())?
     } else {
         // Not one calendar found
         println!("Nothing to do.");

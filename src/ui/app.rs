@@ -16,7 +16,7 @@ pub struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    pub fn new(config: &'a Config, agenda: Pin<Box<Agenda<'a>>>) -> App<'a> {
+    pub fn new(config: &'a Config, agenda: Agenda<'a>) -> App<'a> {
         let context = Context::new(agenda);
         App { config, context }
     }

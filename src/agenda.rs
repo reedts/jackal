@@ -3,15 +3,12 @@ use chrono::Duration;
 use num_traits::FromPrimitive;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
-use std::marker::PhantomPinned;
 use std::ops::Bound::{Excluded, Included};
 use std::path::Path;
-use std::pin::Pin;
-use std::ptr;
 
 use crate::ical;
 
-pub type EventMap<'a> = BTreeMap<DateTime<Utc>, Vec<*const ical::Event>>;
+pub type EventMap = BTreeMap<DateTime<Utc>, Vec<AgendaIndex>>;
 
 fn days_of_month(month: &Month, year: i32) -> u64 {
     if month.number_from_month() == 12 {
@@ -27,55 +24,51 @@ fn days_of_month(month: &Month, year: i32) -> u64 {
     .num_days() as u64
 }
 
+#[derive(Debug, Clone)]
+pub struct AgendaIndex(usize, usize, usize);
+
 #[derive(Clone)]
 pub struct Agenda<'a> {
     path: &'a Path,
     collections: Vec<ical::Collection<'a>>,
-    events: EventMap<'a>,
-    // Allow self referencing
-    _pin: PhantomPinned,
+    events: EventMap,
 }
 
-impl<'a> TryFrom<&'a Path> for Pin<Box<Agenda<'a>>> {
+impl<'a> TryFrom<&'a Path> for Agenda<'a> {
     type Error = std::io::Error;
     fn try_from(path: &'a Path) -> Result<Self, Self::Error> {
         let collections = vec![ical::Collection::try_from(path)?];
 
-        let res = Agenda {
-            path,
-            collections,
-            events: EventMap::new(),
-            _pin: PhantomPinned,
-        };
-
-        let mut boxed = Box::pin(res);
-
-        // Fill up eventmap. This is safe, even if we cannot explain this
-        // to the compiler...
-        unsafe {
-            let mut event_map = EventMap::new();
-
-            {
-                for (dt, ev) in boxed
-                    .collections
-                    .iter()
-                    .flat_map(|c| c.event_iter())
-                    .map(|ev| (ev.occurence().as_datetime(&Utc {}), ev))
-                {
-                    event_map.entry(dt).or_default().push(ev)
+        let mut events = EventMap::new();
+        for (i, col) in collections.iter().enumerate() {
+            for (j, cal) in col.calendars().iter().enumerate() {
+                for (k, ev) in cal.events_iter().enumerate() {
+                    events
+                        .entry(ev.occurence().as_datetime(&Utc {}))
+                        .or_default()
+                        .push(AgendaIndex(i, j, k))
                 }
             }
-
-            let mut_ref: Pin<&mut Agenda> = Pin::as_mut(&mut boxed);
-            Pin::get_unchecked_mut(mut_ref).events = event_map;
         }
 
-        Ok(boxed)
+        Ok(Agenda {
+            path,
+            collections,
+            events,
+        })
     }
 }
 
 impl Agenda<'_> {
-    pub fn events_of_month(&self, month: Month, year: i32) -> impl Iterator<Item = &ical::Event> {
+    fn lookup_event(&self, index: &AgendaIndex) -> &ical::Event {
+        &self.collections[index.0].calendars()[index.1].events()[index.2]
+    }
+
+    pub fn events_of_month<'a>(
+        &'a self,
+        month: Month,
+        year: i32,
+    ) -> impl Iterator<Item = &'a ical::Event> + 'a {
         let b_date = DateTime::<Utc>::from_utc(
             NaiveDate::from_ymd(year, month.number_from_month() as u32, 1).and_hms(0, 0, 0),
             Utc {},
@@ -84,8 +77,8 @@ impl Agenda<'_> {
 
         self.events
             .range((Included(b_date), Included(e_date)))
-            .flat_map(|(_, evts)| evts.iter())
-            .map(|ev| unsafe { &*(*ev) })
+            .flat_map(|(_, indices)| indices.iter())
+            .map(move |index| self.lookup_event(index))
     }
 
     pub fn events_of_current_month(&self) -> impl Iterator<Item = &ical::Event> {
@@ -105,8 +98,8 @@ impl Agenda<'_> {
 
         self.events
             .range((Included(begin), Excluded(end)))
-            .flat_map(|(_, evts)| evts.iter())
-            .map(|ev| unsafe { &*(*ev) })
+            .flat_map(|(_, indices)| indices.iter())
+            .map(move |index| self.lookup_event(index))
     }
 
     pub fn events_of_current_day(&self) -> impl Iterator<Item = &ical::Event> {

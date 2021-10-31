@@ -1,6 +1,5 @@
 use chrono::prelude::*;
 use num_traits::FromPrimitive;
-use std::pin::Pin;
 
 use crate::agenda::Agenda;
 
@@ -91,12 +90,12 @@ impl TuiContext {
 #[derive(Clone)]
 pub struct Context<'a> {
     tui_context: TuiContext,
-    calendar: Pin<Box<Agenda<'a>>>,
+    calendar: Agenda<'a>,
     now: DateTime<Local>,
 }
 
 impl<'a> Context<'a> {
-    pub fn new<'b: 'a>(calendar: Pin<Box<Agenda<'b>>>) -> Self {
+    pub fn new<'b: 'a>(calendar: Agenda<'b>) -> Self {
         Context {
             tui_context: TuiContext::default(),
             calendar,
@@ -112,7 +111,7 @@ impl<'a> Context<'a> {
         &mut self.tui_context
     }
 
-    pub fn agenda(&self) -> &Pin<Box<Agenda>> {
+    pub fn agenda(&self) -> &Agenda {
         &self.calendar
     }
 
