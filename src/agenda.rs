@@ -44,7 +44,7 @@ impl<'a> TryFrom<&'a Path> for Agenda<'a> {
             for (j, cal) in col.calendars().iter().enumerate() {
                 for (k, ev) in cal.events_iter().enumerate() {
                     events
-                        .entry(ev.occurence().as_datetime(&Utc {}))
+                        .entry(ev.occurrence().as_datetime(&Utc {}))
                         .or_default()
                         .push(AgendaIndex(i, j, k))
                 }

@@ -119,6 +119,10 @@ impl<'a> Context<'a> {
         &self.now
     }
 
+    pub fn today(&self) -> Date<Local> {
+        self.now.date()
+    }
+
     pub fn cursor(&self) -> &DateTime<Local> {
         &self.tui_context.cursor
     }

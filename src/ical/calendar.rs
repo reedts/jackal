@@ -229,7 +229,7 @@ impl Event {
             .as_str()
     }
 
-    pub fn occurence(&self) -> &OccurrenceSpec {
+    pub fn occurrence(&self) -> &OccurrenceSpec {
         &self.occur
     }
 
