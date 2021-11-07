@@ -318,7 +318,7 @@ impl Calendar {
 
 #[derive(Clone)]
 pub struct Collection<'a> {
-    path: &'a Path,
+    path: PathBuf,
     friendly_name: Option<&'a str>,
     tz: Tz,
     calendars: Vec<Calendar>,
@@ -338,11 +338,18 @@ impl<'a> Collection<'a> {
     }
 }
 
-impl<'a> TryFrom<&'a Path> for Collection<'a> {
+impl TryFrom<&Path> for Collection<'_> {
     type Error = io::Error;
-    fn try_from(path: &'a Path) -> Result<Self, Self::Error> {
+    fn try_from(path: &Path) -> Result<Self, Self::Error> {
+        Self::try_from(path.to_path_buf())
+    }
+}
+
+impl TryFrom<PathBuf> for Collection<'_> {
+    type Error = io::Error;
+    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
         // Load all valid .ics files from 'path'
-        let mut calendars: Vec<Calendar> = fs::read_dir(path)?
+        let calendars: Vec<Calendar> = fs::read_dir(&path)?
             .map(|dir| {
                 dir.map_or_else(
                     |_| -> io::Result<_> { Err(io::Error::from(io::ErrorKind::NotFound)) },
@@ -355,7 +362,7 @@ impl<'a> TryFrom<&'a Path> for Collection<'a> {
             .collect();
 
         Ok(Collection {
-            path,
+            path: path.to_path_buf(),
             friendly_name: None,
             tz: Tz::UTC,
             calendars,

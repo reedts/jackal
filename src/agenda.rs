@@ -4,7 +4,7 @@ use num_traits::FromPrimitive;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::ops::Bound::{Excluded, Included};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::ical;
 
@@ -29,15 +29,26 @@ pub struct AgendaIndex(usize, usize, usize);
 
 #[derive(Clone)]
 pub struct Agenda<'a> {
-    path: &'a Path,
     collections: Vec<ical::Collection<'a>>,
     events: EventMap,
 }
 
-impl<'a> TryFrom<&'a Path> for Agenda<'a> {
+impl TryFrom<&[PathBuf]> for Agenda<'_> {
     type Error = std::io::Error;
-    fn try_from(path: &'a Path) -> Result<Self, Self::Error> {
-        let collections = vec![ical::Collection::try_from(path)?];
+
+    fn try_from<'a>(value: &'a [PathBuf]) -> Result<Self, Self::Error> {
+        let collections = value
+            .iter()
+            .map(|path| ical::Collection::try_from(path.as_path()))
+            .filter_map(|c| c.ok())
+            .collect::<Vec<ical::Collection>>();
+
+        if collections.is_empty() {
+            return Err(Self::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Could not find at least one collection",
+            ));
+        }
 
         let mut events = EventMap::new();
         for (i, col) in collections.iter().enumerate() {
@@ -52,10 +63,27 @@ impl<'a> TryFrom<&'a Path> for Agenda<'a> {
         }
 
         Ok(Agenda {
-            path,
             collections,
             events,
         })
+    }
+}
+
+impl<'a> TryFrom<&'a Path> for Agenda<'a> {
+    type Error = std::io::Error;
+    fn try_from(path: &'a Path) -> Result<Self, Self::Error> {
+        let dirs = path
+            .read_dir()?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().is_dir())
+            .map(|entry| entry.path())
+            .collect::<Vec<PathBuf>>();
+
+        if dirs.is_empty() {
+            Self::try_from(&[path.to_path_buf()] as &[_])
+        } else {
+            Self::try_from(dirs.as_slice())
+        }
     }
 }
 
