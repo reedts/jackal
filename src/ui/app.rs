@@ -4,10 +4,10 @@ use crate::agenda::Agenda;
 use crate::config::Config;
 use crate::events::{Dispatcher, Event};
 
-use super::{CalendarWindow, Context, EventWindow, MonthPane, TuiContext};
+use super::{CalendarWindow, Context, EventWindow, EventWindowBehaviour, MonthPane, TuiContext};
 
 use unsegen::base::{Cursor, Terminal};
-use unsegen::input::{Input, Key, Navigatable, NavigateBehavior, OperationResult};
+use unsegen::input::{Input, Key, Navigatable, NavigateBehavior, OperationResult, ScrollBehavior};
 use unsegen::widget::*;
 
 pub struct App<'a> {
@@ -45,15 +45,31 @@ impl<'a> App<'a> {
                 match event {
                     Event::Update => self.context.update(),
                     Event::Input(input) => {
-                        input.chain((Key::Char('q'), || run = false)).chain(
-                            NavigateBehavior::new(&mut DtCursorBehaviour(
-                                self.context.tui_context_mut(),
-                            ))
-                            .down_on(Key::Char('j'))
-                            .up_on(Key::Char('k'))
-                            .left_on(Key::Char('h'))
-                            .right_on(Key::Char('l')),
-                        );
+                        let num_events_of_current_day = self
+                            .context
+                            .agenda()
+                            .events_of_day(&self.context.cursor().date())
+                            .count();
+                        let leftover = input
+                            .chain((Key::Char('q'), || run = false))
+                            .chain(
+                                NavigateBehavior::new(&mut DtCursorBehaviour(
+                                    self.context.tui_context_mut(),
+                                ))
+                                .down_on(Key::Char('j'))
+                                .up_on(Key::Char('k'))
+                                .left_on(Key::Char('h'))
+                                .right_on(Key::Char('l')),
+                            )
+                            .chain(
+                                ScrollBehavior::new(&mut EventWindowBehaviour(
+                                    &mut self.context.tui_context_mut(),
+                                    num_events_of_current_day,
+                                ))
+                                .forwards_on(Key::Char('J'))
+                                .backwards_on(Key::Char('K')),
+                            )
+                            .finish();
                     }
                     _ => {}
                 }

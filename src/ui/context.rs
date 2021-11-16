@@ -40,6 +40,7 @@ impl Default for Theme {
 pub struct TuiContext {
     pub theme: Theme,
     pub cursor: DateTime<Local>,
+    pub eventlist_index: usize,
 }
 
 impl Default for TuiContext {
@@ -47,6 +48,7 @@ impl Default for TuiContext {
         TuiContext {
             theme: Theme::default(),
             cursor: Local::now(),
+            eventlist_index: 0,
         }
     }
 }
@@ -56,6 +58,7 @@ impl TuiContext {
         TuiContext {
             theme: Theme::default(),
             cursor,
+            eventlist_index: 0,
         }
     }
 }

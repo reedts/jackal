@@ -1,10 +1,11 @@
 use chrono::{DateTime, Local};
 use std::fmt::{Display, Write};
 use unsegen::base::*;
+use unsegen::input::Scrollable;
 use unsegen::widget::*;
 
 use crate::ical::{Event, OccurrenceSpec};
-use crate::ui::Context;
+use crate::ui::{Context, TuiContext};
 
 enum Entry<'a> {
     Event(&'a Event),
@@ -68,6 +69,7 @@ impl Widget for EventWindow<'_> {
             .chain([Entry::Cursor(self.context.cursor().clone())])
             .collect::<Vec<Entry>>();
 
+        // Append current time if cursor's date is today
         if self.context.today() == self.context.cursor().date() {
             events.push(Entry::Time(self.context.now().clone()))
         }
@@ -75,8 +77,48 @@ impl Widget for EventWindow<'_> {
         events.sort_unstable_by_key(|entry| entry.datetime());
 
         let mut cursor = Cursor::new(&mut window);
+
+        // Only count the real events (no cursor/clock)
+        let mut idx: usize = 0;
         for ev in events {
-            writeln!(&mut cursor, "{}", ev).unwrap();
+            match ev {
+                ev @ Entry::Event(_) => {
+                    let saved_style = cursor.get_style_modifier();
+
+                    if idx == self.context.tui_context().eventlist_index {
+                        cursor.apply_style_modifier(StyleModifier::new().invert(true));
+                    }
+
+                    write!(&mut cursor, "{}", ev).unwrap();
+                    cursor.fill_and_wrap_line();
+
+                    cursor.set_style_modifier(saved_style);
+                    idx += 1;
+                }
+                entry => writeln!(&mut cursor, "{}", entry).unwrap(),
+            }
+        }
+    }
+}
+
+pub struct EventWindowBehaviour<'a>(pub &'a mut TuiContext, pub usize);
+
+impl Scrollable for EventWindowBehaviour<'_> {
+    fn scroll_backwards(&mut self) -> unsegen::input::OperationResult {
+        if self.0.eventlist_index > 0 {
+            self.0.eventlist_index -= 1;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    fn scroll_forwards(&mut self) -> unsegen::input::OperationResult {
+        if self.0.eventlist_index + 1 < self.1 {
+            self.0.eventlist_index += 1;
+            Ok(())
+        } else {
+            Err(())
         }
     }
 }
