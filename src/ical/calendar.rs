@@ -4,6 +4,7 @@ use chrono::{
 use chrono_tz::Tz;
 use ical::parser::ical::component::IcalCalendar;
 use ical::parser::ical::IcalParser;
+use log;
 use std::convert::TryFrom;
 use std::fs;
 use std::io;
@@ -285,7 +286,7 @@ impl TryFrom<&Path> for Calendar {
             .map(|ev| Event::try_from(ev))
             .inspect(|ev| {
                 if let Err(e) = ev {
-                    println!("ERROR: {:?} (in '{}')", e, path.display())
+                    log::warn!("{} (in '{}')", e, path.display())
                 }
             })
             .filter_map(Result::ok)
@@ -357,6 +358,11 @@ impl TryFrom<PathBuf> for Collection<'_> {
                         Calendar::try_from(file.path().as_path())
                     },
                 )
+            })
+            .inspect(|res| {
+                if let Err(err) = res {
+                    log::warn!("{}", err)
+                }
             })
             .filter_map(Result::ok)
             .collect();

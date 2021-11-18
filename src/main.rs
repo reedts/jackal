@@ -7,6 +7,7 @@ mod ui;
 use agenda::Agenda;
 use config::Config;
 use events::Dispatcher;
+use flexi_logger::{Duplicate, FileSpec, Logger};
 use std::convert::TryFrom;
 use std::io::stdout;
 use std::path::PathBuf;
@@ -42,6 +43,12 @@ pub struct Args {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    Logger::try_with_env_or_str("info")?
+        .log_to_file(FileSpec::default())
+        .print_message()
+        .duplicate_to_stderr(Duplicate::Warn)
+        .start()?;
+
     let args = Args::from_args();
     let config = Config::default();
     let dispatcher = Dispatcher::from_config(config.clone());

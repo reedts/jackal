@@ -1,5 +1,6 @@
 use chrono::prelude::*;
 use chrono::Duration;
+use log;
 use num_traits::FromPrimitive;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
@@ -40,6 +41,11 @@ impl TryFrom<&[PathBuf]> for Agenda<'_> {
         let collections = value
             .iter()
             .map(|path| ical::Collection::try_from(path.as_path()))
+            .inspect(|c| {
+                if let Err(e) = c {
+                    log::warn!("{}", e)
+                }
+            })
             .filter_map(|c| c.ok())
             .collect::<Vec<ical::Collection>>();
 
