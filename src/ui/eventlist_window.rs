@@ -33,6 +33,9 @@ impl Display for Entry<'_> {
                         start.as_datetime(&Local {}).time().format("%H:%M"),
                         end.as_datetime(&Local {}).time().format("%H:%M")
                     ),
+                    OccurrenceSpec::Instant(dt) => {
+                        format!("{}", dt.as_datetime(&Local {}).time().format("%H:%M"))
+                    }
                 };
                 write!(f, "{}: {}", time, event.summary())
             }

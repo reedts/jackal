@@ -28,6 +28,7 @@ pub struct TimeSpan<'a> {
 pub enum OccurrenceSpec {
     Allday(DateTimeSpec),
     Onetime(DateTimeSpec, DateTimeSpec),
+    Instant(DateTimeSpec),
 }
 
 impl OccurrenceSpec {
@@ -46,6 +47,7 @@ impl OccurrenceSpec {
         match self {
             Allday(date) => date.as_date(tz),
             Onetime(datetime, _) => datetime.as_date(tz),
+            Instant(datetime) => datetime.as_date(tz),
         }
     }
 
@@ -57,6 +59,7 @@ impl OccurrenceSpec {
                 .and_time(NaiveTime::from_hms(0, 0, 0))
                 .unwrap(),
             Onetime(datetime, _) => datetime.as_datetime(tz).clone(),
+            Instant(datetime) => datetime.as_datetime(tz).clone(),
         }
     }
 
@@ -65,6 +68,7 @@ impl OccurrenceSpec {
         match self {
             Allday(date) => date.as_date(tz).and_hms(0, 0, 0),
             Onetime(begin, _) => begin.as_datetime(tz).clone(),
+            Instant(datetime) => datetime.as_datetime(tz).clone(),
         }
     }
 
@@ -73,6 +77,7 @@ impl OccurrenceSpec {
         match self {
             Allday(date) => date.as_date(tz).and_hms(23, 59, 59),
             Onetime(_, end) => end.as_datetime(tz).clone(),
+            Instant(datetime) => datetime.as_datetime(tz).clone(),
         }
     }
 }
@@ -87,17 +92,32 @@ impl TryFrom<&IcalEvent> for OccurrenceSpec {
             .find(|p| p.name == "DTSTART")
             .ok_or(Error::new(ErrorKind::EventMissingKey).with_msg("No DTSTART found"))?;
 
-        let dtend = value
-            .properties
-            .iter()
-            .find(|p| p.name == "DTEND")
-            .ok_or(Error::new(ErrorKind::EventMissingKey).with_msg("No DTEND found"))?;
+        let dtend = value.properties.iter().find(|p| p.name == "DTEND");
 
+        // Required (if METHOD not set)
         let dtstart_spec = DateTimeSpec::try_from(dtstart)?;
-        if let Some(dtend_spec) = DateTimeSpec::try_from(dtstart).ok() {
-            Ok(OccurrenceSpec::Onetime(dtstart_spec, dtend_spec))
-        } else {
-            Ok(OccurrenceSpec::Allday(dtstart_spec))
+
+        // DTEND does not HAVE to be specified...
+        if let Some(dt) = dtend {
+            // ...but if set it must be parseable
+            let dtend_spec = DateTimeSpec::try_from(dt)?;
+            return Ok(OccurrenceSpec::Onetime(dtstart_spec, dtend_spec));
+        };
+
+        // Check if DURATION is set
+        let duration = value.properties.iter().find(|p| p.name == "DURATION");
+
+        if let Some(duration) = duration {
+            // TODO: Implement
+        };
+
+        // If neither DTEND, nor DURATION is specified event duration depends solely
+        // on DTSTART. RFC 5545 states, that if DTSTART is...
+        //  ... a date spec, the event has to have the duration of a single day
+        //  ... a datetime spec, the event has to have the dtstart also as dtend
+        match dtstart_spec {
+            date @ DateTimeSpec::Date(_) => Ok(OccurrenceSpec::Allday(date)),
+            dt => Ok(OccurrenceSpec::Instant(dt)),
         }
     }
 }
