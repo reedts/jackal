@@ -24,12 +24,12 @@ impl Default for Theme {
         Theme {
             day_style: StyleModifier::default(),
             day_text_style: TextFormatModifier::default(),
-            focus_day_style: StyleModifier::default(),
+            focus_day_style: StyleModifier::default().bg_color(Color::Blue),
             focus_day_text_style: TextFormatModifier::default(),
-            focus_day_char: Some('*'),
-            today_day_style: StyleModifier::default().bg_color(Color::Blue),
-            today_day_text_style: TextFormatModifier::default(),
-            today_day_char: None,
+            focus_day_char: None,
+            today_day_style: StyleModifier::default().invert(true),
+            today_day_text_style: TextFormatModifier::default().italic(true),
+            today_day_char: Some('*'),
             month_header_style: StyleModifier::default().fg_color(Color::Yellow),
             month_header_text_style: TextFormatModifier::default(),
         }

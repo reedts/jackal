@@ -28,10 +28,14 @@ impl Display for Entry<'_> {
             Self::Event(event) => {
                 let time = match event.occurrence() {
                     OccurrenceSpec::Allday(_) => "Allday".to_owned(),
-                    OccurrenceSpec::Onetime(start, end) => format!(
+                    OccurrenceSpec::Onetime(timespan) => format!(
                         "{} - {}",
-                        start.as_datetime(&Local {}).time().format("%H:%M"),
-                        end.as_datetime(&Local {}).time().format("%H:%M")
+                        timespan
+                            .begin()
+                            .as_datetime(&Local {})
+                            .time()
+                            .format("%H:%M"),
+                        timespan.end().as_datetime(&Local {}).time().format("%H:%M")
                     ),
                     OccurrenceSpec::Instant(dt) => {
                         format!("{}", dt.as_datetime(&Local {}).time().format("%H:%M"))
