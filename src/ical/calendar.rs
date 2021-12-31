@@ -19,62 +19,53 @@ use crate::ical::{Error, ErrorKind};
 use super::{ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE};
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub enum EndPoint {
-    TimePoint(DateTimeSpec),
-    Duration(chrono::Duration),
+pub struct DurationSpec {
+    dur: chrono::Duration,
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub struct TimeSpan {
-    begin: DateTimeSpec,
-    end: Option<EndPoint>,
+impl FromStr for DurationSpec {
+    type Err = super::error::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        unimplemented!();
+    }
+}
+
+impl TryFrom<&Property> for DurationSpec {
+    type Error = super::error::Error;
+
+    fn try_from(value: &Property) -> Result<Self, Self::Error> {
+        unimplemented!();
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum TimeSpan {
+    TimePoints(DateTimeSpec, DateTimeSpec),
+    Duration(DateTimeSpec, chrono::Duration),
 }
 
 impl TimeSpan {
-    pub fn new(begin: DateTimeSpec, end: Option<EndPoint>) -> Self {
-        TimeSpan { begin, end }
-    }
-
     pub fn from_start_and_end(begin: DateTimeSpec, end: DateTimeSpec) -> Self {
-        TimeSpan::new(begin, Some(EndPoint::TimePoint(end)))
+        TimeSpan::TimePoints(begin, end)
     }
 
     pub fn from_start_and_duration(begin: DateTimeSpec, end: chrono::Duration) -> Self {
-        TimeSpan::new(begin, Some(EndPoint::Duration(end)))
-    }
-
-    pub fn with_end(mut self, end: EndPoint) -> Self {
-        self.end = Some(end);
-        self
-    }
-
-    pub fn with_endtimepoint(self, end: DateTimeSpec) -> Self {
-        self.with_end(EndPoint::TimePoint(end))
-    }
-
-    pub fn with_duration(self, duration: chrono::Duration) -> Self {
-        self.with_end(EndPoint::Duration(duration))
+        TimeSpan::Duration(begin, end)
     }
 
     pub fn begin(&self) -> DateTimeSpec {
-        self.begin.clone()
+        match &self {
+            TimeSpan::TimePoints(begin, _) => begin.clone(),
+            TimeSpan::Duration(begin, _) => begin.clone(),
+        }
     }
 
     pub fn end(&self) -> DateTimeSpec {
-        if let Some(end) = &self.end {
-            match end {
-                EndPoint::TimePoint(spec) => spec.clone(),
-                EndPoint::Duration(dur) => self.begin.clone().and_duration(dur.clone()),
-            }
-        } else {
-            self.begin.clone().and_duration(chrono::Duration::hours(1))
+        match &self {
+            TimeSpan::TimePoints(_, end) => end.clone(),
+            TimeSpan::Duration(begin, dur) => begin.clone().and_duration(dur.clone()),
         }
-    }
-}
-
-impl From<DateTimeSpec> for TimeSpan {
-    fn from(spec: DateTimeSpec) -> Self {
-        TimeSpan::new(spec, None)
     }
 }
 
@@ -100,7 +91,7 @@ impl OccurrenceSpec {
         use OccurrenceSpec::*;
         match self {
             Allday(date) => date.as_date(tz),
-            Onetime(timespan) => timespan.begin.as_date(tz),
+            Onetime(timespan) => timespan.begin().as_date(tz),
             Instant(datetime) => datetime.as_date(tz),
         }
     }
@@ -112,7 +103,7 @@ impl OccurrenceSpec {
                 .as_date(tz)
                 .and_time(NaiveTime::from_hms(0, 0, 0))
                 .unwrap(),
-            Onetime(timespan) => timespan.begin.as_datetime(tz).clone(),
+            Onetime(timespan) => timespan.begin().as_datetime(tz).clone(),
             Instant(datetime) => datetime.as_datetime(tz).clone(),
         }
     }
@@ -121,7 +112,7 @@ impl OccurrenceSpec {
         use OccurrenceSpec::*;
         match self {
             Allday(date) => date.as_date(tz).and_hms(0, 0, 0),
-            Onetime(timespan) => timespan.begin.as_datetime(tz).clone(),
+            Onetime(timespan) => timespan.begin().as_datetime(tz).clone(),
             Instant(datetime) => datetime.as_datetime(tz).clone(),
         }
     }
@@ -161,12 +152,12 @@ impl TryFrom<&IcalEvent> for OccurrenceSpec {
             )));
         };
 
-        // Check if DURATION is set
-        let duration = value.properties.iter().find(|p| p.name == "DURATION");
+        // // Check if DURATION is set
+        // let duration = value.properties.iter().find(|p| p.name == "DURATION");
 
-        if let Some(duration) = duration {
-            // TODO: Implement
-        };
+        // if let Some(duration) = duration {
+        //     Ok(OccurrenceSpec::Onetime(TimeSpan::from_start_and_duration(dtstart_spec, duration)
+        // };
 
         // If neither DTEND, nor DURATION is specified event duration depends solely
         // on DTSTART. RFC 5545 states, that if DTSTART is...
@@ -179,12 +170,12 @@ impl TryFrom<&IcalEvent> for OccurrenceSpec {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DateTimeSpec {
     Date(NaiveDate),
     Floating(NaiveDateTime),
     Utc(DateTime<Utc>),
-    Local(DateTime<FixedOffset>),
+    Local(DateTime<FixedOffset>, Tz),
 }
 
 impl FromStr for DateTimeSpec {
@@ -244,7 +235,7 @@ impl DateTimeSpec {
             DateTimeSpec::Date(dt) => tz.from_utc_date(&dt).and_hms(0, 0, 0),
             DateTimeSpec::Floating(dt) => tz.from_utc_datetime(&dt),
             DateTimeSpec::Utc(dt) => dt.with_timezone(&tz),
-            DateTimeSpec::Local(dt) => dt.with_timezone(&tz),
+            DateTimeSpec::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz),
         }
     }
 
@@ -253,24 +244,25 @@ impl DateTimeSpec {
             DateTimeSpec::Date(dt) => tz.from_utc_date(&dt),
             DateTimeSpec::Floating(dt) => tz.from_utc_date(&dt.date()),
             DateTimeSpec::Utc(dt) => dt.with_timezone(tz).date(),
-            DateTimeSpec::Local(dt) => dt.with_timezone(tz).date(),
+            DateTimeSpec::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz).date(),
         }
     }
 
-    pub fn with_tz<Tz: TimeZone>(self, tz: &Tz) -> Self {
+    pub fn with_tz(self, tz: &Tz) -> Self {
         match self {
             DateTimeSpec::Date(dt) => {
                 let offset = tz.offset_from_utc_date(&dt).fix();
-                DateTimeSpec::Local(offset.from_utc_date(&dt).and_hms(0, 0, 0))
+                DateTimeSpec::Local(offset.from_utc_date(&dt).and_hms(0, 0, 0), tz.clone())
             }
             DateTimeSpec::Floating(dt) => {
                 let offset = tz.offset_from_utc_datetime(&dt).fix();
-                DateTimeSpec::Local(offset.from_utc_datetime(&dt))
+                DateTimeSpec::Local(offset.from_utc_datetime(&dt), tz.clone())
             }
             DateTimeSpec::Utc(dt) => DateTimeSpec::Local(
                 dt.with_timezone(&tz.offset_from_utc_datetime(&dt.naive_utc()).fix()),
+                tz.clone(),
             ),
-            DateTimeSpec::Local(dt) => DateTimeSpec::Local(dt),
+            DateTimeSpec::Local(dt, _) => DateTimeSpec::Local(dt, tz.clone()),
         }
     }
 
@@ -279,7 +271,7 @@ impl DateTimeSpec {
             DateTimeSpec::Date(dt) => DateTimeSpec::Date(dt + duration),
             DateTimeSpec::Floating(dt) => DateTimeSpec::Floating(dt + duration),
             DateTimeSpec::Utc(dt) => DateTimeSpec::Utc(dt + duration),
-            DateTimeSpec::Local(dt) => DateTimeSpec::Local(dt + duration),
+            DateTimeSpec::Local(dt, tz) => DateTimeSpec::Local(dt + duration, tz),
         }
     }
 }
