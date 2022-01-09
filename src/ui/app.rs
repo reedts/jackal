@@ -4,10 +4,14 @@ use crate::agenda::Agenda;
 use crate::config::Config;
 use crate::events::{Dispatcher, Event};
 
-use super::{CalendarWindow, Context, EventWindow, EventWindowBehaviour, MonthPane, TuiContext};
+use super::{
+    CalendarWindow, Context, EventWindow, EventWindowBehaviour, Mode, MonthPane, TuiContext,
+};
 
-use unsegen::base::{Cursor, Terminal};
-use unsegen::input::{Input, Key, Navigatable, NavigateBehavior, OperationResult, ScrollBehavior};
+use unsegen::base::{Cursor, GraphemeCluster, Terminal};
+use unsegen::input::{
+    EditBehavior, Input, Key, Navigatable, NavigateBehavior, OperationResult, ScrollBehavior,
+};
 use unsegen::widget::*;
 
 pub struct App<'a> {
@@ -21,13 +25,39 @@ impl<'a> App<'a> {
         App { config, context }
     }
 
+    pub fn switch_mode(&mut self, mode: Mode) {
+        self.context.tui_context_mut().mode = mode;
+    }
+
+    fn bottom_bar<'w>(&'w self) -> impl Widget + 'w {
+        let spacer = " ".with_demand(|_| Demand2D {
+            width: ColDemand::exact(1),
+            height: RowDemand::exact(1),
+        });
+
+        let mut layout = HLayout::new()
+            .separator(GraphemeCluster::try_from(' ').unwrap())
+            .widget(spacer);
+        let tui_context = self.context.tui_context();
+
+        if matches!(tui_context.mode, Mode::Command) {
+            layout = layout.widget(tui_context.command_line.as_widget());
+        }
+
+        layout
+    }
+
     fn as_widget<'w>(&'w self) -> impl Widget + 'w
     where
         'a: 'w,
     {
-        let mut layout = HLayout::new()
-            .widget(CalendarWindow::new(&self.context))
-            .widget(EventWindow::new(&self.context));
+        let mut layout = VLayout::new()
+            .widget(
+                HLayout::new()
+                    .widget(CalendarWindow::new(&self.context))
+                    .widget(EventWindow::new(&self.context)),
+            )
+            .widget(self.bottom_bar());
 
         layout
     }
@@ -50,37 +80,65 @@ impl<'a> App<'a> {
                             .agenda()
                             .events_of_day(&self.context.cursor().date())
                             .count();
-                        let leftover = input
-                            .chain((Key::Char('q'), || run = false))
-                            .chain(
-                                NavigateBehavior::new(&mut DtCursorBehaviour(
-                                    self.context.tui_context_mut(),
-                                ))
-                                .down_on(Key::Char('j'))
-                                .up_on(Key::Char('k'))
-                                .left_on(Key::Char('h'))
-                                .right_on(Key::Char('l')),
-                            )
-                            .chain(
-                                ScrollBehavior::new(&mut EventWindowBehaviour(
-                                    &mut self.context.tui_context_mut(),
-                                    num_events_of_current_day,
-                                ))
-                                .forwards_on(Key::Char('J'))
-                                .backwards_on(Key::Char('K')),
-                            )
-                            .finish();
+
+                        if input.matches(Key::Esc) {
+                            self.switch_mode(Mode::Normal);
+                        } else {
+                            match self.context.tui_context().mode {
+                                Mode::Normal => {
+                                    let leftover = input
+                                        .chain((Key::Char('q'), || run = false))
+                                        .chain((Key::Char(':'), || self.switch_mode(Mode::Command)))
+                                        .chain(
+                                            NavigateBehavior::new(&mut DtCursorBehaviour(
+                                                self.context.tui_context_mut(),
+                                            ))
+                                            .down_on(Key::Char('j'))
+                                            .up_on(Key::Char('k'))
+                                            .left_on(Key::Char('h'))
+                                            .right_on(Key::Char('l')),
+                                        )
+                                        .chain(
+                                            ScrollBehavior::new(&mut EventWindowBehaviour(
+                                                &mut self.context.tui_context_mut(),
+                                                num_events_of_current_day,
+                                            ))
+                                            .forwards_on(Key::Char(']'))
+                                            .backwards_on(Key::Char('[')),
+                                        )
+                                        .finish();
+                                }
+                                Mode::Insert => {}
+                                Mode::Command => {
+                                    input
+                                        .chain(
+                                            EditBehavior::new(
+                                                &mut self.context.tui_context_mut().command_line,
+                                            )
+                                            .delete_forwards_on(Key::Delete)
+                                            .delete_backwards_on(Key::Backspace)
+                                            .left_on(Key::Left)
+                                            .right_on(Key::Right),
+                                        )
+                                        .chain(
+                                            ScrollBehavior::new(
+                                                &mut self.context.tui_context_mut().command_line,
+                                            )
+                                            .backwards_on(Key::Up)
+                                            .forwards_on(Key::Down),
+                                        )
+                                        .finish();
+                                }
+                            }
+                        }
                     }
-                    _ => {}
                 }
             }
 
             // Draw
             let mut root = term.create_root_window();
 
-            let mut layout = HLayout::new()
-                .widget(self.as_widget())
-                .draw(root, RenderingHints::new());
+            let mut layout = self.as_widget().draw(root, RenderingHints::new());
 
             term.present();
         }

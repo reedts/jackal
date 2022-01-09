@@ -4,6 +4,14 @@ use num_traits::FromPrimitive;
 use crate::agenda::Agenda;
 
 use unsegen::base::style::*;
+use unsegen::widget::builtin::PromptLine;
+
+#[derive(Clone, Debug)]
+pub enum Mode {
+    Normal,
+    Insert,
+    Command,
+}
 
 #[derive(Clone, Debug)]
 pub struct Theme {
@@ -36,18 +44,21 @@ impl Default for Theme {
     }
 }
 
-#[derive(Clone, Debug)]
 pub struct TuiContext {
+    pub mode: Mode,
     pub theme: Theme,
     pub cursor: DateTime<Local>,
+    pub command_line: PromptLine,
     pub eventlist_index: usize,
 }
 
 impl Default for TuiContext {
     fn default() -> Self {
         TuiContext {
+            mode: Mode::Normal,
             theme: Theme::default(),
             cursor: Local::now(),
+            command_line: PromptLine::with_prompt(":".to_owned()),
             eventlist_index: 0,
         }
     }
@@ -56,8 +67,10 @@ impl Default for TuiContext {
 impl TuiContext {
     pub fn new(cursor: DateTime<Local>) -> Self {
         TuiContext {
+            mode: Mode::Normal,
             theme: Theme::default(),
             cursor,
+            command_line: PromptLine::with_prompt(":".to_owned()),
             eventlist_index: 0,
         }
     }
@@ -90,7 +103,6 @@ impl TuiContext {
     }
 }
 
-#[derive(Clone)]
 pub struct Context<'a> {
     tui_context: TuiContext,
     calendar: Agenda<'a>,
