@@ -14,6 +14,8 @@ use unsegen::input::{
 };
 use unsegen::widget::*;
 
+use super::command::CommandParser;
+
 pub struct App<'a> {
     config: &'a Config,
     context: Context<'a>,
@@ -25,10 +27,6 @@ impl<'a> App<'a> {
         App { config, context }
     }
 
-    pub fn switch_mode(&mut self, mode: Mode) {
-        self.context.tui_context_mut().mode = mode;
-    }
-
     fn bottom_bar<'w>(&'w self) -> impl Widget + 'w {
         let spacer = " ".with_demand(|_| Demand2D {
             width: ColDemand::exact(1),
@@ -38,10 +36,10 @@ impl<'a> App<'a> {
         let mut layout = HLayout::new()
             .separator(GraphemeCluster::try_from(' ').unwrap())
             .widget(spacer);
-        let tui_context = self.context.tui_context();
+        let tui_context = self.context.tui();
 
-        if matches!(tui_context.mode, Mode::Command) {
-            layout = layout.widget(tui_context.command_line.as_widget());
+        if let mode @ (Mode::Command | Mode::Insert) = tui_context.mode {
+            layout = layout.widget(tui_context.input_sink(mode).as_widget());
         }
 
         layout
@@ -82,16 +80,18 @@ impl<'a> App<'a> {
                             .count();
 
                         if input.matches(Key::Esc) {
-                            self.switch_mode(Mode::Normal);
+                            self.context.tui_mut().mode = Mode::Normal;
                         } else {
-                            match self.context.tui_context().mode {
+                            match self.context.tui().mode {
                                 Mode::Normal => {
                                     let leftover = input
                                         .chain((Key::Char('q'), || run = false))
-                                        .chain((Key::Char(':'), || self.switch_mode(Mode::Command)))
+                                        .chain((Key::Char(':'), || {
+                                            self.context.tui_mut().mode = Mode::Command
+                                        }))
                                         .chain(
                                             NavigateBehavior::new(&mut DtCursorBehaviour(
-                                                self.context.tui_context_mut(),
+                                                self.context.tui_mut(),
                                             ))
                                             .down_on(Key::Char('j'))
                                             .up_on(Key::Char('k'))
@@ -100,7 +100,7 @@ impl<'a> App<'a> {
                                         )
                                         .chain(
                                             ScrollBehavior::new(&mut EventWindowBehaviour(
-                                                &mut self.context.tui_context_mut(),
+                                                &mut self.context.tui_mut(),
                                                 num_events_of_current_day,
                                             ))
                                             .forwards_on(Key::Char(']'))
@@ -109,11 +109,11 @@ impl<'a> App<'a> {
                                         .finish();
                                 }
                                 Mode::Insert => {}
-                                Mode::Command => {
+                                mode @ Mode::Command => {
                                     input
                                         .chain(
                                             EditBehavior::new(
-                                                &mut self.context.tui_context_mut().command_line,
+                                                self.context.tui_mut().input_sink_mut(mode),
                                             )
                                             .delete_forwards_on(Key::Delete)
                                             .delete_backwards_on(Key::Backspace)
@@ -122,11 +122,12 @@ impl<'a> App<'a> {
                                         )
                                         .chain(
                                             ScrollBehavior::new(
-                                                &mut self.context.tui_context_mut().command_line,
+                                                self.context.tui_mut().input_sink_mut(mode),
                                             )
                                             .backwards_on(Key::Up)
                                             .forwards_on(Key::Down),
                                         )
+                                        .chain(CommandParser::new(&mut self.context, &self.config))
                                         .finish();
                                 }
                             }

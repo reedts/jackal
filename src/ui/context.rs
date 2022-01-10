@@ -1,12 +1,13 @@
 use chrono::prelude::*;
 use num_traits::FromPrimitive;
+use std::collections::BTreeMap;
 
 use crate::agenda::Agenda;
 
 use unsegen::base::style::*;
 use unsegen::widget::builtin::PromptLine;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Ord, Eq, PartialEq, PartialOrd)]
 pub enum Mode {
     Normal,
     Insert,
@@ -48,8 +49,9 @@ pub struct TuiContext {
     pub mode: Mode,
     pub theme: Theme,
     pub cursor: DateTime<Local>,
-    pub command_line: PromptLine,
     pub eventlist_index: usize,
+    pub last_error_message: Option<String>,
+    input_sinks: BTreeMap<Mode, PromptLine>,
 }
 
 impl Default for TuiContext {
@@ -58,7 +60,11 @@ impl Default for TuiContext {
             mode: Mode::Normal,
             theme: Theme::default(),
             cursor: Local::now(),
-            command_line: PromptLine::with_prompt(":".to_owned()),
+            last_error_message: None,
+            input_sinks: BTreeMap::from([
+                (Mode::Insert, PromptLine::with_prompt(">".to_owned())),
+                (Mode::Command, PromptLine::with_prompt(":".to_owned())),
+            ]),
             eventlist_index: 0,
         }
     }
@@ -70,7 +76,11 @@ impl TuiContext {
             mode: Mode::Normal,
             theme: Theme::default(),
             cursor,
-            command_line: PromptLine::with_prompt(":".to_owned()),
+            last_error_message: None,
+            input_sinks: BTreeMap::from([
+                (Mode::Insert, PromptLine::with_prompt(">".to_owned())),
+                (Mode::Command, PromptLine::with_prompt(":".to_owned())),
+            ]),
             eventlist_index: 0,
         }
     }
@@ -101,10 +111,17 @@ impl TuiContext {
     pub fn theme(&self) -> &Theme {
         &self.theme
     }
+
+    pub fn input_sink(&self, mode: Mode) -> &PromptLine {
+        self.input_sinks.get(&mode).unwrap()
+    }
+    pub fn input_sink_mut(&mut self, mode: Mode) -> &mut PromptLine {
+        self.input_sinks.get_mut(&mode).unwrap()
+    }
 }
 
 pub struct Context<'a> {
-    tui_context: TuiContext,
+    tui: TuiContext,
     calendar: Agenda<'a>,
     now: DateTime<Local>,
 }
@@ -112,18 +129,18 @@ pub struct Context<'a> {
 impl<'a> Context<'a> {
     pub fn new<'b: 'a>(calendar: Agenda<'b>) -> Self {
         Context {
-            tui_context: TuiContext::default(),
+            tui: TuiContext::default(),
             calendar,
             now: Local::now(),
         }
     }
 
-    pub fn tui_context(&self) -> &TuiContext {
-        &self.tui_context
+    pub fn tui(&self) -> &TuiContext {
+        &self.tui
     }
 
-    pub fn tui_context_mut(&mut self) -> &mut TuiContext {
-        &mut self.tui_context
+    pub fn tui_mut(&mut self) -> &mut TuiContext {
+        &mut self.tui
     }
 
     pub fn agenda(&self) -> &Agenda {
@@ -139,7 +156,7 @@ impl<'a> Context<'a> {
     }
 
     pub fn cursor(&self) -> &DateTime<Local> {
-        &self.tui_context.cursor
+        &self.tui.cursor
     }
 
     pub fn update(&mut self) {

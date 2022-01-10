@@ -92,7 +92,7 @@ impl Widget for EventWindow<'_> {
                 ev @ Entry::Event(_) => {
                     let saved_style = cursor.get_style_modifier();
 
-                    if idx == self.context.tui_context().eventlist_index {
+                    if idx == self.context.tui().eventlist_index {
                         cursor.apply_style_modifier(StyleModifier::new().invert(true));
                     }
 

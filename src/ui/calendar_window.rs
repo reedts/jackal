@@ -114,7 +114,7 @@ impl Widget for MonthPane<'_> {
     }
 
     fn draw(&self, mut window: Window, _hints: RenderingHints) {
-        let theme = &self.context.tui_context().theme;
+        let theme = &self.context.tui().theme;
 
         let mut cursor = Cursor::new(&mut window)
             .wrapping_mode(WrappingMode::Wrap)
@@ -316,7 +316,7 @@ impl Widget for CalendarWindow<'_> {
         // subwindows accordingly
         let num_fitting_months = window.get_height() / MonthPane::HEIGHT;
 
-        let offset: MonthIndex = MonthIndex::from(self.context.tui_context().cursor.clone())
+        let offset: MonthIndex = MonthIndex::from(self.context.tui().cursor.clone())
             - (num_fitting_months.raw_value() / 2) as u32;
 
         let (subwindow_x, subwindow_y) = (
