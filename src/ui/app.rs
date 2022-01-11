@@ -4,9 +4,7 @@ use crate::agenda::Agenda;
 use crate::config::Config;
 use crate::events::{Dispatcher, Event};
 
-use super::{
-    CalendarWindow, Context, EventWindow, EventWindowBehaviour, Mode, MonthPane, TuiContext,
-};
+use super::{CalendarWindow, Context, EventWindow, EventWindowBehaviour, Mode, MonthPane};
 
 use unsegen::base::{Cursor, GraphemeCluster, Terminal};
 use unsegen::input::{
@@ -36,10 +34,8 @@ impl<'a> App<'a> {
         let mut layout = HLayout::new()
             .separator(GraphemeCluster::try_from(' ').unwrap())
             .widget(spacer);
-        let tui_context = self.context.tui();
-
-        if let mode @ (Mode::Command | Mode::Insert) = tui_context.mode {
-            layout = layout.widget(tui_context.input_sink(mode).as_widget());
+        if let mode @ (Mode::Command | Mode::Insert) = self.context.mode {
+            layout = layout.widget(self.context.input_sink(mode).as_widget());
         }
 
         layout
@@ -80,18 +76,18 @@ impl<'a> App<'a> {
                             .count();
 
                         if input.matches(Key::Esc) {
-                            self.context.tui_mut().mode = Mode::Normal;
+                            self.context.mode = Mode::Normal;
                         } else {
-                            match self.context.tui().mode {
+                            match self.context.mode {
                                 Mode::Normal => {
                                     let leftover = input
                                         .chain((Key::Char('q'), || run = false))
                                         .chain((Key::Char(':'), || {
-                                            self.context.tui_mut().mode = Mode::Command
+                                            self.context.mode = Mode::Command
                                         }))
                                         .chain(
                                             NavigateBehavior::new(&mut DtCursorBehaviour(
-                                                self.context.tui_mut(),
+                                                &mut self.context,
                                             ))
                                             .down_on(Key::Char('j'))
                                             .up_on(Key::Char('k'))
@@ -100,7 +96,7 @@ impl<'a> App<'a> {
                                         )
                                         .chain(
                                             ScrollBehavior::new(&mut EventWindowBehaviour(
-                                                &mut self.context.tui_mut(),
+                                                &mut self.context,
                                                 num_events_of_current_day,
                                             ))
                                             .forwards_on(Key::Char(']'))
@@ -112,20 +108,16 @@ impl<'a> App<'a> {
                                 mode @ Mode::Command => {
                                     input
                                         .chain(
-                                            EditBehavior::new(
-                                                self.context.tui_mut().input_sink_mut(mode),
-                                            )
-                                            .delete_forwards_on(Key::Delete)
-                                            .delete_backwards_on(Key::Backspace)
-                                            .left_on(Key::Left)
-                                            .right_on(Key::Right),
+                                            EditBehavior::new(self.context.input_sink_mut(mode))
+                                                .delete_forwards_on(Key::Delete)
+                                                .delete_backwards_on(Key::Backspace)
+                                                .left_on(Key::Left)
+                                                .right_on(Key::Right),
                                         )
                                         .chain(
-                                            ScrollBehavior::new(
-                                                self.context.tui_mut().input_sink_mut(mode),
-                                            )
-                                            .backwards_on(Key::Up)
-                                            .forwards_on(Key::Down),
+                                            ScrollBehavior::new(self.context.input_sink_mut(mode))
+                                                .backwards_on(Key::Up)
+                                                .forwards_on(Key::Down),
                                         )
                                         .chain(CommandParser::new(&mut self.context, &self.config))
                                         .finish();
@@ -148,9 +140,9 @@ impl<'a> App<'a> {
     }
 }
 
-struct DtCursorBehaviour<'a>(&'a mut TuiContext);
+struct DtCursorBehaviour<'a, 'c>(&'a mut Context<'c>);
 
-impl Navigatable for DtCursorBehaviour<'_> {
+impl Navigatable for DtCursorBehaviour<'_, '_> {
     fn move_down(&mut self) -> OperationResult {
         self.0.cursor = self.0.cursor + chrono::Duration::weeks(1);
         Ok(())

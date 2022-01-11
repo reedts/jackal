@@ -5,7 +5,7 @@ use unsegen::input::Scrollable;
 use unsegen::widget::*;
 
 use crate::ical::{Event, OccurrenceSpec};
-use crate::ui::{Context, TuiContext};
+use crate::ui::Context;
 
 enum Entry<'a> {
     Event(&'a Event),
@@ -92,7 +92,7 @@ impl Widget for EventWindow<'_> {
                 ev @ Entry::Event(_) => {
                     let saved_style = cursor.get_style_modifier();
 
-                    if idx == self.context.tui().eventlist_index {
+                    if idx == self.context.eventlist_index {
                         cursor.apply_style_modifier(StyleModifier::new().invert(true));
                     }
 
@@ -108,9 +108,9 @@ impl Widget for EventWindow<'_> {
     }
 }
 
-pub struct EventWindowBehaviour<'a>(pub &'a mut TuiContext, pub usize);
+pub struct EventWindowBehaviour<'a, 'c>(pub &'a mut Context<'c>, pub usize);
 
-impl Scrollable for EventWindowBehaviour<'_> {
+impl Scrollable for EventWindowBehaviour<'_, '_> {
     fn scroll_backwards(&mut self) -> unsegen::input::OperationResult {
         if self.0.eventlist_index > 0 {
             self.0.eventlist_index -= 1;

@@ -21,7 +21,7 @@ impl<'a, 'c> CommandParser<'a, 'c> {
     }
 
     fn report_error(&mut self, error: Box<dyn std::error::Error>) {
-        self.context.tui_mut().last_error_message = Some(format!("{}", error));
+        self.context.last_error_message = Some(format!("{}", error));
     }
 }
 
@@ -32,7 +32,6 @@ impl Behavior for CommandParser<'_, '_> {
                 Key::Char('\n') => {
                     let cmd = self
                         .context
-                        .tui_mut()
                         .input_sink_mut(Mode::Command)
                         .finish_line()
                         .to_owned();
@@ -40,7 +39,7 @@ impl Behavior for CommandParser<'_, '_> {
                         self.report_error(e);
                         None
                     } else {
-                        self.context.tui_mut().mode = Mode::Normal;
+                        self.context.mode = Mode::Normal;
                         None
                     }
                 }

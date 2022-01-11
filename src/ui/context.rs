@@ -45,18 +45,20 @@ impl Default for Theme {
     }
 }
 
-pub struct TuiContext {
+pub struct Context<'a> {
     pub mode: Mode,
     pub theme: Theme,
     pub cursor: DateTime<Local>,
     pub eventlist_index: usize,
     pub last_error_message: Option<String>,
     input_sinks: BTreeMap<Mode, PromptLine>,
+    calendar: Agenda<'a>,
+    now: DateTime<Local>,
 }
 
-impl Default for TuiContext {
-    fn default() -> Self {
-        TuiContext {
+impl<'a> Context<'a> {
+    pub fn new<'b: 'a>(calendar: Agenda<'b>) -> Self {
+        Context {
             mode: Mode::Normal,
             theme: Theme::default(),
             cursor: Local::now(),
@@ -66,27 +68,10 @@ impl Default for TuiContext {
                 (Mode::Command, PromptLine::with_prompt(":".to_owned())),
             ]),
             eventlist_index: 0,
+            calendar,
+            now: Local::now(),
         }
     }
-}
-
-impl TuiContext {
-    pub fn new(cursor: DateTime<Local>) -> Self {
-        TuiContext {
-            mode: Mode::Normal,
-            theme: Theme::default(),
-            cursor,
-            last_error_message: None,
-            input_sinks: BTreeMap::from([
-                (Mode::Insert, PromptLine::with_prompt(">".to_owned())),
-                (Mode::Command, PromptLine::with_prompt(":".to_owned())),
-            ]),
-            eventlist_index: 0,
-        }
-    }
-}
-
-impl TuiContext {
     pub fn with_today(mut self) -> Self {
         self.select_today();
         self
@@ -118,30 +103,6 @@ impl TuiContext {
     pub fn input_sink_mut(&mut self, mode: Mode) -> &mut PromptLine {
         self.input_sinks.get_mut(&mode).unwrap()
     }
-}
-
-pub struct Context<'a> {
-    tui: TuiContext,
-    calendar: Agenda<'a>,
-    now: DateTime<Local>,
-}
-
-impl<'a> Context<'a> {
-    pub fn new<'b: 'a>(calendar: Agenda<'b>) -> Self {
-        Context {
-            tui: TuiContext::default(),
-            calendar,
-            now: Local::now(),
-        }
-    }
-
-    pub fn tui(&self) -> &TuiContext {
-        &self.tui
-    }
-
-    pub fn tui_mut(&mut self) -> &mut TuiContext {
-        &mut self.tui
-    }
 
     pub fn agenda(&self) -> &Agenda {
         &self.calendar
@@ -156,7 +117,7 @@ impl<'a> Context<'a> {
     }
 
     pub fn cursor(&self) -> &DateTime<Local> {
-        &self.tui.cursor
+        &self.cursor
     }
 
     pub fn update(&mut self) {
