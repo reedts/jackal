@@ -86,7 +86,7 @@ impl<'a> App<'a> {
                                             self.context.mode = Mode::Command
                                         }))
                                         .chain(
-                                            NavigateBehavior::new(&mut DtCursorBehaviour(
+                                            NavigateBehavior::new(&mut CursorBehaviour(
                                                 &mut self.context,
                                             ))
                                             .down_on(Key::Char('j'))
@@ -140,9 +140,9 @@ impl<'a> App<'a> {
     }
 }
 
-struct DtCursorBehaviour<'a, 'c>(&'a mut Context<'c>);
+struct CursorBehaviour<'a, 'c>(&'a mut Context<'c>);
 
-impl Navigatable for DtCursorBehaviour<'_, '_> {
+impl Navigatable for CursorBehaviour<'_, '_> {
     fn move_down(&mut self) -> OperationResult {
         self.0.cursor = self.0.cursor + chrono::Duration::weeks(1);
         Ok(())

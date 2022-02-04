@@ -1,7 +1,11 @@
-use nom::IResult;
+use std::collections::BTreeMap;
 use std::result::Result;
+use std::str::FromStr;
 use unsegen::input::*;
 use unsegen::widget::builtin::PromptLine;
+
+use chrono::{Duration, NaiveDateTime};
+use nom::{branch::alt, combinator::all_consuming, error::Error, IResult};
 
 use super::context::{Context, Mode};
 use crate::config::Config;
@@ -37,11 +41,10 @@ impl Behavior for CommandParser<'_, '_> {
                         .to_owned();
                     if let Err(e) = self.run_command(&cmd) {
                         self.report_error(e);
-                        None
                     } else {
                         self.context.mode = Mode::Normal;
-                        None
                     }
+                    None
                 }
                 _ => Some(input),
             }
@@ -50,3 +53,84 @@ impl Behavior for CommandParser<'_, '_> {
         }
     }
 }
+
+pub type ActionResult = Result<(), Error<String>>;
+
+pub enum Action {
+    Arg(fn(&mut Context, String) -> ActionResult),
+    NoArg(fn(&mut Context) -> ActionResult),
+    Repeatable(fn(&mut Context, u32) -> ActionResult),
+}
+
+const COMMANDS: &[(&'static str, Action)] = &[
+    (
+        "gy",
+        Action::Repeatable(|c, p| {
+            c.cursor = c.cursor + chrono::Duration::days(p as i64 * 365);
+            Ok(())
+        }),
+    ),
+    (
+        "gY",
+        Action::Repeatable(|c, p| {
+            c.cursor = c.cursor - chrono::Duration::days(p as i64 * 365);
+            Ok(())
+        }),
+    ),
+    (
+        "gw",
+        Action::Repeatable(|c, p| {
+            c.cursor = c.cursor + chrono::Duration::weeks(p as i64);
+            Ok(())
+        }),
+    ),
+    (
+        "gW",
+        Action::Repeatable(|c, p| {
+            c.cursor = c.cursor - chrono::Duration::weeks(p as i64);
+            Ok(())
+        }),
+    ),
+    (
+        "gd",
+        Action::Repeatable(|c, p| {
+            c.cursor = c.cursor + chrono::Duration::days(p as i64);
+            Ok(())
+        }),
+    ),
+    (
+        "gD",
+        Action::Repeatable(|c, p| {
+            c.cursor = c.cursor - chrono::Duration::days(p as i64);
+            Ok(())
+        }),
+    ),
+    (
+        "gh",
+        Action::Repeatable(|c, p| {
+            c.cursor = c.cursor + chrono::Duration::hours(p as i64);
+            Ok(())
+        }),
+    ),
+    (
+        "gH",
+        Action::Repeatable(|c, p| {
+            c.cursor = c.cursor - chrono::Duration::hours(p as i64);
+            Ok(())
+        }),
+    ),
+    (
+        "gm",
+        Action::Repeatable(|c, p| {
+            c.cursor = c.cursor + chrono::Duration::minutes(p as i64);
+            Ok(())
+        }),
+    ),
+    (
+        "gM",
+        Action::Repeatable(|c, p| {
+            c.cursor = c.cursor - chrono::Duration::minutes(p as i64);
+            Ok(())
+        }),
+    ),
+];
