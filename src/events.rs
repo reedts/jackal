@@ -23,12 +23,13 @@ pub struct Dispatcher {
 
 impl Default for Dispatcher {
     fn default() -> Dispatcher {
-        Dispatcher::from_config(Config::default())
+        Dispatcher::from_config(&Config::default())
     }
 }
 
 impl Dispatcher {
-    pub fn from_config(config: Config) -> Dispatcher {
+    pub fn from_config(config: &Config) -> Dispatcher {
+        let tick_rate = config.tick_rate.clone();
         let (tx, rx) = mpsc::channel();
         let input_handle = {
             let tx = tx.clone();
@@ -52,7 +53,7 @@ impl Dispatcher {
                 let tx = tx.clone();
                 loop {
                     tx.send(Event::Update).unwrap();
-                    thread::sleep(config.tick_rate);
+                    thread::sleep(tick_rate);
                 }
             })
         };

@@ -1,84 +1,82 @@
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 use std::env;
+use std::fs;
 use std::io;
-use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use toml;
 
 const CONFIG_PATH_ENV_VAR: &str = "JACKAL_CONFIG_FILE";
 
-pub(crate) fn find_configfile_locations() -> io::Result<Vec<PathBuf>> {
-    let config_env: Option<PathBuf> = if let Ok(path) = env::var(CONFIG_PATH_ENV_VAR) {
-        Some(PathBuf::from(path))
-    } else {
-        None
-    };
-
-    let home = if let Ok(dir) = env::var("HOME") {
-        PathBuf::from(dir)
-    } else {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Unable to find home directory",
-        ));
-    };
-
-    let home_config = PathBuf::from_iter([&home, &PathBuf::from(".jackal.toml")].iter());
-
-    let config_xdg = if let Ok(dir) = env::var("XDG_CONFIG_HOME") {
-        PathBuf::from_iter([dir, "jackal".to_string(), "config.toml".to_string()].iter())
-    } else {
-        PathBuf::from_iter(
-            [
-                home.as_path(),
-                Path::new(".config"),
-                Path::new("jackal"),
-                Path::new("config.toml"),
-            ]
-            .iter(),
-        )
-    };
-
-    let mut locations = vec![config_xdg, home_config];
-
-    if let Some(path) = config_env {
-        locations.insert(0, path);
+pub(crate) fn find_configfile() -> io::Result<PathBuf> {
+    if let Ok(path) = env::var(CONFIG_PATH_ENV_VAR) {
+        return Ok(PathBuf::from(path));
     }
 
-    Ok(locations)
+    if let Some(config_dir) = dirs::config_dir() {
+        let config_file = config_dir.join("jackal.toml");
+        if config_file.is_file() {
+            return Ok(config_file);
+        }
+
+        let config_file = config_dir.join("jackal/config.toml");
+        if config_file.is_file() {
+            return Ok(config_file);
+        }
+    }
+
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        "Could not find config file",
+    ))
 }
 
-#[derive(Debug, Clone)]
-pub struct CalendarParams {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionConfig {
     pub id: String,
     pub path: PathBuf,
 }
 
-#[derive(Clone, Debug)]
+fn default_tick_rate() -> Duration {
+    Duration::from_secs(60)
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(skip)]
+    path: PathBuf,
+    #[serde(skip, default = "default_tick_rate")]
     pub tick_rate: Duration,
-    calendar_params: HashMap<String, CalendarParams>,
+    pub collection: Vec<CollectionConfig>,
 }
 
 impl Default for Config {
     fn default() -> Config {
         Config {
+            path: if let Some(path) = dirs::config_dir() {
+                path.join("jackal/config.toml")
+            } else {
+                PathBuf::from("jackal.toml")
+            },
             tick_rate: Duration::from_secs(60),
-            calendar_params: HashMap::new(),
+            collection: Vec::new(),
         }
     }
 }
 
 impl Config {
-    pub fn calendar_params(&self) -> Option<Vec<&CalendarParams>> {
-        if self.calendar_params.is_empty() {
-            None
-        } else {
-            Some(self.calendar_params.values().collect())
-        }
+    pub fn load(path: &Path) -> Result<Config, Box<dyn std::error::Error>> {
+        let mut config: Config = toml::from_str(&fs::read_to_string(path)?)?;
+        config.path = path.to_owned();
+        Ok(config)
     }
 
-    pub fn calendar_params_for(&self, id: &str) -> Option<&CalendarParams> {
-        self.calendar_params.get(id)
+    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
+        fs::write(&self.path, toml::to_string(&self)?)?;
+        Ok(())
+    }
+
+    pub fn collection_config_for(&self, id: &str) -> Option<&CollectionConfig> {
+        self.collection.iter().find(|c| &c.id == id)
     }
 }

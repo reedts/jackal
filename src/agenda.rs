@@ -34,13 +34,13 @@ pub struct Agenda<'a> {
     events: EventMap,
 }
 
-impl TryFrom<&[PathBuf]> for Agenda<'_> {
+impl TryFrom<&[&Path]> for Agenda<'_> {
     type Error = std::io::Error;
 
-    fn try_from<'a>(value: &'a [PathBuf]) -> Result<Self, Self::Error> {
+    fn try_from<'a>(value: &'a [&Path]) -> Result<Self, Self::Error> {
         let collections = value
             .iter()
-            .map(|path| ical::Collection::try_from(path.as_path()))
+            .map(|path| ical::Collection::try_from(*path))
             .inspect(|c| {
                 if let Err(e) = c {
                     log::warn!("{}", e)
@@ -86,9 +86,14 @@ impl<'a> TryFrom<&'a Path> for Agenda<'a> {
             .collect::<Vec<PathBuf>>();
 
         if dirs.is_empty() {
-            Self::try_from(&[path.to_path_buf()] as &[_])
+            Self::try_from(&[path] as &[_])
         } else {
-            Self::try_from(dirs.as_slice())
+            Self::try_from(
+                dirs.iter()
+                    .map(|p| p.as_path())
+                    .collect::<Vec<&Path>>()
+                    .as_slice(),
+            )
         }
     }
 }

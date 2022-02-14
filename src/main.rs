@@ -10,7 +10,7 @@ use events::Dispatcher;
 use flexi_logger::{Duplicate, FileSpec, Logger};
 use std::convert::TryFrom;
 use std::io::stdout;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 use ui::app::App;
 use unsegen::base::Terminal;
@@ -50,17 +50,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .start()?;
 
     let args = Args::from_args();
-    let config = Config::default();
-    let dispatcher = Dispatcher::from_config(config.clone());
+    let config = if let Some(path) = args.configfile {
+        Config::load(&path)?
+    } else if let Ok(path) = config::find_configfile() {
+        Config::load(&path)?
+    } else {
+        Config::default()
+    };
+
+    let dispatcher = Dispatcher::from_config(&config);
     // Setup unsegen terminal
     let stdout = stdout();
     let mut term = Terminal::new(stdout.lock())?;
 
     let calendar = if let Some(path) = args.input.as_ref() {
         Agenda::try_from(path.as_path())?
-    } else if let Some(calendar_params) = config.calendar_params() {
+    } else if !config.collection.is_empty() {
         // TODO: Handle multiple calendars here. To be thought through...
-        Agenda::try_from(calendar_params[0].path.as_path())?
+        let paths: Vec<&Path> = config.collection.iter().map(|c| c.path.as_path()).collect();
+        Agenda::try_from(paths.as_slice())?
     } else {
         // Not one calendar found
         println!("Nothing to do.");
