@@ -215,6 +215,12 @@ pub enum OccurrenceSpec {
     Instant(DateTimeSpec),
 }
 
+impl Default for OccurrenceSpec {
+    fn default() -> Self {
+        OccurrenceSpec::Instant(DateTimeSpec::Floating(NaiveDateTime::from_timestamp(0, 0)))
+    }
+}
+
 impl OccurrenceSpec {
     pub fn is_allday(&self) -> bool {
         use OccurrenceSpec::*;
@@ -425,20 +431,52 @@ pub struct Event {
     ical_event: IcalEvent,
 }
 
-impl TryFrom<&IcalEvent> for Event {
+impl TryFrom<IcalEvent> for Event {
     type Error = super::error::Error;
 
-    fn try_from(ev: &IcalEvent) -> Result<Self, Self::Error> {
-        let occur = OccurrenceSpec::try_from(ev)?;
+    fn try_from(ev: IcalEvent) -> Result<Self, Self::Error> {
+        let occur = OccurrenceSpec::try_from(&ev)?;
 
         Ok(Event {
             occur,
-            ical_event: ev.clone(),
+            ical_event: ev,
         })
     }
 }
 
 impl Event {
+    pub fn new(occurence: OccurrenceSpec) -> Self {
+        let mut ical_event = IcalEvent::new();
+        ical_event.properties = vec![
+            Property {
+                name: "BEGIN".to_owned(),
+                params: None,
+                value: Some("VEVENT".to_owned()),
+            },
+            // TODO: generate unique identifier
+            Property {
+                name: "UID".to_owned(),
+                params: None,
+                value: Some("".to_owned()),
+            },
+            Property {
+                name: "DTSTAMP".to_owned(),
+                params: None,
+                value: Some(super::generate_timestamp()),
+            },
+            Property {
+                name: "END".to_owned(),
+                params: None,
+                value: Some("VEVENT".to_owned()),
+            },
+        ];
+
+        Event {
+            occur: occurence,
+            ical_event,
+        }
+    }
+
     pub fn summary(&self) -> &str {
         self.ical_event
             .properties
@@ -479,7 +517,7 @@ impl TryFrom<&Path> for Calendar {
 
         let mut reader = IcalParser::new(buf);
 
-        let ical: IcalCalendar = match reader.next() {
+        let mut ical: IcalCalendar = match reader.next() {
             Some(cal) => match cal {
                 Ok(c) => c,
                 Err(e) => {
@@ -501,9 +539,8 @@ impl TryFrom<&Path> for Calendar {
             }
         };
 
-        let events: Vec<Event> = ical
-            .events
-            .iter()
+        let events: Vec<Event> = std::mem::replace(&mut ical.events, Vec::new())
+            .into_iter()
             .map(|ev| Event::try_from(ev))
             .inspect(|ev| {
                 if let Err(e) = ev {
@@ -525,6 +562,39 @@ impl TryFrom<&Path> for Calendar {
 }
 
 impl Calendar {
+    pub fn new(path: &Path) -> Self {
+        let mut ical_calendar = IcalCalendar::new();
+        ical_calendar.properties = vec![
+            Property {
+                name: "BEGIN".to_owned(),
+                params: None,
+                value: Some("VCALENDAR".to_owned()),
+            },
+            Property {
+                name: "PRODID".to_owned(),
+                params: None,
+                value: Some(super::JACKAL_PRODID.to_owned()),
+            },
+            Property {
+                name: "VERSION".to_owned(),
+                params: None,
+                value: Some(super::JACKAL_CALENDAR_VERSION.to_owned()),
+            },
+            Property {
+                name: "END".to_owned(),
+                params: None,
+                value: Some("VCALENDAR".to_owned()),
+            },
+        ];
+
+        Self {
+            path: path.to_owned(),
+            ical: ical_calendar,
+            events: Vec::new(),
+            tz: Tz::UTC,
+        }
+    }
+
     pub fn events_iter<'a>(&'a self) -> impl Iterator<Item = &'a Event> {
         self.events.iter()
     }
