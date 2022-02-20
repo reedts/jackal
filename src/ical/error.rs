@@ -1,6 +1,7 @@
 use std::convert::From;
 use std::error;
 use std::fmt;
+use std::io;
 
 #[derive(Debug)]
 pub struct Error {
@@ -68,5 +69,14 @@ impl ErrorKind {
             ErrorKind::DateParse => "invalid date format",
             ErrorKind::DurationParse => "invalid duration format",
         }
+    }
+}
+
+impl From<Error> for io::Error {
+    fn from(err: Error) -> Self {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            err.message.unwrap_or("invalid format".to_owned()),
+        )
     }
 }

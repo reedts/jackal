@@ -5,6 +5,7 @@ pub use calendar::{Calendar, Collection, DateTimeSpec, Event, OccurrenceSpec};
 pub use error::{Error, ErrorKind};
 
 use chrono::{Month, NaiveDate, Utc};
+use std::path::{Path, PathBuf};
 
 pub type IcalResult<T> = std::result::Result<T, crate::ical::Error>;
 
@@ -35,19 +36,32 @@ fn generate_timestamp() -> String {
 
 #[derive(Default)]
 struct EventBuilder {
+    path: PathBuf,
     summary: String,
     occurence: OccurrenceSpec,
 }
 
 impl EventBuilder {
+    pub fn new(path: &Path) -> Self {
+        let mut builder = Self::default();
+        builder.path = path.to_owned();
+
+        builder
+    }
+
     pub fn with_summary(mut self, summary: String) -> Self {
         self.summary = summary;
         self
     }
 
-    pub fn with_occurnce(mut self, occurence: OccurrenceSpec) -> Self {
-        self.occurence = occurence;
+    pub fn with_occurrence(mut self, occurrence: OccurrenceSpec) -> Self {
+        self.occurence = occurrence;
         self
     }
-    // pub fn finish(self) -> IcalResult<Calendar> {}
+    pub fn finish(self) -> IcalResult<Calendar> {
+        let mut event = Event::new(self.occurence);
+        event.set_summary(&self.summary);
+
+        Ok(Calendar::from_event(&self.path, event))
+    }
 }

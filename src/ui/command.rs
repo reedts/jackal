@@ -53,7 +53,7 @@ impl<'a, 'c> CommandParser<'a, 'c> {
             1
         } else {
             u32::from_str_radix(repeat, 10)
-                .or_else::<Error<String>, _>(|err| {
+                .or_else::<Error<String>, _>(|_| {
                     return Err(ParseError::from_error_kind(repeat.into(), ErrorKind::Digit));
                 })
                 .unwrap()
@@ -61,7 +61,7 @@ impl<'a, 'c> CommandParser<'a, 'c> {
 
         let (_, act) = COMMANDS
             .iter()
-            .find(|(c, a)| c == &cmd)
+            .find(|(c, _)| c == &cmd)
             .ok_or(ParseError::from_error_kind(cmd.into(), ErrorKind::OneOf))?;
 
         if let Action::Repeatable(a) = act {

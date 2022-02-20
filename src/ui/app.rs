@@ -85,6 +85,9 @@ impl<'a> App<'a> {
                                         .chain((Key::Char(':'), || {
                                             self.context.mode = Mode::Command
                                         }))
+                                        .chain((Key::Char('i'), || {
+                                            self.context.mode = Mode::Insert
+                                        }))
                                         .chain(
                                             NavigateBehavior::new(&mut CursorBehaviour(
                                                 &mut self.context,
