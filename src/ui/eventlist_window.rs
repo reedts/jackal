@@ -4,7 +4,7 @@ use unsegen::base::*;
 use unsegen::input::Scrollable;
 use unsegen::widget::*;
 
-use crate::ical::{Event, OccurrenceSpec};
+use crate::ical::{Event, Occurrence};
 use crate::ui::Context;
 
 enum Entry<'a> {
@@ -27,8 +27,8 @@ impl Display for Entry<'_> {
         match *self {
             Self::Event(event) => {
                 let time = match event.occurrence() {
-                    OccurrenceSpec::Allday(_) => "Allday".to_owned(),
-                    OccurrenceSpec::Onetime(timespan) => format!(
+                    Occurrence::Allday(_) => "Allday".to_owned(),
+                    Occurrence::Onetime(timespan) => format!(
                         "{} - {}",
                         timespan
                             .begin()
@@ -37,7 +37,7 @@ impl Display for Entry<'_> {
                             .format("%H:%M"),
                         timespan.end().as_datetime(&Local {}).time().format("%H:%M")
                     ),
-                    OccurrenceSpec::Instant(dt) => {
+                    Occurrence::Instant(dt) => {
                         format!("{}", dt.as_datetime(&Local {}).time().format("%H:%M"))
                     }
                 };
