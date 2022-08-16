@@ -1,13 +1,17 @@
 mod calendar;
 mod error;
 
-pub use calendar::{Calendar, Collection, DateTimeSpec, Event, OccurrenceSpec};
+pub use calendar::{Calendar, Collection, DateTime, Duration, Event, Occurrence, TimeSpan};
 pub use error::{Error, ErrorKind};
 
 use chrono::{Month, NaiveDate, Utc};
+use ical::parser::{ical::component::IcalEvent, Component};
+use ical::property::Property;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 pub type IcalResult<T> = std::result::Result<T, crate::ical::Error>;
+type PropertyList = Vec<Property>;
 
 const JACKAL_PRODID: &'static str = "-//JACKAL//NONSGML Calendar//EN";
 const JACKAL_CALENDAR_VERSION: &'static str = "2.0";
@@ -35,10 +39,12 @@ fn generate_timestamp() -> String {
 }
 
 #[derive(Default)]
-struct EventBuilder {
+pub struct EventBuilder {
     path: PathBuf,
-    summary: String,
-    occurence: OccurrenceSpec,
+    start: DateTime,
+    end: Option<DateTime>,
+    dur: Option<Duration>,
+    ical: IcalEvent,
 }
 
 impl EventBuilder {
@@ -50,17 +56,54 @@ impl EventBuilder {
     }
 
     pub fn with_summary(mut self, summary: String) -> Self {
-        self.summary = summary;
+        self.ical.add_property(Property {
+            name: "SUMMARY".to_owned(),
+            params: None,
+            value: Some(summary),
+        });
         self
     }
 
-    pub fn with_occurrence(mut self, occurrence: OccurrenceSpec) -> Self {
-        self.occurence = occurrence;
+    pub fn with_start(mut self, start: DateTime) -> Self {
+        self.start = start;
         self
     }
+
+    pub fn with_end(mut self, end: DateTime) -> Self {
+        self.dur = None;
+        self.end = Some(end);
+        self
+    }
+
+    pub fn with_dur(mut self, dur: Duration) -> Self {
+        self.end = None;
+        self.dur = Some(dur);
+        self
+    }
+
+    pub fn with_loc(mut self, loc: String) -> Self {
+        self.ical.add_property(Property {
+            name: "LOCATION".to_owned(),
+            params: None,
+            value: Some(loc),
+        });
+        self
+    }
+
     pub fn finish(self) -> IcalResult<Calendar> {
-        let mut event = Event::new(self.occurence);
-        event.set_summary(&self.summary);
+        let mut event = if let Some(dtspec) = self.end {
+            Event::new_with_ical_properties(
+                Occurrence::Onetime(TimeSpan::TimePoints(self.start, dtspec)),
+                self.ical.properties,
+            )
+        } else if let Some(durspec) = self.dur {
+            Event::new_with_ical_properties(
+                Occurrence::Onetime(TimeSpan::Duration(self.start, durspec)),
+                self.ical.properties,
+            )
+        } else {
+            Event::new_with_ical_properties(Occurrence::Instant(self.start), self.ical.properties)
+        };
 
         Ok(Calendar::from_event(&self.path, event))
     }

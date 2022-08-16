@@ -1,6 +1,4 @@
-use chrono::{
-    Date, DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc,
-};
+use chrono::{Date, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc};
 use chrono_tz::Tz;
 use log;
 use nom::{
@@ -19,14 +17,18 @@ use std::str::FromStr;
 
 use ical::parser::ical::IcalParser;
 use ical::parser::ical::{component::IcalCalendar, component::IcalEvent};
+use ical::parser::Component;
 use ical::property::Property;
 
-use crate::ical::{Error, ErrorKind};
+use uuid;
 
-use super::{IcalResult, ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE};
+use super::{
+    Error, ErrorKind, IcalResult, PropertyList, ISO8601_2004_LOCAL_FORMAT,
+    ISO8601_2004_LOCAL_FORMAT_DATE,
+};
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub struct DurationSpec {
+#[derive(Default, Clone, PartialEq, PartialOrd, Eq, Ord)]
+pub struct Duration {
     sign: i8,
     years: i64,
     months: i64,
@@ -37,7 +39,7 @@ pub struct DurationSpec {
     seconds: i64,
 }
 
-impl DurationSpec {
+impl Duration {
     fn parse_sign(input: &str) -> IResult<&str, Option<char>> {
         opt(one_of("+-"))(input)
     }
@@ -132,7 +134,7 @@ impl DurationSpec {
     }
 }
 
-impl FromStr for DurationSpec {
+impl FromStr for Duration {
     type Err = super::error::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -165,7 +167,7 @@ impl FromStr for DurationSpec {
     }
 }
 
-impl TryFrom<&Property> for DurationSpec {
+impl TryFrom<&Property> for Duration {
     type Error = super::error::Error;
 
     fn try_from(value: &Property) -> Result<Self, Self::Error> {
@@ -180,27 +182,27 @@ impl TryFrom<&Property> for DurationSpec {
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum TimeSpan {
-    TimePoints(DateTimeSpec, DateTimeSpec),
-    Duration(DateTimeSpec, DurationSpec),
+    TimePoints(DateTime, DateTime),
+    Duration(DateTime, Duration),
 }
 
 impl TimeSpan {
-    pub fn from_start_and_end(begin: DateTimeSpec, end: DateTimeSpec) -> Self {
+    pub fn from_start_and_end(begin: DateTime, end: DateTime) -> Self {
         TimeSpan::TimePoints(begin, end)
     }
 
-    pub fn from_start_and_duration(begin: DateTimeSpec, end: DurationSpec) -> Self {
+    pub fn from_start_and_duration(begin: DateTime, end: Duration) -> Self {
         TimeSpan::Duration(begin, end)
     }
 
-    pub fn begin(&self) -> DateTimeSpec {
+    pub fn begin(&self) -> DateTime {
         match &self {
             TimeSpan::TimePoints(begin, _) => begin.clone(),
             TimeSpan::Duration(begin, _) => begin.clone(),
         }
     }
 
-    pub fn end(&self) -> DateTimeSpec {
+    pub fn end(&self) -> DateTime {
         match &self {
             TimeSpan::TimePoints(_, end) => end.clone(),
             TimeSpan::Duration(begin, dur) => begin.clone().and_duration(dur.as_chrono_duration()),
@@ -209,31 +211,31 @@ impl TimeSpan {
 }
 
 #[derive(Clone)]
-pub enum OccurrenceSpec {
-    Allday(DateTimeSpec),
+pub enum Occurrence {
+    Allday(DateTime),
     Onetime(TimeSpan),
-    Instant(DateTimeSpec),
+    Instant(DateTime),
 }
 
-impl Default for OccurrenceSpec {
+impl Default for Occurrence {
     fn default() -> Self {
-        OccurrenceSpec::Instant(DateTimeSpec::Floating(NaiveDateTime::from_timestamp(0, 0)))
+        Occurrence::Instant(DateTime::default())
     }
 }
 
-impl OccurrenceSpec {
+impl Occurrence {
     pub fn is_allday(&self) -> bool {
-        use OccurrenceSpec::*;
+        use Occurrence::*;
         matches!(self, Allday(_))
     }
 
     pub fn is_onetime(&self) -> bool {
-        use OccurrenceSpec::*;
+        use Occurrence::*;
         matches!(self, Onetime(_))
     }
 
     pub fn as_date<Tz: TimeZone>(&self, tz: &Tz) -> Date<Tz> {
-        use OccurrenceSpec::*;
+        use Occurrence::*;
         match self {
             Allday(date) => date.as_date(tz),
             Onetime(timespan) => timespan.begin().as_date(tz),
@@ -241,8 +243,8 @@ impl OccurrenceSpec {
         }
     }
 
-    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> DateTime<Tz> {
-        use OccurrenceSpec::*;
+    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
+        use Occurrence::*;
         match self {
             Allday(date) => date
                 .as_date(tz)
@@ -253,8 +255,8 @@ impl OccurrenceSpec {
         }
     }
 
-    pub fn begin<Tz: TimeZone>(&self, tz: &Tz) -> DateTime<Tz> {
-        use OccurrenceSpec::*;
+    pub fn begin<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
+        use Occurrence::*;
         match self {
             Allday(date) => date.as_date(tz).and_hms(0, 0, 0),
             Onetime(timespan) => timespan.begin().as_datetime(tz).clone(),
@@ -262,8 +264,8 @@ impl OccurrenceSpec {
         }
     }
 
-    pub fn end<Tz: TimeZone>(&self, tz: &Tz) -> DateTime<Tz> {
-        use OccurrenceSpec::*;
+    pub fn end<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
+        use Occurrence::*;
         match self {
             Allday(date) => date.as_date(tz).and_hms(23, 59, 59),
             Onetime(timespan) => timespan.end().as_datetime(tz).clone(),
@@ -272,37 +274,36 @@ impl OccurrenceSpec {
     }
 }
 
-impl TryFrom<&IcalEvent> for OccurrenceSpec {
+impl TryFrom<&PropertyList> for Occurrence {
     type Error = super::error::Error;
 
-    fn try_from(value: &IcalEvent) -> Result<Self, Self::Error> {
+    fn try_from(value: &PropertyList) -> Result<Self, Self::Error> {
         let dtstart = value
-            .properties
             .iter()
             .find(|p| p.name == "DTSTART")
             .ok_or(Error::new(ErrorKind::EventMissingKey).with_msg("No DTSTART found"))?;
 
-        let dtend = value.properties.iter().find(|p| p.name == "DTEND");
+        let dtend = value.iter().find(|p| p.name == "DTEND");
 
         // Required (if METHOD not set)
-        let dtstart_spec = DateTimeSpec::try_from(dtstart)?;
+        let dtstart_spec = DateTime::try_from(dtstart)?;
 
         // DTEND does not HAVE to be specified...
         if let Some(dt) = dtend {
             // ...but if set it must be parseable
-            let dtend_spec = DateTimeSpec::try_from(dt)?;
-            return Ok(OccurrenceSpec::Onetime(TimeSpan::from_start_and_end(
+            let dtend_spec = DateTime::try_from(dt)?;
+            return Ok(Occurrence::Onetime(TimeSpan::from_start_and_end(
                 dtstart_spec,
                 dtend_spec,
             )));
         };
 
         // Check if DURATION is set
-        let duration = value.properties.iter().find(|p| p.name == "DURATION");
+        let duration = value.iter().find(|p| p.name == "DURATION");
 
         if let Some(duration) = duration {
-            let dur_spec = DurationSpec::try_from(duration)?;
-            return Ok(OccurrenceSpec::Onetime(TimeSpan::from_start_and_duration(
+            let dur_spec = Duration::try_from(duration)?;
+            return Ok(Occurrence::Onetime(TimeSpan::from_start_and_duration(
                 dtstart_spec,
                 dur_spec,
             )));
@@ -313,28 +314,28 @@ impl TryFrom<&IcalEvent> for OccurrenceSpec {
         //  ... a date spec, the event has to have the duration of a single day
         //  ... a datetime spec, the event has to have the dtstart also as dtend
         match dtstart_spec {
-            date @ DateTimeSpec::Date(_) => Ok(OccurrenceSpec::Allday(date)),
-            dt => Ok(OccurrenceSpec::Instant(dt)),
+            date @ DateTime::Date(_) => Ok(Occurrence::Allday(date)),
+            dt => Ok(Occurrence::Instant(dt)),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DateTimeSpec {
+pub enum DateTime {
     Date(NaiveDate),
     Floating(NaiveDateTime),
-    Utc(DateTime<Utc>),
-    Local(DateTime<FixedOffset>, Tz),
+    Utc(chrono::DateTime<Utc>),
+    Local(chrono::DateTime<FixedOffset>, Tz),
 }
 
-impl FromStr for DateTimeSpec {
+impl FromStr for DateTime {
     type Err = super::error::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // First try to read DateTime, if that fails try date only
         if let Ok(dt) = NaiveDateTime::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT) {
             if s.ends_with("Z") {
-                Ok(Self::Utc(DateTime::<Utc>::from_utc(dt, Utc)))
+                Ok(Self::Utc(chrono::DateTime::<Utc>::from_utc(dt, Utc)))
             } else {
                 Ok(Self::Floating(dt))
             }
@@ -345,7 +346,7 @@ impl FromStr for DateTimeSpec {
     }
 }
 
-impl TryFrom<&Property> for DateTimeSpec {
+impl TryFrom<&Property> for DateTime {
     type Error = super::error::Error;
 
     fn try_from(value: &Property) -> Result<Self, Self::Error> {
@@ -370,64 +371,70 @@ impl TryFrom<&Property> for DateTimeSpec {
     }
 }
 
-impl DateTimeSpec {
+impl Default for DateTime {
+    fn default() -> Self {
+        DateTime::Floating(NaiveDateTime::from_timestamp(0, 0))
+    }
+}
+
+impl DateTime {
     pub fn is_date(&self) -> bool {
-        use DateTimeSpec::*;
+        use DateTime::*;
         match *self {
             Date(_) => true,
             _ => false,
         }
     }
 
-    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> DateTime<Tz> {
+    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
         match *self {
-            DateTimeSpec::Date(dt) => tz.from_utc_date(&dt).and_hms(0, 0, 0),
-            DateTimeSpec::Floating(dt) => tz.from_utc_datetime(&dt),
-            DateTimeSpec::Utc(dt) => dt.with_timezone(&tz),
-            DateTimeSpec::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz),
+            DateTime::Date(dt) => tz.from_utc_date(&dt).and_hms(0, 0, 0),
+            DateTime::Floating(dt) => tz.from_utc_datetime(&dt),
+            DateTime::Utc(dt) => dt.with_timezone(&tz),
+            DateTime::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz),
         }
     }
 
     pub fn as_date<Tz: TimeZone>(&self, tz: &Tz) -> Date<Tz> {
         match *self {
-            DateTimeSpec::Date(dt) => tz.from_utc_date(&dt),
-            DateTimeSpec::Floating(dt) => tz.from_utc_date(&dt.date()),
-            DateTimeSpec::Utc(dt) => dt.with_timezone(tz).date(),
-            DateTimeSpec::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz).date(),
+            DateTime::Date(dt) => tz.from_utc_date(&dt),
+            DateTime::Floating(dt) => tz.from_utc_date(&dt.date()),
+            DateTime::Utc(dt) => dt.with_timezone(tz).date(),
+            DateTime::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz).date(),
         }
     }
 
     pub fn with_tz(self, tz: &Tz) -> Self {
         match self {
-            DateTimeSpec::Date(dt) => {
+            DateTime::Date(dt) => {
                 let offset = tz.offset_from_utc_date(&dt).fix();
-                DateTimeSpec::Local(offset.from_utc_date(&dt).and_hms(0, 0, 0), tz.clone())
+                DateTime::Local(offset.from_utc_date(&dt).and_hms(0, 0, 0), tz.clone())
             }
-            DateTimeSpec::Floating(dt) => {
+            DateTime::Floating(dt) => {
                 let offset = tz.offset_from_utc_datetime(&dt).fix();
-                DateTimeSpec::Local(offset.from_utc_datetime(&dt), tz.clone())
+                DateTime::Local(offset.from_utc_datetime(&dt), tz.clone())
             }
-            DateTimeSpec::Utc(dt) => DateTimeSpec::Local(
+            DateTime::Utc(dt) => DateTime::Local(
                 dt.with_timezone(&tz.offset_from_utc_datetime(&dt.naive_utc()).fix()),
                 tz.clone(),
             ),
-            DateTimeSpec::Local(dt, _) => DateTimeSpec::Local(dt, tz.clone()),
+            DateTime::Local(dt, _) => DateTime::Local(dt, tz.clone()),
         }
     }
 
     pub fn and_duration(self, duration: chrono::Duration) -> Self {
         match self {
-            DateTimeSpec::Date(dt) => DateTimeSpec::Date(dt + duration),
-            DateTimeSpec::Floating(dt) => DateTimeSpec::Floating(dt + duration),
-            DateTimeSpec::Utc(dt) => DateTimeSpec::Utc(dt + duration),
-            DateTimeSpec::Local(dt, tz) => DateTimeSpec::Local(dt + duration, tz),
+            DateTime::Date(dt) => DateTime::Date(dt + duration),
+            DateTime::Floating(dt) => DateTime::Floating(dt + duration),
+            DateTime::Utc(dt) => DateTime::Utc(dt + duration),
+            DateTime::Local(dt, tz) => DateTime::Local(dt + duration, tz),
         }
     }
 }
 
 #[derive(Clone)]
 pub struct Event {
-    occur: OccurrenceSpec,
+    occur: Occurrence,
     ical: IcalEvent,
 }
 
@@ -435,21 +442,20 @@ impl TryFrom<IcalEvent> for Event {
     type Error = super::error::Error;
 
     fn try_from(ev: IcalEvent) -> Result<Self, Self::Error> {
-        let occur = OccurrenceSpec::try_from(&ev)?;
+        let occur = Occurrence::try_from(&ev.properties)?;
 
         Ok(Event { occur, ical: ev })
     }
 }
 
 impl Event {
-    pub fn new(occurence: OccurrenceSpec) -> Self {
+    pub fn new(occurrence: Occurrence) -> Self {
         let mut ical_event = IcalEvent::new();
         ical_event.properties = vec![
-            // TODO: generate unique identifier
             Property {
                 name: "UID".to_owned(),
                 params: None,
-                value: Some("".to_owned()),
+                value: Some(uuid::Uuid::new_v4().hyphenated().to_string()),
             },
             Property {
                 name: "DTSTAMP".to_owned(),
@@ -459,21 +465,45 @@ impl Event {
         ];
 
         Event {
-            occur: occurence,
+            occur: occurrence,
             ical: ical_event,
         }
     }
 
+    pub fn new_with_ical_properties(occurrence: Occurrence, properties: PropertyList) -> Self {
+        let mut event = Self::new(occurrence);
+
+        let new_properties: Vec<_> = properties
+            .into_iter()
+            .filter(|p| {
+                event
+                    .ical
+                    .properties
+                    .iter()
+                    .find(|v| v.name == p.name)
+                    .is_none()
+            })
+            .collect();
+
+        event.ical.properties.extend(new_properties);
+
+        event
+    }
+
+    fn get_property(&self, name: &str) -> Option<&str> {
+        if let Some(prop) = self.ical.properties.iter().find(|prop| prop.name == name) {
+            prop.value.as_deref()
+        } else {
+            None
+        }
+    }
+
+    pub fn uuid(&self) -> uuid::Uuid {
+        uuid::Uuid::parse_str(self.get_property("UID").unwrap()).unwrap()
+    }
+
     pub fn summary(&self) -> &str {
-        self.ical
-            .properties
-            .iter()
-            .find(|prop| prop.name == "SUMMARY")
-            .unwrap()
-            .value
-            .as_ref()
-            .unwrap()
-            .as_str()
+        self.get_property("SUMMARY").unwrap()
     }
 
     pub fn set_summary(&mut self, summary: &str) {
@@ -486,7 +516,7 @@ impl Event {
         if let Some(prop) = summary_prop {
             prop.value = Some(summary.to_owned());
         } else {
-            self.ical.properties.push(Property {
+            self.ical.add_property(Property {
                 name: "SUMMARY".to_owned(),
                 params: None,
                 value: Some(summary.to_owned()),
@@ -494,7 +524,7 @@ impl Event {
         }
     }
 
-    pub fn occurrence(&self) -> &OccurrenceSpec {
+    pub fn occurrence(&self) -> &Occurrence {
         &self.occur
     }
 
@@ -688,7 +718,7 @@ impl TryFrom<PathBuf> for Collection<'_> {
             .collect();
 
         Ok(Collection {
-            path: path.to_path_buf(),
+            path,
             friendly_name: None,
             tz: Tz::UTC,
             calendars,
