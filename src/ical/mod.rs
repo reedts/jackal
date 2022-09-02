@@ -43,7 +43,7 @@ pub struct EventBuilder {
     path: PathBuf,
     start: DateTime,
     end: Option<DateTime>,
-    dur: Option<Duration>,
+    duration: Option<Duration>,
     ical: IcalEvent,
 }
 
@@ -55,38 +55,58 @@ impl EventBuilder {
         builder
     }
 
-    pub fn with_summary(mut self, summary: String) -> Self {
+    pub fn set_description(&mut self, summary: String) {
         self.ical.add_property(Property {
             name: "SUMMARY".to_owned(),
             params: None,
             value: Some(summary),
         });
+    }
+
+    pub fn with_description(mut self, summary: String) -> Self {
+        self.set_description(summary);
         self
+    }
+
+    pub fn set_start(&mut self, start: DateTime) {
+        self.start = start;
     }
 
     pub fn with_start(mut self, start: DateTime) -> Self {
-        self.start = start;
+        self.set_start(start);
         self
+    }
+
+    pub fn set_end(&mut self, end: DateTime) {
+        self.duration = None;
+        self.end = Some(end);
     }
 
     pub fn with_end(mut self, end: DateTime) -> Self {
-        self.dur = None;
-        self.end = Some(end);
+        self.set_end(end);
         self
     }
 
-    pub fn with_dur(mut self, dur: Duration) -> Self {
+    pub fn set_duration(&mut self, duration: Duration) {
         self.end = None;
-        self.dur = Some(dur);
+        self.duration = Some(duration);
+    }
+
+    pub fn with_duration(mut self, duration: Duration) -> Self {
+        self.set_duration(duration);
         self
     }
 
-    pub fn with_loc(mut self, loc: String) -> Self {
+    pub fn set_location(&mut self, location: String) {
         self.ical.add_property(Property {
             name: "LOCATION".to_owned(),
             params: None,
-            value: Some(loc),
+            value: Some(location),
         });
+    }
+
+    pub fn with_location(mut self, location: String) -> Self {
+        self.set_location(location);
         self
     }
 
@@ -96,7 +116,7 @@ impl EventBuilder {
                 Occurrence::Onetime(TimeSpan::TimePoints(self.start, dtspec)),
                 self.ical.properties,
             )
-        } else if let Some(durspec) = self.dur {
+        } else if let Some(durspec) = self.duration {
             Event::new_with_ical_properties(
                 Occurrence::Onetime(TimeSpan::Duration(self.start, durspec)),
                 self.ical.properties,
