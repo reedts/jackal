@@ -54,15 +54,11 @@ const INSERT_ACTIONS: &'static [(&'static str, InsertAction)] = &[
 pub struct InsertParser<'a, 'c> {
     context: &'a mut Context<'c>,
     config: &'a Config,
-    builder: &'a mut EventBuilder,
+    builder: EventBuilder,
 }
 
 impl<'a, 'c> InsertParser<'a, 'c> {
-    pub fn new(
-        context: &'a mut Context<'c>,
-        config: &'a Config,
-        builder: &'a mut EventBuilder,
-    ) -> Self {
+    pub fn new(context: &'a mut Context<'c>, config: &'a Config, builder: EventBuilder) -> Self {
         InsertParser {
             context,
             config,
@@ -90,7 +86,7 @@ impl<'a, 'c> InsertParser<'a, 'c> {
 }
 
 impl Behavior for InsertParser<'_, '_> {
-    fn input(self, input: Input) -> Option<Input> {
+    fn input(mut self, input: Input) -> Option<Input> {
         if let Event::Key(key) = input.event {
             match key {
                 Key::Char('\n') => {
@@ -99,6 +95,15 @@ impl Behavior for InsertParser<'_, '_> {
                         .input_sink_mut(super::Mode::Insert)
                         .finish_line()
                         .to_owned();
+
+                    let res = self.parse_line(&line);
+                    if let Err(e) = res {
+                        self.context.last_error_message = Some(format!("{}", e));
+                    } else {
+                        let event = self.builder.finish();
+                        // actually write & save event
+                    }
+
                     None
                 }
                 _ => Some(input),

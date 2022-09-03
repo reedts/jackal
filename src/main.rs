@@ -1,7 +1,7 @@
 mod agenda;
 mod config;
 mod events;
-mod ical;
+mod provider;
 mod ui;
 
 use agenda::Agenda;
