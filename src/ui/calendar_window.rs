@@ -1,4 +1,4 @@
-use crate::ical::days_of_month;
+use crate::provider::ical::days_of_month;
 use chrono::{Datelike, Local, Month, NaiveDate};
 use num_traits::FromPrimitive;
 use std::fmt::Display;

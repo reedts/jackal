@@ -1,8 +1,9 @@
 use chrono::{Date, DateTime, Duration, Local, NaiveTime, TimeZone};
-use uuid::Uuid;
+use std::convert::From;
 use std::path::Path;
+use uuid::Uuid;
 
-mod ical;
+pub mod ical;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum TimeSpan<Tz: TimeZone> {
@@ -31,6 +32,19 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
             TimeSpan::TimePoints(_, end) => end.clone(),
             TimeSpan::Duration(begin, dur) => begin.clone().and_duration(dur.as_chrono_duration()),
         }
+    }
+
+    pub fn duration(&self) -> Duration {
+        match &self {
+            TimeSpan::TimePoints(start, end) => (end - start),
+            TimeSpan::Duration(_, dur) => dur,
+        }
+    }
+}
+
+impl<Tz: TimeZone> From<TimeSpan<Tz>> for Duration {
+    fn from(timespan: TimeSpan<Tz>) -> Self {
+        timespan.duration()
     }
 }
 
@@ -67,50 +81,78 @@ impl<Tz: TimeZone> Occurrence<Tz> {
         }
     }
 
-    pub fn as_datetime<Tz2: TimeZone>(&self, tz: &Tz2) -> chrono::DateTime<Tz2> {
+    pub fn as_datetime(&self) -> chrono::DateTime<Tz> {
         use Occurrence::*;
         match self {
             Allday(date) => date
-                .as_date(tz)
+                .as_date()
                 .and_time(NaiveTime::from_hms(0, 0, 0))
                 .unwrap(),
-            Onetime(timespan) => timespan.begin().as_datetime(tz).clone(),
-            Instant(datetime) => datetime.as_datetime(tz).clone(),
+            Onetime(timespan) => timespan.begin().as_datetime().clone(),
+            Instant(datetime) => datetime.as_datetime().clone(),
         }
     }
 
-    pub fn begin<Tz2: TimeZone>(&self, tz: &Tz2) -> chrono::DateTime<Tz2> {
+    pub fn begin(&self) -> chrono::DateTime<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date) => date.as_date(tz).and_hms(0, 0, 0),
-            Onetime(timespan) => timespan.begin().as_datetime(tz).clone(),
-            Instant(datetime) => datetime.as_datetime(tz).clone(),
+            Allday(date) => date.as_date().and_hms(0, 0, 0),
+            Onetime(timespan) => timespan.begin().as_datetime().clone(),
+            Instant(datetime) => datetime.as_datetime().clone(),
         }
     }
 
-    pub fn end<Tz2: TimeZone>(&self, tz: &Tz2) -> chrono::DateTime<Tz2> {
+    pub fn end(&self) -> chrono::DateTime<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date) => date.as_date(tz).and_hms(23, 59, 59),
-            Onetime(timespan) => timespan.end().as_datetime(tz).clone(),
-            Instant(datetime) => datetime.as_datetime(tz).clone(),
+            Allday(date) => date.as_date().and_hms(23, 59, 59),
+            Onetime(timespan) => timespan.end().as_datetime().clone(),
+            Instant(datetime) => datetime.as_datetime().clone(),
+        }
+    }
+
+    pub fn duration(&self) -> Duration {
+        use Occurrence::*;
+
+        match self {
+            Allday(_) => Duration::num_hours(24),
+            Onetime(timespan) => timespan.into(),
+            Instant(_) => Duration::num_seconds(0)
         }
     }
 }
 
-trait Eventlike<Tz: TimeZone = Local> {
+pub trait Eventlike<Tz: TimeZone = Local> {
     fn title(&self) -> &str;
-    fn uuid(&self) -> &Uuid;
+    fn set_title(&mut self, title: &str);
+    fn uuid(&self) -> Uuid;
     fn summary(&self) -> &str;
+    fn set_summary(&mut self, summary: &str);
     fn occurrence(&self) -> &Occurrence<Tz>;
+    fn set_occurrence(&mut self, occurrence: Occurrence<Tz>);
     fn begin(&self) -> DateTime<Tz>;
     fn end(&self) -> DateTime<Tz>;
     fn duration(&self) -> Duration;
 }
 
-trait Calendarlike<Tz: TimeZone = Local> {
+pub trait Calendarlike<Tz: TimeZone = Local> {
     fn name(&self) -> &str;
     fn path(&self) -> &Path;
-    fn events(&self) -> dyn Iterator<Item = &dyn Eventlike>;
+    fn events_iter(&self) -> dyn Iterator<Item = &dyn Eventlike>;
     fn new_event(&mut self);
+}
+
+pub trait Collectionlike<Tz: TimeZone = Local> {
+    fn name(&self) -> &str;
+    fn path(&self) -> &Path;
+    fn calendar_iter(&self) -> dyn Iterator<Item = &dyn Calendarlike>;
+    fn event_iter(&self) -> dyn Iterator<Item = &dyn Eventlike>;
+    fn new_calendar(&mut self);
+}
+
+
+pub fn load_collection(provider: &str, path: &Path) -> Result<impl Collectionlike, Box<dyn std::error::Error>> {
+    match provider {
+        "ical" => ical::calendar::Collection::from_dir(path)
+    }
 }

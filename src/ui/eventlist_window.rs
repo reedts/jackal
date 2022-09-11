@@ -4,7 +4,8 @@ use unsegen::base::*;
 use unsegen::input::Scrollable;
 use unsegen::widget::*;
 
-use crate::ical::{Event, Occurrence};
+use crate::provider::Occurrence;
+use crate::provider::ical::calendar::Event;
 use crate::ui::Context;
 
 enum Entry<'a> {

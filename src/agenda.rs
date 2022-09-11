@@ -7,7 +7,7 @@ use std::convert::TryFrom;
 use std::ops::Bound::{Excluded, Included};
 use std::path::{Path, PathBuf};
 
-use crate::ical;
+use crate::provider;
 
 pub type EventMap = BTreeMap<DateTime<Utc>, Vec<AgendaIndex>>;
 

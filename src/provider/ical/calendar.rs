@@ -9,26 +9,29 @@ use nom::{
     sequence::{preceded, terminated, tuple},
     IResult,
 };
+use std::collections::BTreeMap;
 use std::convert::{From, TryFrom};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use ical::parser::ical::IcalParser;
-use ical::parser::ical::{component::IcalCalendar, component::IcalEvent};
-use ical::parser::Component;
-use ical::property::Property;
+use ::ical::parser::ical::IcalParser;
+use ::ical::parser::ical::{component::IcalCalendar, component::IcalEvent};
+use ::ical::parser::Component;
+use ::ical::property::Property;
 
 use uuid;
 
+use crate::provider::*;
+
 use super::{
-    Error, ErrorKind, IcalResult, PropertyList, ISO8601_2004_LOCAL_FORMAT,
+    Error, ErrorKind, IcalResult, PropertyList, ICAL_FILE_EXT, ISO8601_2004_LOCAL_FORMAT,
     ISO8601_2004_LOCAL_FORMAT_DATE,
 };
 
 #[derive(Default, Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub struct Duration {
+pub struct IcalDuration {
     sign: i8,
     years: i64,
     months: i64,
@@ -39,7 +42,7 @@ pub struct Duration {
     seconds: i64,
 }
 
-impl Duration {
+impl IcalDuration {
     fn parse_sign(input: &str) -> IResult<&str, Option<char>> {
         opt(one_of("+-"))(input)
     }
@@ -134,7 +137,7 @@ impl Duration {
     }
 }
 
-impl FromStr for Duration {
+impl FromStr for IcalDuration {
     type Err = super::error::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -167,7 +170,7 @@ impl FromStr for Duration {
     }
 }
 
-impl TryFrom<&Property> for Duration {
+impl TryFrom<&Property> for IcalDuration {
     type Error = super::error::Error;
 
     fn try_from(value: &Property) -> Result<Self, Self::Error> {
@@ -180,101 +183,7 @@ impl TryFrom<&Property> for Duration {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub enum TimeSpan {
-    TimePoints(DateTime, DateTime),
-    Duration(DateTime, Duration),
-}
-
-impl TimeSpan {
-    pub fn from_start_and_end(begin: DateTime, end: DateTime) -> Self {
-        TimeSpan::TimePoints(begin, end)
-    }
-
-    pub fn from_start_and_duration(begin: DateTime, end: Duration) -> Self {
-        TimeSpan::Duration(begin, end)
-    }
-
-    pub fn begin(&self) -> DateTime {
-        match &self {
-            TimeSpan::TimePoints(begin, _) => begin.clone(),
-            TimeSpan::Duration(begin, _) => begin.clone(),
-        }
-    }
-
-    pub fn end(&self) -> DateTime {
-        match &self {
-            TimeSpan::TimePoints(_, end) => end.clone(),
-            TimeSpan::Duration(begin, dur) => begin.clone().and_duration(dur.as_chrono_duration()),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub enum Occurrence {
-    Allday(DateTime),
-    Onetime(TimeSpan),
-    Instant(DateTime),
-}
-
-impl Default for Occurrence {
-    fn default() -> Self {
-        Occurrence::Instant(DateTime::default())
-    }
-}
-
-impl Occurrence {
-    pub fn is_allday(&self) -> bool {
-        use Occurrence::*;
-        matches!(self, Allday(_))
-    }
-
-    pub fn is_onetime(&self) -> bool {
-        use Occurrence::*;
-        matches!(self, Onetime(_))
-    }
-
-    pub fn as_date<Tz: TimeZone>(&self, tz: &Tz) -> Date<Tz> {
-        use Occurrence::*;
-        match self {
-            Allday(date) => date.as_date(tz),
-            Onetime(timespan) => timespan.begin().as_date(tz),
-            Instant(datetime) => datetime.as_date(tz),
-        }
-    }
-
-    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
-        use Occurrence::*;
-        match self {
-            Allday(date) => date
-                .as_date(tz)
-                .and_time(NaiveTime::from_hms(0, 0, 0))
-                .unwrap(),
-            Onetime(timespan) => timespan.begin().as_datetime(tz).clone(),
-            Instant(datetime) => datetime.as_datetime(tz).clone(),
-        }
-    }
-
-    pub fn begin<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
-        use Occurrence::*;
-        match self {
-            Allday(date) => date.as_date(tz).and_hms(0, 0, 0),
-            Onetime(timespan) => timespan.begin().as_datetime(tz).clone(),
-            Instant(datetime) => datetime.as_datetime(tz).clone(),
-        }
-    }
-
-    pub fn end<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
-        use Occurrence::*;
-        match self {
-            Allday(date) => date.as_date(tz).and_hms(23, 59, 59),
-            Onetime(timespan) => timespan.end().as_datetime(tz).clone(),
-            Instant(datetime) => datetime.as_datetime(tz).clone(),
-        }
-    }
-}
-
-impl TryFrom<&PropertyList> for Occurrence {
+impl<Tz: TimeZone> TryFrom<&PropertyList> for Occurrence<Tz> {
     type Error = super::error::Error;
 
     fn try_from(value: &PropertyList) -> Result<Self, Self::Error> {
@@ -286,12 +195,12 @@ impl TryFrom<&PropertyList> for Occurrence {
         let dtend = value.iter().find(|p| p.name == "DTEND");
 
         // Required (if METHOD not set)
-        let dtstart_spec = DateTime::try_from(dtstart)?;
+        let dtstart_spec = IcalDateTime::try_from(dtstart)?;
 
         // DTEND does not HAVE to be specified...
         if let Some(dt) = dtend {
             // ...but if set it must be parseable
-            let dtend_spec = DateTime::try_from(dt)?;
+            let dtend_spec = IcalDateTime::try_from(dt)?;
             return Ok(Occurrence::Onetime(TimeSpan::from_start_and_end(
                 dtstart_spec,
                 dtend_spec,
@@ -302,7 +211,7 @@ impl TryFrom<&PropertyList> for Occurrence {
         let duration = value.iter().find(|p| p.name == "DURATION");
 
         if let Some(duration) = duration {
-            let dur_spec = Duration::try_from(duration)?;
+            let dur_spec = IcalDuration::try_from(duration)?;
             return Ok(Occurrence::Onetime(TimeSpan::from_start_and_duration(
                 dtstart_spec,
                 dur_spec,
@@ -314,21 +223,21 @@ impl TryFrom<&PropertyList> for Occurrence {
         //  ... a date spec, the event has to have the duration of a single day
         //  ... a datetime spec, the event has to have the dtstart also as dtend
         match dtstart_spec {
-            date @ DateTime::Date(_) => Ok(Occurrence::Allday(date)),
+            date @ IcalDateTime::Date(_) => Ok(Occurrence::Allday(date)),
             dt => Ok(Occurrence::Instant(dt)),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DateTime {
+pub enum IcalDateTime {
     Date(NaiveDate),
     Floating(NaiveDateTime),
     Utc(chrono::DateTime<Utc>),
     Local(chrono::DateTime<FixedOffset>, Tz),
 }
 
-impl FromStr for DateTime {
+impl FromStr for IcalDateTime {
     type Err = super::error::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -346,7 +255,7 @@ impl FromStr for DateTime {
     }
 }
 
-impl TryFrom<&Property> for DateTime {
+impl TryFrom<&Property> for IcalDateTime {
     type Error = super::error::Error;
 
     fn try_from(value: &Property) -> Result<Self, Self::Error> {
@@ -371,15 +280,15 @@ impl TryFrom<&Property> for DateTime {
     }
 }
 
-impl Default for DateTime {
+impl Default for IcalDateTime {
     fn default() -> Self {
-        DateTime::Floating(NaiveDateTime::from_timestamp(0, 0))
+        IcalDateTime::Floating(NaiveDateTime::from_timestamp(0, 0))
     }
 }
 
-impl DateTime {
+impl IcalDateTime {
     pub fn is_date(&self) -> bool {
-        use DateTime::*;
+        use IcalDateTime::*;
         match *self {
             Date(_) => true,
             _ => false,
@@ -388,74 +297,104 @@ impl DateTime {
 
     pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
         match *self {
-            DateTime::Date(dt) => tz.from_utc_date(&dt).and_hms(0, 0, 0),
-            DateTime::Floating(dt) => tz.from_utc_datetime(&dt),
-            DateTime::Utc(dt) => dt.with_timezone(&tz),
-            DateTime::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz),
+            IcalDateTime::Date(dt) => tz.from_utc_date(&dt).and_hms(0, 0, 0),
+            IcalDateTime::Floating(dt) => tz.from_utc_datetime(&dt),
+            IcalDateTime::Utc(dt) => dt.with_timezone(&tz),
+            IcalDateTime::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz),
         }
     }
 
     pub fn as_date<Tz: TimeZone>(&self, tz: &Tz) -> Date<Tz> {
         match *self {
-            DateTime::Date(dt) => tz.from_utc_date(&dt),
-            DateTime::Floating(dt) => tz.from_utc_date(&dt.date()),
-            DateTime::Utc(dt) => dt.with_timezone(tz).date(),
-            DateTime::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz).date(),
+            IcalDateTime::Date(dt) => tz.from_utc_date(&dt),
+            IcalDateTime::Floating(dt) => tz.from_utc_date(&dt.date()),
+            IcalDateTime::Utc(dt) => dt.with_timezone(tz).date(),
+            IcalDateTime::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz).date(),
         }
     }
 
     pub fn with_tz(self, tz: &Tz) -> Self {
         match self {
-            DateTime::Date(dt) => {
+            IcalDateTime::Date(dt) => {
                 let offset = tz.offset_from_utc_date(&dt).fix();
-                DateTime::Local(offset.from_utc_date(&dt).and_hms(0, 0, 0), tz.clone())
+                IcalDateTime::Local(offset.from_utc_date(&dt).and_hms(0, 0, 0), tz.clone())
             }
-            DateTime::Floating(dt) => {
+            IcalDateTime::Floating(dt) => {
                 let offset = tz.offset_from_utc_datetime(&dt).fix();
-                DateTime::Local(offset.from_utc_datetime(&dt), tz.clone())
+                IcalDateTime::Local(offset.from_utc_datetime(&dt), tz.clone())
             }
-            DateTime::Utc(dt) => DateTime::Local(
+            IcalDateTime::Utc(dt) => IcalDateTime::Local(
                 dt.with_timezone(&tz.offset_from_utc_datetime(&dt.naive_utc()).fix()),
                 tz.clone(),
             ),
-            DateTime::Local(dt, _) => DateTime::Local(dt, tz.clone()),
+            IcalDateTime::Local(dt, _) => IcalDateTime::Local(dt, tz.clone()),
         }
     }
 
     pub fn and_duration(self, duration: chrono::Duration) -> Self {
         match self {
-            DateTime::Date(dt) => DateTime::Date(dt + duration),
-            DateTime::Floating(dt) => DateTime::Floating(dt + duration),
-            DateTime::Utc(dt) => DateTime::Utc(dt + duration),
-            DateTime::Local(dt, tz) => DateTime::Local(dt + duration, tz),
+            IcalDateTime::Date(dt) => IcalDateTime::Date(dt + duration),
+            IcalDateTime::Floating(dt) => IcalDateTime::Floating(dt + duration),
+            IcalDateTime::Utc(dt) => IcalDateTime::Utc(dt + duration),
+            IcalDateTime::Local(dt, tz) => IcalDateTime::Local(dt + duration, tz),
         }
     }
 }
 
 #[derive(Clone)]
-pub struct Event {
-    occur: Occurrence,
-    ical: IcalEvent,
+pub struct Event<Tz: TimeZone = Local> {
+    path: PathBuf,
+    occurrence: Occurrence<Tz>,
+    ical: IcalCalendar,
 }
 
-impl TryFrom<IcalEvent> for Event {
+impl TryFrom<IcalCalendar> for Event {
     type Error = super::error::Error;
 
-    fn try_from(ev: IcalEvent) -> Result<Self, Self::Error> {
+    fn try_from(ev: IcalCalendar) -> Result<Self, Self::Error> {
         let occur = Occurrence::try_from(&ev.properties)?;
 
-        Ok(Event { occur, ical: ev })
+        Ok(Event {
+            path: PathBuf::new(),
+            occurrence: occur,
+            ical: ev,
+        })
     }
 }
 
 impl Event {
-    pub fn new(occurrence: Occurrence) -> Self {
+    pub fn new(path: &Path, occurrence: Occurrence<Tz>) -> IcalResult<Self> {
+        if path.is_file() && path.exists() {
+            return Err(Error::new(ErrorKind::EventParse)
+                .with_msg(&format!("File '{}' already exists", path)));
+        }
+
+        let uid = if path.is_file() {
+            uuid::Uuid::parse_str(path.file_stem().unwrap())?
+        } else {
+            uuid::Uuid::new_v4()
+        };
+
+        let mut ical_calendar = IcalCalendar::new();
+        ical_calendar.properties = vec![
+            Property {
+                name: "PRODID".to_owned(),
+                params: None,
+                value: Some(super::JACKAL_PRODID.to_owned()),
+            },
+            Property {
+                name: "VERSION".to_owned(),
+                params: None,
+                value: Some(super::JACKAL_CALENDAR_VERSION.to_owned()),
+            },
+        ];
+
         let mut ical_event = IcalEvent::new();
         ical_event.properties = vec![
             Property {
                 name: "UID".to_owned(),
                 params: None,
-                value: Some(uuid::Uuid::new_v4().hyphenated().to_string()),
+                value: Some(uid),
             },
             Property {
                 name: "DTSTAMP".to_owned(),
@@ -463,97 +402,20 @@ impl Event {
                 value: Some(super::generate_timestamp()),
             },
         ];
+        ical_calendar.events.push(ical_event);
 
         Event {
-            occur: occurrence,
-            ical: ical_event,
+            path: if path.is_file() {
+                path
+            } else {
+                path.join(&uid).with_extension(ICAL_FILE_EXT)
+            },
+            occurrence,
+            ical: ical_calendar,
         }
     }
 
-    pub fn new_with_ical_properties(occurrence: Occurrence, properties: PropertyList) -> Self {
-        let mut event = Self::new(occurrence);
-
-        let new_properties: Vec<_> = properties
-            .into_iter()
-            .filter(|p| {
-                event
-                    .ical
-                    .properties
-                    .iter()
-                    .find(|v| v.name == p.name)
-                    .is_none()
-            })
-            .collect();
-
-        event.ical.properties.extend(new_properties);
-
-        event
-    }
-
-    fn get_property(&self, name: &str) -> Option<&str> {
-        if let Some(prop) = self.ical.properties.iter().find(|prop| prop.name == name) {
-            prop.value.as_deref()
-        } else {
-            None
-        }
-    }
-
-    pub fn uuid(&self) -> uuid::Uuid {
-        uuid::Uuid::parse_str(self.get_property("UID").unwrap()).unwrap()
-    }
-
-    pub fn summary(&self) -> &str {
-        self.get_property("SUMMARY").unwrap()
-    }
-
-    pub fn set_summary(&mut self, summary: &str) {
-        let summary_prop = self
-            .ical
-            .properties
-            .iter_mut()
-            .find(|prop| prop.name == "SUMMARY");
-
-        if let Some(prop) = summary_prop {
-            prop.value = Some(summary.to_owned());
-        } else {
-            self.ical.add_property(Property {
-                name: "SUMMARY".to_owned(),
-                params: None,
-                value: Some(summary.to_owned()),
-            });
-        }
-    }
-
-    pub fn occurrence(&self) -> &Occurrence {
-        &self.occur
-    }
-
-    pub fn ical_event(&self) -> &IcalEvent {
-        &self.ical
-    }
-
-    pub fn is_allday(&self) -> bool {
-        self.occur.is_allday()
-    }
-}
-
-impl From<Event> for IcalEvent {
-    fn from(event: Event) -> Self {
-        event.ical
-    }
-}
-
-#[derive(Clone)]
-pub struct Calendar {
-    path: PathBuf,
-    ical: IcalCalendar,
-    events: Vec<Event>,
-    tz: Tz,
-}
-
-impl TryFrom<&Path> for Calendar {
-    type Error = io::Error;
-    fn try_from(path: &Path) -> io::Result<Calendar> {
+    pub fn from_file(path: &Path) -> IcalResult<Self> {
         let buf = io::BufReader::new(fs::File::open(path)?);
 
         let mut reader = IcalParser::new(buf);
@@ -580,65 +442,207 @@ impl TryFrom<&Path> for Calendar {
             }
         };
 
-        Calendar::from_ical(path, ical).map_err(|err| err.into())
+        Self::from_ical(path, ical)
     }
+
+    pub fn from_ical(path: &Path, mut ical: IcalCalendar) -> IcalResult<Self> {
+        if ical.events.len() >= 1 {
+            return Err(Error::from(ErrorKind::CalendarParse).with_msg(&format!(
+                "Calendar '{}' has more than one event entry",
+                path
+            )));
+        }
+
+        if ical.events.is_empty() {
+            return Err(Error::from(ErrorKind::CalendarParse)
+                .with_msg(&format!("Calendar '{}' has no event entry", path)));
+        }
+
+        let event = &ical.events.first().unwrap();
+
+        let occurrence = Occurrence::try_from(&event.properties)?;
+
+        // TODO: Parse timezone
+
+        Ok(Event {
+            path: path.into(),
+            occurrence,
+            ical,
+        })
+    }
+
+    pub fn new_with_ical_properties(
+        path: &Path,
+        occurrence: Occurrence<Tz>,
+        properties: PropertyList,
+    ) -> Self {
+        let mut event = Self::new(path, occurrence);
+
+        let new_properties: Vec<_> = properties
+            .into_iter()
+            .filter(|p| {
+                event
+                    .ical
+                    .properties
+                    .iter()
+                    .find(|v| v.name == p.name)
+                    .is_none()
+            })
+            .collect();
+
+        event.ical.events[0].extend(new_properties);
+
+        event
+    }
+
+    fn get_property(&self, name: &str) -> Option<&str> {
+        if let Some(prop) = self.ical.properties.iter().find(|prop| prop.name == name) {
+            prop.value.as_deref()
+        } else {
+            None
+        }
+    }
+
+    pub fn set_summary(&mut self, summary: &str) {
+        let summary_prop = self
+            .ical
+            .properties
+            .iter_mut()
+            .find(|prop| prop.name == "SUMMARY");
+
+        if let Some(prop) = summary_prop {
+            prop.value = Some(summary.to_owned());
+        } else {
+            self.ical.add_property(Property {
+                name: "SUMMARY".to_owned(),
+                params: None,
+                value: Some(summary.to_owned()),
+            });
+        }
+    }
+
+    pub fn ical_event(&self) -> &IcalEvent {
+        &self.ical
+    }
+}
+
+impl<Tz: TimeZone> Eventlike for Event<Tz> {
+    fn title(&self) -> &str {
+        self.get_property("SUMMARY").unwrap()
+    }
+
+    fn uuid(&self) -> Uuid {
+        uuid::Uuid::parse_str(self.get_property("UID").unwrap()).unwrap()
+    }
+
+    fn summary(&self) -> &str {
+        self.title()
+    }
+
+    fn occurrence(&self) -> &Occurrence<Tz> {
+        &self.occurrence
+    }
+
+    fn begin(&self) -> DateTime<Tz> {
+        self.occurrence.begin()
+    }
+
+    fn end(&self) -> DateTime<Tz> {
+        self.occurrence.end()
+    }
+
+    fn duration(&self) -> IcalDuration {
+        self.occurrence.duration()
+    }
+}
+
+impl From<Event> for IcalEvent {
+    fn from(event: Event) -> Self {
+        event.ical.events[0]
+    }
+}
+
+impl From<Event> for IcalCalendar {
+    fn from(event: Event) -> Self {
+        event.ical
+    }
+}
+
+#[derive(Clone)]
+pub struct Calendar<Tz: TimeZone = Local> {
+    path: PathBuf,
+    identifier: String,
+    friendly_name: String,
+    events: BTreeMap<DateTime<Tz>, Vec<Event>>,
 }
 
 impl Calendar {
     pub fn new(path: &Path) -> Self {
-        let mut ical_calendar = IcalCalendar::new();
-        ical_calendar.properties = vec![
-            Property {
-                name: "PRODID".to_owned(),
-                params: None,
-                value: Some(super::JACKAL_PRODID.to_owned()),
-            },
-            Property {
-                name: "VERSION".to_owned(),
-                params: None,
-                value: Some(super::JACKAL_CALENDAR_VERSION.to_owned()),
-            },
-        ];
+        let identifier = uuid::Uuid::new_v4().hyphenated();
+        let friendly_name = identifier.clone();
 
         Self {
             path: path.to_owned(),
-            ical: ical_calendar,
-            events: Vec::new(),
-            tz: Tz::UTC,
+            identifier,
+            friendly_name,
+            events: BTreeMap::new(),
         }
     }
 
-    pub fn from_ical(path: &Path, mut ical: IcalCalendar) -> IcalResult<Self> {
-        let events: Vec<Event> = std::mem::replace(&mut ical.events, Vec::new())
-            .into_iter()
-            .map(|ev| Event::try_from(ev))
-            .inspect(|ev| {
-                if let Err(e) = ev {
-                    log::warn!("{} (in '{}')", e, path.display())
+    pub fn new_with_name(path: &Path, name: String) -> Self {
+        let identifier = uuid::Uuid::new_v4().hyphenated();
+
+        Self {
+            path: path.to_owned(),
+            identifier,
+            friendly_name: name,
+            events: BTreeMap::new(),
+        }
+    }
+
+    pub fn from_dir(path: &Path) -> IcalResult<Self> {
+        let events = BTreeMap::<DateTime<Tz>, Vec<Event>>::new();
+
+        if !path.is_dir() {
+            return Err(Error::new(ErrorKind::CalendarParse)
+                .with_msg(&format!("'{}' is not a directory", path)));
+        }
+
+        let event_file_iter = fs::read_dir(&path)?
+            .map(|dir| {
+                dir.map_or_else(
+                    |_| -> IcalResult<_> { Err(Error::new(ErrorKind::CalendarParse)) },
+                    |file: fs::DirEntry| -> IcalResult<Event> {
+                        Event::from_file(file.path().as_path())
+                    },
+                )
+            })
+            .inspect(|res| {
+                if let Err(err) = res {
+                    log::warn!("{}", err)
                 }
             })
-            .filter_map(Result::ok)
-            .collect();
+            .filter_map(Result::ok);
 
-        // TODO: Actually parse timezone
-
-        if events.is_empty() {
-            Err(Error::from(ErrorKind::CalendarParse).with_msg("No event found"))
-        } else {
-            Ok(Calendar {
-                path: path.into(),
-                ical,
-                events,
-                tz: Tz::UTC,
-            })
+        for event in event_file_iter {
+            events.entry(event.begin()).or_default().push(event);
         }
+
+        Ok(Calendar {
+            path: path.to_owned(),
+            identifier: path.file_name().unwrap_or_default(),
+            friendly_name: String::default(),
+            events,
+        })
     }
 
-    pub fn from_event(path: &Path, mut event: Event) -> Self {
-        let mut calendar = Self::new(path);
+    pub fn with_name(mut self, name: String) -> Self {
+        self.set_name(name);
+        self
+    }
 
-        calendar.events = vec![event];
-        calendar
+    pub fn set_name(&mut self, name: String) {
+        self.friendly_name = name;
     }
 
     pub fn events_iter<'a>(&'a self) -> impl Iterator<Item = &'a Event> {
@@ -654,58 +658,43 @@ impl Calendar {
     }
 }
 
-impl From<Calendar> for IcalCalendar {
-    fn from(calendar: Calendar) -> Self {
-        let mut ical_calendar = calendar.ical;
-        ical_calendar.events = calendar
-            .events
-            .into_iter()
-            .map(|ev| ev.into())
-            .collect::<Vec<IcalEvent>>();
-
-        ical_calendar
+impl<Tz: TimeZone> Calendarlike for Calendar<Tz> {
+    fn name(&self) -> &str {
+        &self.friendly_name
     }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn events_iter(&self) -> dyn Iterator<Item = Event> {
+        self.events.values()
+    }
+
+    fn new_event(&mut self) {}
 }
 
 #[derive(Clone)]
-pub struct Collection<'a> {
+pub struct Collection<Tz: TimeZone = Local> {
     path: PathBuf,
-    friendly_name: Option<&'a str>,
+    friendly_name: String,
     tz: Tz,
-    calendars: Vec<Calendar>,
+    calendars: Vec<Calendar<Tz>>,
 }
 
-impl<'a> Collection<'a> {
-    pub fn event_iter(&'a self) -> impl Iterator<Item = &'a Event> {
-        self.calendars.iter().flat_map(|c| c.events_iter())
-    }
+impl<Tz: TimeZone> Collection<Tz> {
+    pub fn from_dir(path: &Path) -> IcalResult<Self> {
+        if !path.is_dir() {
+            return Err(Error::new(ErrorKind::CalendarParse)
+                .with_msg(&format!("'{}' is not a directory", path)));
+        }
 
-    pub fn tz(&self) -> &Tz {
-        &self.tz
-    }
-
-    pub fn calendars(&self) -> &Vec<Calendar> {
-        &self.calendars
-    }
-}
-
-impl TryFrom<&Path> for Collection<'_> {
-    type Error = io::Error;
-    fn try_from(path: &Path) -> Result<Self, Self::Error> {
-        Self::try_from(path.to_path_buf())
-    }
-}
-
-impl TryFrom<PathBuf> for Collection<'_> {
-    type Error = io::Error;
-    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
-        // Load all valid .ics files from 'path'
-        let calendars: Vec<Calendar> = fs::read_dir(&path)?
+        let calendars: Vec<Calendar<Tz>> = fs::read_dir(&path)?
             .map(|dir| {
                 dir.map_or_else(
-                    |_| -> io::Result<_> { Err(io::Error::from(io::ErrorKind::NotFound)) },
-                    |file: fs::DirEntry| -> io::Result<Calendar> {
-                        Calendar::try_from(file.path().as_path())
+                    |_| -> IcalResult<_> { Err(Error::new(ErrorKind::CalendarParse)) },
+                    |file: fs::DirEntry| -> IcalResult<Calendar> {
+                        Calendar::from_dir(file.path().as_path())
                     },
                 )
             })
@@ -718,10 +707,28 @@ impl TryFrom<PathBuf> for Collection<'_> {
             .collect();
 
         Ok(Collection {
-            path,
-            friendly_name: None,
-            tz: Tz::UTC,
-            calendars,
+            path: path.to_owned(),
+            friendly_name: path.file_stem(),
+            tz: Local{},
+            calendars
         })
+    }
+}
+
+impl<Tz: TimeZone> Collectionlike for Collection<Tz> {
+    fn name(&self) -> &str {
+        &self.friendly_name
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn calendar_iter(&self) -> dyn Iterator<Item = Calendar> {
+        self.calendars.iter()
+    }
+
+    fn event_iter(&self) -> dyn Iterator<Item = Event> {
+        self.calendars.iter().flat_map(|c| c.events_iter())
     }
 }
