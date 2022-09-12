@@ -18,13 +18,14 @@ pub enum ErrorKind {
     TimeParse,
     DateParse,
     DurationParse,
+    IOError(io::Error),
 }
 
 impl Error {
-    pub fn new(kind: ErrorKind) -> Self {
+    pub fn new(kind: ErrorKind, msg: &str) -> Self {
         Error {
             kind,
-            message: None,
+            message: Some(msg.to_owned()),
         }
     }
 
@@ -36,14 +37,44 @@ impl Error {
 
 impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Error {
-        Error::new(kind)
+        Error {
+            kind,
+            message: None,
+        }
+    }
+}
+
+impl From<io::ErrorKind> for Error {
+    fn from(kind: io::ErrorKind) -> Error {
+        Error::from(io::Error::from(kind))
     }
 }
 
 impl From<chrono::ParseError> for Error {
     fn from(parse_error: chrono::ParseError) -> Error {
-        Error::new(ErrorKind::TimeParse)
-            .with_msg(format!("Could not parse timestamp: {}", parse_error).as_str())
+        Error::new(
+            ErrorKind::TimeParse,
+            format!("Could not parse timestamp: {}", parse_error).as_str(),
+        )
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(io_error: io::Error) -> Error {
+        Error::from(ErrorKind::IOError(io_error))
+    }
+}
+
+impl From<Error> for io::Error {
+    fn from(err: Error) -> Self {
+        if let ErrorKind::IOError(err) = err.kind {
+            err
+        } else {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                err.message.unwrap_or("invalid format".to_owned()),
+            )
+        }
     }
 }
 
@@ -68,15 +99,8 @@ impl ErrorKind {
             ErrorKind::TimeParse => "invalid time format",
             ErrorKind::DateParse => "invalid date format",
             ErrorKind::DurationParse => "invalid duration format",
+            ErrorKind::IOError(err) => &err.to_string(),
         }
     }
 }
 
-impl From<Error> for io::Error {
-    fn from(err: Error) -> Self {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            err.message.unwrap_or("invalid format".to_owned()),
-        )
-    }
-}

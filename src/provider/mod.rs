@@ -3,7 +3,12 @@ use std::convert::From;
 use std::path::Path;
 use uuid::Uuid;
 
+pub mod error;
 pub mod ical;
+
+pub use error::*;
+
+pub type Result<T> = std::result::Result<T, self::Error>;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum TimeSpan<Tz: TimeZone> {
@@ -151,8 +156,8 @@ pub trait Collectionlike<Tz: TimeZone = Local> {
 }
 
 
-pub fn load_collection(provider: &str, path: &Path) -> Result<impl Collectionlike, Box<dyn std::error::Error>> {
+pub fn load_collection(provider: &str, path: &Path) -> Result<impl Collectionlike> {
     match provider {
-        "ical" => ical::calendar::Collection::from_dir(path)
+        "ical" => ical::Collection::from_dir(path)
     }
 }

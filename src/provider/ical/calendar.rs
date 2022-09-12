@@ -26,7 +26,7 @@ use uuid;
 use crate::provider::*;
 
 use super::{
-    Error, ErrorKind, IcalResult, PropertyList, ICAL_FILE_EXT, ISO8601_2004_LOCAL_FORMAT,
+    Error, ErrorKind, PropertyList, Result, ICAL_FILE_EXT, ISO8601_2004_LOCAL_FORMAT,
     ISO8601_2004_LOCAL_FORMAT_DATE,
 };
 
@@ -138,12 +138,12 @@ impl IcalDuration {
 }
 
 impl FromStr for IcalDuration {
-    type Err = super::error::Error;
+    type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         let (rest, sign) = Self::parse_sign(s)
             .or_else(|err| {
-                return Err(Self::Err::new(ErrorKind::DurationParse).with_msg(&format!("{}", err)));
+                return Err(Self::Err::new(ErrorKind::DurationParse, &format!("{}", err)));
             })
             .unwrap();
 
@@ -152,7 +152,7 @@ impl FromStr for IcalDuration {
             alt((Self::parse_week_format, Self::parse_datetime_format)),
         ))(rest))
         .or_else(|err| {
-            return Err(Self::Err::new(ErrorKind::DurationParse).with_msg(&format!("{}", err)));
+            return Err(Self::Err::new(ErrorKind::DurationParse, &format!("{}", err)));
         })
         .unwrap();
 
@@ -171,26 +171,26 @@ impl FromStr for IcalDuration {
 }
 
 impl TryFrom<&Property> for IcalDuration {
-    type Error = super::error::Error;
+    type Error = Error;
 
-    fn try_from(value: &Property) -> Result<Self, Self::Error> {
+    fn try_from(value: &Property) -> Result<Self> {
         let val = value
             .value
             .as_ref()
-            .ok_or(Self::Error::from(ErrorKind::EventParse).with_msg("Empty duration property"))?;
+            .ok_or(Error::new(ErrorKind::EventParse, "Empty duration property"))?;
 
         val.parse::<Self>()
     }
 }
 
 impl<Tz: TimeZone> TryFrom<&PropertyList> for Occurrence<Tz> {
-    type Error = super::error::Error;
+    type Error = Error;
 
-    fn try_from(value: &PropertyList) -> Result<Self, Self::Error> {
+    fn try_from(value: &PropertyList) -> Result<Self> {
         let dtstart = value
             .iter()
             .find(|p| p.name == "DTSTART")
-            .ok_or(Error::new(ErrorKind::EventMissingKey).with_msg("No DTSTART found"))?;
+            .ok_or(Error::new(ErrorKind::EventMissingKey, "No DTSTART found"))?;
 
         let dtend = value.iter().find(|p| p.name == "DTEND");
 
@@ -238,9 +238,9 @@ pub enum IcalDateTime {
 }
 
 impl FromStr for IcalDateTime {
-    type Err = super::error::Error;
+    type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         // First try to read DateTime, if that fails try date only
         if let Ok(dt) = NaiveDateTime::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT) {
             if s.ends_with("Z") {
@@ -256,9 +256,9 @@ impl FromStr for IcalDateTime {
 }
 
 impl TryFrom<&Property> for IcalDateTime {
-    type Error = super::error::Error;
+    type Error = Error;
 
-    fn try_from(value: &Property) -> Result<Self, Self::Error> {
+    fn try_from(value: &Property) -> Result<Self> {
         let val = value
             .value
             .as_ref()
@@ -270,7 +270,7 @@ impl TryFrom<&Property> for IcalDateTime {
         if let Some(options) = &value.params {
             if let Some(option) = options.iter().find(|o| o.0 == "TZID") {
                 let tz: Tz = option.1[0].parse().map_err(|err: String| {
-                    Error::new(ErrorKind::DateParse).with_msg(err.as_str())
+                    Error::new(ErrorKind::DateParse, err.as_str())
                 })?;
                 spec = spec.with_tz(&tz);
             }
@@ -349,9 +349,9 @@ pub struct Event<Tz: TimeZone = Local> {
 }
 
 impl TryFrom<IcalCalendar> for Event {
-    type Error = super::error::Error;
+    type Error = Error;
 
-    fn try_from(ev: IcalCalendar) -> Result<Self, Self::Error> {
+    fn try_from(ev: IcalCalendar) -> Result<Self> {
         let occur = Occurrence::try_from(&ev.properties)?;
 
         Ok(Event {
@@ -363,7 +363,7 @@ impl TryFrom<IcalCalendar> for Event {
 }
 
 impl Event {
-    pub fn new(path: &Path, occurrence: Occurrence<Tz>) -> IcalResult<Self> {
+    pub fn new(path: &Path, occurrence: Occurrence<Tz>) -> Result<Self> {
         if path.is_file() && path.exists() {
             return Err(Error::new(ErrorKind::EventParse)
                 .with_msg(&format!("File '{}' already exists", path)));
@@ -415,7 +415,7 @@ impl Event {
         }
     }
 
-    pub fn from_file(path: &Path) -> IcalResult<Self> {
+    pub fn from_file(path: &Path) -> Result<Self> {
         let buf = io::BufReader::new(fs::File::open(path)?);
 
         let mut reader = IcalParser::new(buf);
@@ -445,7 +445,7 @@ impl Event {
         Self::from_ical(path, ical)
     }
 
-    pub fn from_ical(path: &Path, mut ical: IcalCalendar) -> IcalResult<Self> {
+    pub fn from_ical(path: &Path, mut ical: IcalCalendar) -> Result<Self> {
         if ical.events.len() >= 1 {
             return Err(Error::from(ErrorKind::CalendarParse).with_msg(&format!(
                 "Calendar '{}' has more than one event entry",
@@ -568,7 +568,6 @@ impl From<Event> for IcalCalendar {
     }
 }
 
-#[derive(Clone)]
 pub struct Calendar<Tz: TimeZone = Local> {
     path: PathBuf,
     identifier: String,
@@ -600,7 +599,7 @@ impl Calendar {
         }
     }
 
-    pub fn from_dir(path: &Path) -> IcalResult<Self> {
+    pub fn from_dir(path: &Path) -> Result<Self> {
         let events = BTreeMap::<DateTime<Tz>, Vec<Event>>::new();
 
         if !path.is_dir() {
@@ -611,8 +610,8 @@ impl Calendar {
         let event_file_iter = fs::read_dir(&path)?
             .map(|dir| {
                 dir.map_or_else(
-                    |_| -> IcalResult<_> { Err(Error::new(ErrorKind::CalendarParse)) },
-                    |file: fs::DirEntry| -> IcalResult<Event> {
+                    |_| -> Result<_> { Err(Error::new(ErrorKind::CalendarParse)) },
+                    |file: fs::DirEntry| -> Result<Event> {
                         Event::from_file(file.path().as_path())
                     },
                 )
@@ -674,7 +673,6 @@ impl<Tz: TimeZone> Calendarlike for Calendar<Tz> {
     fn new_event(&mut self) {}
 }
 
-#[derive(Clone)]
 pub struct Collection<Tz: TimeZone = Local> {
     path: PathBuf,
     friendly_name: String,
@@ -683,17 +681,21 @@ pub struct Collection<Tz: TimeZone = Local> {
 }
 
 impl<Tz: TimeZone> Collection<Tz> {
-    pub fn from_dir(path: &Path) -> IcalResult<Self> {
+    pub fn from_dir(path: &Path) -> Result<Self> {
         if !path.is_dir() {
-            return Err(Error::new(ErrorKind::CalendarParse)
-                .with_msg(&format!("'{}' is not a directory", path)));
+            return Err(Error::new(
+                ErrorKind::CalendarParse,
+                &format!("'{}' is not a directory", path),
+            ));
         }
 
         let calendars: Vec<Calendar<Tz>> = fs::read_dir(&path)?
             .map(|dir| {
                 dir.map_or_else(
-                    |_| -> IcalResult<_> { Err(Error::new(ErrorKind::CalendarParse)) },
-                    |file: fs::DirEntry| -> IcalResult<Calendar> {
+                    |_| -> Result<_> {
+                        Err(Error::from(io::ErrorKind::InvalidData))
+                    },
+                    |file: fs::DirEntry| -> Result<Calendar> {
                         Calendar::from_dir(file.path().as_path())
                     },
                 )
@@ -709,8 +711,8 @@ impl<Tz: TimeZone> Collection<Tz> {
         Ok(Collection {
             path: path.to_owned(),
             friendly_name: path.file_stem(),
-            tz: Local{},
-            calendars
+            tz: Local {},
+            calendars,
         })
     }
 }

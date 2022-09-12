@@ -1,16 +1,15 @@
 pub mod calendar;
-pub mod error;
+pub use calendar::{Calendar, Collection, Event};
+use calendar::{IcalDateTime, IcalDuration};
 
-use super::{Occurrence, TimeSpan};
-use calendar::{Calendar, IcalDuration, Event, IcalDateTime};
-use error::{Error, ErrorKind};
+use super::{Error, ErrorKind, Occurrence, Result, TimeSpan};
 
 use chrono::{DateTime, Local, Month, NaiveDate, Utc};
-use ical::parser::{ical::component::IcalEvent, Component};
-use ical::property::Property;
 use std::path::{Path, PathBuf};
 
-pub type IcalResult<T> = std::result::Result<T, error::Error>;
+use ical::parser::{ical::component::IcalEvent, Component};
+use ical::property::Property;
+
 type PropertyList = Vec<Property>;
 
 const JACKAL_PRODID: &'static str = "-//JACKAL//NONSGML Calendar//EN";
@@ -112,7 +111,7 @@ impl EventBuilder {
         self
     }
 
-    pub fn finish(self) -> IcalResult<Event> {
+    pub fn finish(self) -> Result<Event> {
         let mut event = if let Some(dtspec) = self.end {
             Event::new_with_ical_properties(
                 &self.path,
@@ -126,7 +125,11 @@ impl EventBuilder {
                 self.ical.properties,
             )
         } else {
-            Event::new_with_ical_properties(&self.path, Occurrence::Instant(self.start), self.ical.properties)
+            Event::new_with_ical_properties(
+                &self.path,
+                Occurrence::Instant(self.start),
+                self.ical.properties,
+            )
         };
 
         Ok(event)
