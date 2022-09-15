@@ -23,6 +23,7 @@ use ::ical::property::Property;
 
 use uuid;
 
+use crate::config::CalendarSpec;
 use crate::provider::*;
 
 use super::{
@@ -143,7 +144,10 @@ impl FromStr for IcalDuration {
     fn from_str(s: &str) -> Result<Self> {
         let (rest, sign) = Self::parse_sign(s)
             .or_else(|err| {
-                return Err(Self::Err::new(ErrorKind::DurationParse, &format!("{}", err)));
+                return Err(Self::Err::new(
+                    ErrorKind::DurationParse,
+                    &format!("{}", err),
+                ));
             })
             .unwrap();
 
@@ -152,7 +156,10 @@ impl FromStr for IcalDuration {
             alt((Self::parse_week_format, Self::parse_datetime_format)),
         ))(rest))
         .or_else(|err| {
-            return Err(Self::Err::new(ErrorKind::DurationParse, &format!("{}", err)));
+            return Err(Self::Err::new(
+                ErrorKind::DurationParse,
+                &format!("{}", err),
+            ));
         })
         .unwrap();
 
@@ -269,9 +276,9 @@ impl TryFrom<&Property> for IcalDateTime {
         // check for TZID in options
         if let Some(options) = &value.params {
             if let Some(option) = options.iter().find(|o| o.0 == "TZID") {
-                let tz: Tz = option.1[0].parse().map_err(|err: String| {
-                    Error::new(ErrorKind::DateParse, err.as_str())
-                })?;
+                let tz: Tz = option.1[0]
+                    .parse()
+                    .map_err(|err: String| Error::new(ErrorKind::DateParse, err.as_str()))?;
                 spec = spec.with_tz(&tz);
             }
         }
@@ -365,12 +372,14 @@ impl TryFrom<IcalCalendar> for Event {
 impl Event {
     pub fn new(path: &Path, occurrence: Occurrence<Tz>) -> Result<Self> {
         if path.is_file() && path.exists() {
-            return Err(Error::new(ErrorKind::EventParse)
-                .with_msg(&format!("File '{}' already exists", path)));
+            return Err(Error::new(
+                ErrorKind::EventParse,
+                &format!("File '{}' already exists", path.display()),
+            ));
         }
 
         let uid = if path.is_file() {
-            uuid::Uuid::parse_str(path.file_stem().unwrap())?
+            uuid::Uuid::parse_str(&path.file_stem().unwrap().to_string_lossy().to_string())?
         } else {
             uuid::Uuid::new_v4()
         };
@@ -575,15 +584,15 @@ pub struct Calendar<Tz: TimeZone = Local> {
     events: BTreeMap<DateTime<Tz>, Vec<Event>>,
 }
 
-impl Calendar {
+impl<Tz: TimeZone> Calendar<Tz> {
     pub fn new(path: &Path) -> Self {
         let identifier = uuid::Uuid::new_v4().hyphenated();
         let friendly_name = identifier.clone();
 
         Self {
             path: path.to_owned(),
-            identifier,
-            friendly_name,
+            identifier: identifier.to_string(),
+            friendly_name: friendly_name.to_string(),
             events: BTreeMap::new(),
         }
     }
@@ -593,7 +602,7 @@ impl Calendar {
 
         Self {
             path: path.to_owned(),
-            identifier,
+            identifier: identifier.to_string(),
             friendly_name: name,
             events: BTreeMap::new(),
         }
@@ -676,7 +685,6 @@ impl<Tz: TimeZone> Calendarlike for Calendar<Tz> {
 pub struct Collection<Tz: TimeZone = Local> {
     path: PathBuf,
     friendly_name: String,
-    tz: Tz,
     calendars: Vec<Calendar<Tz>>,
 }
 
@@ -685,18 +693,16 @@ impl<Tz: TimeZone> Collection<Tz> {
         if !path.is_dir() {
             return Err(Error::new(
                 ErrorKind::CalendarParse,
-                &format!("'{}' is not a directory", path),
+                &format!("'{}' is not a directory", path.display()),
             ));
         }
 
         let calendars: Vec<Calendar<Tz>> = fs::read_dir(&path)?
             .map(|dir| {
                 dir.map_or_else(
-                    |_| -> Result<_> {
-                        Err(Error::from(io::ErrorKind::InvalidData))
-                    },
-                    |file: fs::DirEntry| -> Result<Calendar> {
-                        Calendar::from_dir(file.path().as_path())
+                    |_| -> Result<_> { Err(Error::from(io::ErrorKind::InvalidData)) },
+                    |file: fs::DirEntry| -> Result<Calendar<Tz>> {
+                        Calendar::<Tz>::from_dir(file.path().as_path())
                     },
                 )
             })
@@ -710,10 +716,23 @@ impl<Tz: TimeZone> Collection<Tz> {
 
         Ok(Collection {
             path: path.to_owned(),
-            friendly_name: path.file_stem(),
-            tz: Local {},
+            friendly_name: path.file_stem().unwrap().to_string_lossy().to_string(),
             calendars,
         })
+    }
+
+    pub fn calendars_from_dir(path: &Path, calendar_specs: &[CalendarSpec]) -> Result<Self> {
+        if !path.is_dir() {
+            return Err(Error::new(
+                ErrorKind::CalendarParse,
+                &format!("'{}' is not a directory", path.display()),
+            ));
+        }
+
+        let calendars: Vec<Calendar<Tz>> = calendar_specs
+            .into_iter()
+            .map(|spec| Calendar::<Tz>::from_dir(&path.join(spec.id)))
+            .collect();
     }
 }
 

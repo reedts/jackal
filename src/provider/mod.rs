@@ -1,4 +1,4 @@
-use chrono::{Date, DateTime, Duration, Local, NaiveTime, TimeZone};
+use chrono::{Date, DateTime, Duration, Local, Month, NaiveDate, NaiveTime, TimeZone};
 use std::convert::From;
 use std::path::Path;
 use uuid::Uuid;
@@ -9,6 +9,20 @@ pub mod ical;
 pub use error::*;
 
 pub type Result<T> = std::result::Result<T, self::Error>;
+
+pub fn days_of_month(month: &Month, year: i32) -> u64 {
+    if month.number_from_month() == 12 {
+        NaiveDate::from_ymd(year + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd(year, month.number_from_month() as u32 + 1, 1)
+    }
+    .signed_duration_since(NaiveDate::from_ymd(
+        year,
+        month.number_from_month() as u32,
+        1,
+    ))
+    .num_days() as u64
+}
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum TimeSpan<Tz: TimeZone> {
@@ -122,7 +136,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
         match self {
             Allday(_) => Duration::num_hours(24),
             Onetime(timespan) => timespan.into(),
-            Instant(_) => Duration::num_seconds(0)
+            Instant(_) => Duration::num_seconds(0),
         }
     }
 }
@@ -155,9 +169,8 @@ pub trait Collectionlike<Tz: TimeZone = Local> {
     fn new_calendar(&mut self);
 }
 
-
 pub fn load_collection(provider: &str, path: &Path) -> Result<impl Collectionlike> {
     match provider {
-        "ical" => ical::Collection::from_dir(path)
+        "ical" => ical::Collection::from_dir(path),
     }
 }

@@ -51,11 +51,11 @@ impl Display for Entry<'_> {
 }
 
 pub struct EventWindow<'a> {
-    context: &'a Context<'a>,
+    context: &'a Context,
 }
 
 impl<'a> EventWindow<'a> {
-    pub fn new(context: &'a Context<'a>) -> Self {
+    pub fn new(context: &'a Context) -> Self {
         EventWindow { context }
     }
 }
@@ -109,9 +109,9 @@ impl Widget for EventWindow<'_> {
     }
 }
 
-pub struct EventWindowBehaviour<'a, 'c>(pub &'a mut Context<'c>, pub usize);
+pub struct EventWindowBehaviour<'a>(pub &'a mut Context, pub usize);
 
-impl Scrollable for EventWindowBehaviour<'_, '_> {
+impl Scrollable for EventWindowBehaviour<'_> {
     fn scroll_backwards(&mut self) -> unsegen::input::OperationResult {
         if self.0.eventlist_index > 0 {
             self.0.eventlist_index -= 1;

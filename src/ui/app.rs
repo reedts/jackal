@@ -16,11 +16,11 @@ use super::command::CommandParser;
 
 pub struct App<'a> {
     config: &'a Config,
-    context: Context<'a>,
+    context: Context,
 }
 
 impl<'a> App<'a> {
-    pub fn new(config: &'a Config, agenda: Agenda<'a>) -> App<'a> {
+    pub fn new(config: &'a Config, agenda: Agenda) -> App<'a> {
         let context = Context::new(agenda);
         App { config, context }
     }
@@ -143,9 +143,9 @@ impl<'a> App<'a> {
     }
 }
 
-struct CursorBehaviour<'a, 'c>(&'a mut Context<'c>);
+struct CursorBehaviour<'a>(&'a mut Context);
 
-impl Navigatable for CursorBehaviour<'_, '_> {
+impl Navigatable for CursorBehaviour<'_> {
     fn move_down(&mut self) -> OperationResult {
         self.0.cursor = self.0.cursor + chrono::Duration::weeks(1);
         Ok(())

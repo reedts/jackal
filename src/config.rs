@@ -32,9 +32,17 @@ pub(crate) fn find_configfile() -> io::Result<PathBuf> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CollectionConfig {
+pub struct CalendarSpec {
     pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionSpec {
+    pub name: String,
+    pub provider: String,
     pub path: PathBuf,
+    pub calendars: Vec<CalendarSpec>
 }
 
 fn default_tick_rate() -> Duration {
@@ -47,7 +55,7 @@ pub struct Config {
     path: PathBuf,
     #[serde(skip, default = "default_tick_rate")]
     pub tick_rate: Duration,
-    pub collection: Vec<CollectionConfig>,
+    pub collections: Vec<CollectionSpec>,
 }
 
 impl Default for Config {
@@ -59,7 +67,7 @@ impl Default for Config {
                 PathBuf::from("jackal.toml")
             },
             tick_rate: Duration::from_secs(60),
-            collection: Vec::new(),
+            collections: Vec::new(),
         }
     }
 }
@@ -76,7 +84,7 @@ impl Config {
         Ok(())
     }
 
-    pub fn collection_config_for(&self, id: &str) -> Option<&CollectionConfig> {
-        self.collection.iter().find(|c| &c.id == id)
+    pub fn collection_config_for(&self, id: &str) -> Option<&CollectionSpec> {
+        self.collections.iter().find(|c| &c.name == id)
     }
 }

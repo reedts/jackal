@@ -1,5 +1,4 @@
-use chrono::prelude::*;
-use chrono::Duration;
+use chrono::{Date, DateTime, Duration, Month, NaiveDate, Utc, TimeZone};
 use log;
 use num_traits::FromPrimitive;
 use std::collections::BTreeMap;
@@ -7,40 +6,25 @@ use std::convert::TryFrom;
 use std::ops::Bound::{Excluded, Included};
 use std::path::{Path, PathBuf};
 
-use crate::provider;
+use crate::config::Config;
+use crate::provider::*;
 
 pub type EventMap = BTreeMap<DateTime<Utc>, Vec<AgendaIndex>>;
-
-fn days_of_month(month: &Month, year: i32) -> u64 {
-    if month.number_from_month() == 12 {
-        NaiveDate::from_ymd(year + 1, 1, 1)
-    } else {
-        NaiveDate::from_ymd(year, month.number_from_month() as u32 + 1, 1)
-    }
-    .signed_duration_since(NaiveDate::from_ymd(
-        year,
-        month.number_from_month() as u32,
-        1,
-    ))
-    .num_days() as u64
-}
 
 #[derive(Debug, Clone)]
 pub struct AgendaIndex(usize, usize, usize);
 
-#[derive(Clone)]
-pub struct Agenda<'a> {
-    collections: Vec<ical::Collection<'a>>,
-    events: EventMap,
+pub struct Agenda {
+    collections: Vec<Box<dyn Collectionlike>>,
 }
 
-impl TryFrom<&[&Path]> for Agenda<'_> {
-    type Error = std::io::Error;
+impl TryFrom<&[&Path]> for Agenda {
+    type Error = Error;
 
-    fn try_from<'a>(value: &'a [&Path]) -> Result<Self, Self::Error> {
+    fn try_from(value: &[&Path]) -> Result<Self> {
         let collections = value
             .iter()
-            .map(|path| ical::Collection::try_from(*path))
+            .map(|path| Box::new(ical::Collection::from_dir(path)))
             .inspect(|c| {
                 if let Err(e) = c {
                     log::warn!("{}", e)
@@ -50,10 +34,7 @@ impl TryFrom<&[&Path]> for Agenda<'_> {
             .collect::<Vec<ical::Collection>>();
 
         if collections.is_empty() {
-            return Err(Self::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Could not find at least one collection",
-            ));
+            return Err(Self::Error::from(std::io::ErrorKind::NotFound));
         }
 
         let mut events = EventMap::new();
@@ -75,9 +56,9 @@ impl TryFrom<&[&Path]> for Agenda<'_> {
     }
 }
 
-impl<'a> TryFrom<&'a Path> for Agenda<'a> {
-    type Error = std::io::Error;
-    fn try_from(path: &'a Path) -> Result<Self, Self::Error> {
+impl TryFrom<&Path> for Agenda {
+    type Error = Error;
+    fn try_from(path: &Path) -> Result<Self> {
         let dirs = path
             .read_dir()?
             .filter_map(|entry| entry.ok())
@@ -98,7 +79,13 @@ impl<'a> TryFrom<&'a Path> for Agenda<'a> {
     }
 }
 
-impl Agenda<'_> {
+impl Agenda{
+    pub fn from_config(config: &Config) -> Result<Self> {
+        for collection_config in config.collections.iter() {
+
+        }
+    }
+
     fn lookup_event(&self, index: &AgendaIndex) -> &ical::Event {
         &self.collections[index.0].calendars()[index.1].events()[index.2]
     }

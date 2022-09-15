@@ -45,19 +45,19 @@ impl Default for Theme {
     }
 }
 
-pub struct Context<'a> {
+pub struct Context {
     pub mode: Mode,
     pub theme: Theme,
     pub cursor: DateTime<Local>,
     pub eventlist_index: usize,
     pub last_error_message: Option<String>,
     input_sinks: BTreeMap<Mode, PromptLine>,
-    calendar: Agenda<'a>,
+    agenda: Agenda,
     now: DateTime<Local>,
 }
 
-impl<'a> Context<'a> {
-    pub fn new<'b: 'a>(calendar: Agenda<'b>) -> Self {
+impl Context {
+    pub fn new(calendar: Agenda) -> Self {
         Context {
             mode: Mode::Normal,
             theme: Theme::default(),
@@ -68,7 +68,7 @@ impl<'a> Context<'a> {
                 (Mode::Command, PromptLine::with_prompt(":".to_owned())),
             ]),
             eventlist_index: 0,
-            calendar,
+            agenda: calendar,
             now: Local::now(),
         }
     }
@@ -105,7 +105,7 @@ impl<'a> Context<'a> {
     }
 
     pub fn agenda(&self) -> &Agenda {
-        &self.calendar
+        &self.agenda
     }
 
     pub fn now(&self) -> &DateTime<Local> {

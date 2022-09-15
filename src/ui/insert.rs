@@ -15,12 +15,14 @@ use nom::{
     IResult,
 };
 
+use chrono::Duration;
+
 use super::command::ActionResult;
 use super::context::Context;
 use super::match_action;
 use crate::config::Config;
 use crate::provider::ical::EventBuilder;
-use crate::provider::ical::calendar::{Duration, IcalDateTime};
+use crate::provider::ical::calendar::IcalDateTime;
 
 type InsertAction = fn(&mut EventBuilder, &str) -> ActionResult;
 const INSERT_ACTIONS: &'static [(&'static str, InsertAction)] = &[
@@ -52,14 +54,14 @@ const INSERT_ACTIONS: &'static [(&'static str, InsertAction)] = &[
     }),
 ];
 
-pub struct InsertParser<'a, 'c> {
-    context: &'a mut Context<'c>,
+pub struct InsertParser<'a> {
+    context: &'a mut Context,
     config: &'a Config,
     builder: EventBuilder,
 }
 
-impl<'a, 'c> InsertParser<'a, 'c> {
-    pub fn new(context: &'a mut Context<'c>, config: &'a Config, builder: EventBuilder) -> Self {
+impl<'a> InsertParser<'a> {
+    pub fn new(context: &'a mut Context, config: &'a Config, builder: EventBuilder) -> Self {
         InsertParser {
             context,
             config,
@@ -86,7 +88,7 @@ impl<'a, 'c> InsertParser<'a, 'c> {
     }
 }
 
-impl Behavior for InsertParser<'_, '_> {
+impl Behavior for InsertParser<'_> {
     fn input(mut self, input: Input) -> Option<Input> {
         if let Event::Key(key) = input.event {
             match key {

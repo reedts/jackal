@@ -19,8 +19,8 @@ use nom::{
 use super::context::{Context, Mode};
 use crate::config::Config;
 
-pub struct CommandParser<'a, 'c> {
-    context: &'a mut Context<'c>,
+pub struct CommandParser<'a> {
+    context: &'a mut Context,
     config: &'a Config,
 }
 
@@ -42,8 +42,8 @@ where
     }
 }
 
-impl<'a, 'c> CommandParser<'a, 'c> {
-    pub fn new(context: &'a mut Context<'c>, config: &'a Config) -> Self {
+impl<'a> CommandParser<'a> {
+    pub fn new(context: &'a mut Context, config: &'a Config) -> Self {
         CommandParser { context, config }
     }
 
@@ -91,7 +91,7 @@ impl<'a, 'c> CommandParser<'a, 'c> {
     }
 }
 
-impl Behavior for CommandParser<'_, '_> {
+impl Behavior for CommandParser<'_> {
     fn input(mut self, input: Input) -> Option<Input> {
         if let Event::Key(key) = input.event {
             match key {

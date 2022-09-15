@@ -58,6 +58,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Config::default()
     };
 
+    // print!("{:?}", config);
+    // return Ok(())
+
     let dispatcher = Dispatcher::from_config(&config);
     // Setup unsegen terminal
     let stdout = stdout();
@@ -65,9 +68,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let calendar = if let Some(path) = args.input.as_ref() {
         Agenda::try_from(path.as_path())?
-    } else if !config.collection.is_empty() {
+    } else if !config.collections.is_empty() {
         // TODO: Handle multiple calendars here. To be thought through...
-        let paths: Vec<&Path> = config.collection.iter().map(|c| c.path.as_path()).collect();
+        let paths: Vec<&Path> = config.collections.iter().map(|c| c.path.as_path()).collect();
         Agenda::try_from(paths.as_slice())?
     } else {
         // Not one calendar found

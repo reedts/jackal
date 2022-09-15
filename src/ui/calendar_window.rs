@@ -72,7 +72,7 @@ pub struct MonthPane<'a> {
     year: i32,
     num_days: u8,
     offset: u8,
-    context: &'a Context<'a>,
+    context: &'a Context,
 }
 
 impl<'a> MonthPane<'a> {
@@ -85,7 +85,7 @@ impl<'a> MonthPane<'a> {
     const WIDTH: usize = Self::COLUMNS * DayCell::CELL_WIDTH;
     const HEIGHT: usize = (Self::ROWS + Self::HEADER_ROWS) * DayCell::CELL_HEIGHT;
 
-    pub fn new(month: Month, year: i32, context: &'a Context<'a>) -> Self {
+    pub fn new(month: Month, year: i32, context: &'a Context) -> Self {
         let num_days = days_of_month(&month, year);
         let offset = NaiveDate::from_ymd(year, month.number_from_month(), 1)
             .weekday()
@@ -100,7 +100,7 @@ impl<'a> MonthPane<'a> {
         }
     }
 
-    pub fn from_month_index(index: MonthIndex, context: &'a Context<'a>) -> Self {
+    pub fn from_month_index(index: MonthIndex, context: &'a Context) -> Self {
         Self::new(index.index, index.year, context)
     }
 }
@@ -294,11 +294,11 @@ impl PartialOrd for MonthIndex {
 
 #[derive(Clone)]
 pub struct CalendarWindow<'a> {
-    context: &'a Context<'a>,
+    context: &'a Context,
 }
 
 impl<'a> CalendarWindow<'a> {
-    pub fn new(context: &'a Context<'a>) -> Self {
+    pub fn new(context: &'a Context) -> Self {
         CalendarWindow { context }
     }
 }
