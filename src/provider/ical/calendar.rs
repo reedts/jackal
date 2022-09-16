@@ -241,7 +241,7 @@ pub enum IcalDateTime {
     Date(NaiveDate),
     Floating(NaiveDateTime),
     Utc(DateTime<Utc>),
-    Local(DateTime<FixedOffset>, chrono_tz::Tz),
+    Local(DateTime<FixedOffset>),
 }
 
 impl FromStr for IcalDateTime {
@@ -293,9 +293,9 @@ impl<Tz: TimeZone> From<DateTime<Tz>> for IcalDateTime {
         let n_dt = dt.with_timezone(&fixed_offset);
 
         if fixed_offset.utc_minus_local() == 0 {
-            IcalDateTime::Utc(dt.with_timezone(&Utc{}))
+            IcalDateTime::Utc(dt.with_timezone(&Utc {}))
         } else {
-            IcalDateTime::Local(n_dt, )
+            IcalDateTime::Local(n_dt)
         }
     }
 }
@@ -320,7 +320,7 @@ impl IcalDateTime {
             IcalDateTime::Date(dt) => tz.from_utc_date(&dt).and_hms(0, 0, 0),
             IcalDateTime::Floating(dt) => tz.from_utc_datetime(&dt),
             IcalDateTime::Utc(dt) => dt.with_timezone(&tz),
-            IcalDateTime::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz),
+            IcalDateTime::Local(dt) => dt.with_timezone(tz),
         }
     }
 
@@ -329,7 +329,7 @@ impl IcalDateTime {
             IcalDateTime::Date(dt) => tz.from_utc_date(&dt),
             IcalDateTime::Floating(dt) => tz.from_utc_date(&dt.date()),
             IcalDateTime::Utc(dt) => dt.with_timezone(tz).date(),
-            IcalDateTime::Local(dt, old_tz) => dt.with_timezone(&old_tz).with_timezone(tz).date(),
+            IcalDateTime::Local(dt) => dt.with_timezone(tz).date(),
         }
     }
 
@@ -337,17 +337,16 @@ impl IcalDateTime {
         match self {
             IcalDateTime::Date(dt) => {
                 let offset = tz.offset_from_utc_date(&dt).fix();
-                IcalDateTime::Local(offset.from_utc_date(&dt).and_hms(0, 0, 0), tz.clone())
+                IcalDateTime::Local(offset.from_utc_date(&dt).and_hms(0, 0, 0))
             }
             IcalDateTime::Floating(dt) => {
                 let offset = tz.offset_from_utc_datetime(&dt).fix();
-                IcalDateTime::Local(offset.from_utc_datetime(&dt), tz.clone())
+                IcalDateTime::Local(offset.from_utc_datetime(&dt))
             }
             IcalDateTime::Utc(dt) => IcalDateTime::Local(
                 dt.with_timezone(&tz.offset_from_utc_datetime(&dt.naive_utc()).fix()),
-                tz.clone(),
             ),
-            IcalDateTime::Local(dt, _) => IcalDateTime::Local(dt, tz.clone()),
+            IcalDateTime::Local(dt) => IcalDateTime::Local(dt.with_timezone(&tz.offset_from_utc_datetime(&dt.naive_utc()).fix())),
         }
     }
 
@@ -356,7 +355,7 @@ impl IcalDateTime {
             IcalDateTime::Date(dt) => IcalDateTime::Date(dt + duration),
             IcalDateTime::Floating(dt) => IcalDateTime::Floating(dt + duration),
             IcalDateTime::Utc(dt) => IcalDateTime::Utc(dt + duration),
-            IcalDateTime::Local(dt, tz) => IcalDateTime::Local(dt + duration, tz),
+            IcalDateTime::Local(dt) => IcalDateTime::Local(dt + duration),
         }
     }
 }
