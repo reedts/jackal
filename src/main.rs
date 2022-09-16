@@ -22,9 +22,6 @@ use unsegen::base::Terminal;
     about = "Jackal - A TUI calendar application."
 )]
 pub struct Args {
-    #[structopt(help = "input folder containing *.ics files", parse(from_os_str))]
-    pub input: Option<PathBuf>,
-
     #[structopt(
         name = "CONFIG",
         short = "c",
@@ -66,17 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stdout = stdout();
     let mut term = Terminal::new(stdout.lock())?;
 
-    let calendar = if let Some(path) = args.input.as_ref() {
-        Agenda::try_from(path.as_path())?
-    } else if !config.collections.is_empty() {
-        // TODO: Handle multiple calendars here. To be thought through...
-        let paths: Vec<&Path> = config.collections.iter().map(|c| c.path.as_path()).collect();
-        Agenda::try_from(paths.as_slice())?
-    } else {
-        // Not one calendar found
-        println!("Nothing to do.");
-        return Ok(());
-    };
+    let calendar = Agenda::from_config(&config)?;
 
     let mut app = App::new(&config, calendar);
 
