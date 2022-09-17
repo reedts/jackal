@@ -1,4 +1,5 @@
 use chrono::{Date, DateTime, Duration, Local, Month, NaiveDate, NaiveTime, TimeZone};
+use chrono_tz;
 use std::collections::BTreeMap;
 use std::convert::From;
 use std::default::Default;
@@ -198,7 +199,7 @@ impl<'a, Tz: TimeZone> EventFilter<'a, Tz> {
     }
 }
 
-pub trait Eventlike<Tz: TimeZone = Local> {
+pub trait Eventlike<Tz: TimeZone = chrono_tz::Tz> {
     fn title(&self) -> &str;
     fn set_title(&mut self, title: &str);
     fn uuid(&self) -> Uuid;
@@ -211,14 +212,14 @@ pub trait Eventlike<Tz: TimeZone = Local> {
     fn duration(&self) -> Duration;
 }
 
-pub trait Calendarlike<Tz: TimeZone = Local> {
+pub trait Calendarlike<Tz: TimeZone = chrono_tz::Tz> {
     fn name(&self) -> &str;
     fn path(&self) -> &Path;
     fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike<Tz>>>;
     fn new_event(&mut self);
 }
 
-pub trait Collectionlike<Tz: TimeZone = Local> {
+pub trait Collectionlike<Tz: TimeZone = chrono_tz::Tz> {
     fn name(&self) -> &str;
     fn path(&self) -> &Path;
     fn calendar_iter(&self) -> Box<dyn Iterator<Item = &dyn Calendarlike<Tz>>>;
