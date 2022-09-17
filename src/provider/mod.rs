@@ -64,6 +64,17 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
             TimeSpan::Duration(_, dur) => *dur,
         }
     }
+
+    pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> TimeSpan<Tz2> {
+        match self {
+            TimeSpan::TimePoints(begin, end) => {
+                TimeSpan::<Tz2>::TimePoints(begin.with_timezone(tz), end.with_timezone(tz))
+            }
+            TimeSpan::Duration(begin, dur) => {
+                TimeSpan::<Tz2>::Duration(begin.with_timezone(tz), dur)
+            }
+        }
+    }
 }
 
 impl<Tz: TimeZone> From<TimeSpan<Tz>> for Duration {
@@ -74,7 +85,7 @@ impl<Tz: TimeZone> From<TimeSpan<Tz>> for Duration {
 
 #[derive(Clone)]
 pub enum Occurrence<Tz: TimeZone> {
-    Allday(DateTime<Tz>),
+    Allday(Date<Tz>),
     Onetime(TimeSpan<Tz>),
     Instant(DateTime<Tz>),
 }
@@ -93,7 +104,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn as_date(&self) -> Date<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date) => date.date(),
+            Allday(date) => *date,
             Onetime(timespan) => timespan.begin().date(),
             Instant(datetime) => datetime.date(),
         }
@@ -102,7 +113,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn as_datetime(&self) -> DateTime<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date) => date.date().and_time(NaiveTime::from_hms(0, 0, 0)).unwrap(),
+            Allday(date) => date.and_time(NaiveTime::from_hms(0, 0, 0)).unwrap(),
             Onetime(timespan) => timespan.begin(),
             Instant(datetime) => *datetime,
         }
@@ -111,7 +122,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn begin(&self) -> chrono::DateTime<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date) => date.date().and_hms(0, 0, 0),
+            Allday(date) => date.and_hms(0, 0, 0),
             Onetime(timespan) => timespan.begin(),
             Instant(datetime) => *datetime,
         }
@@ -120,7 +131,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn end(&self) -> chrono::DateTime<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date) => date.date().and_hms(23, 59, 59),
+            Allday(date) => date.and_hms(23, 59, 59),
             Onetime(timespan) => timespan.end(),
             Instant(datetime) => *datetime,
         }
@@ -133,6 +144,24 @@ impl<Tz: TimeZone> Occurrence<Tz> {
             Allday(_) => Duration::hours(24),
             Onetime(timespan) => timespan.duration(),
             Instant(_) => Duration::seconds(0),
+        }
+    }
+
+    pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> Occurrence<Tz2> {
+        use Occurrence::*;
+        match self {
+            Allday(date) => Occurrence::<Tz2>::Allday(date.with_timezone(tz)),
+            Onetime(timespan) => Occurrence::<Tz2>::Onetime(timespan.with_tz(tz)),
+            Instant(dt) => Occurrence::<Tz2>::Instant(dt.with_timezone(tz)),
+        }
+    }
+
+    pub fn timezone(&self) -> Tz {
+        use Occurrence::*;
+        match self {
+            Allday(date) => date.timezone(),
+            Onetime(timespan) => timespan.begin().timezone(),
+            Instant(dt) => dt.timezone(),
         }
     }
 }

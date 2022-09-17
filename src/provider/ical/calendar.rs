@@ -1,4 +1,6 @@
-use chrono::{Date, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc};
+use chrono::{
+    Date, DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc,
+};
 use chrono_tz;
 use log;
 use nom::{
@@ -190,49 +192,9 @@ impl TryFrom<&Property> for IcalDuration {
     }
 }
 
-impl<Tz: TimeZone> TryFrom<&PropertyList> for Occurrence<Tz> {
-    type Error = Error;
-
-    fn try_from(value: &PropertyList) -> Result<Self> {
-        let dtstart = value
-            .iter()
-            .find(|p| p.name == "DTSTART")
-            .ok_or(Error::new(ErrorKind::EventMissingKey, "No DTSTART found"))?;
-
-        let dtend = value.iter().find(|p| p.name == "DTEND");
-
-        // Required (if METHOD not set)
-        let dtstart_spec = IcalDateTime::try_from(dtstart)?;
-
-        // DTEND does not HAVE to be specified...
-        if let Some(dt) = dtend {
-            // ...but if set it must be parseable
-            let dtend_spec = IcalDateTime::try_from(dt)?;
-            return Ok(Occurrence::Onetime(TimeSpan::from_start_and_end(
-                dtstart_spec,
-                dtend_spec,
-            )));
-        };
-
-        // Check if DURATION is set
-        let duration = value.iter().find(|p| p.name == "DURATION");
-
-        if let Some(duration) = duration {
-            let dur_spec = IcalDuration::try_from(duration)?;
-            return Ok(Occurrence::Onetime(TimeSpan::from_start_and_duration(
-                dtstart_spec,
-                dur_spec,
-            )));
-        };
-
-        // If neither DTEND, nor DURATION is specified event duration depends solely
-        // on DTSTART. RFC 5545 states, that if DTSTART is...
-        //  ... a date spec, the event has to have the duration of a single day
-        //  ... a datetime spec, the event has to have the dtstart also as dtend
-        match dtstart_spec {
-            date @ IcalDateTime::Date(_) => Ok(Occurrence::Allday(date)),
-            dt => Ok(Occurrence::Instant(dt)),
-        }
+impl From<IcalDuration> for Duration {
+    fn from(dur: IcalDuration) -> Self {
+        dur.as_chrono_duration()
     }
 }
 
@@ -241,7 +203,7 @@ pub enum IcalDateTime {
     Date(NaiveDate),
     Floating(NaiveDateTime),
     Utc(DateTime<Utc>),
-    Local(DateTime<FixedOffset>),
+    Local(NaiveDateTime, chrono_tz::Tz),
 }
 
 impl FromStr for IcalDateTime {
@@ -295,7 +257,11 @@ impl<Tz: TimeZone> From<DateTime<Tz>> for IcalDateTime {
         if fixed_offset.utc_minus_local() == 0 {
             IcalDateTime::Utc(dt.with_timezone(&Utc {}))
         } else {
-            IcalDateTime::Local(n_dt)
+            // FIXME: There is currently no possibility to recreate a
+            // chrono_tz::Tz from a chrono::DateTime<FixedOffset>
+            // We use a UTC datetime and rely on the ical::Event to properly
+            // catch this case
+            IcalDateTime::Utc(dt.with_timezone(&Utc {}))
         }
     }
 }
@@ -320,7 +286,7 @@ impl IcalDateTime {
             IcalDateTime::Date(dt) => tz.from_utc_date(&dt).and_hms(0, 0, 0),
             IcalDateTime::Floating(dt) => tz.from_utc_datetime(&dt),
             IcalDateTime::Utc(dt) => dt.with_timezone(&tz),
-            IcalDateTime::Local(dt) => dt.with_timezone(tz),
+            IcalDateTime::Local(dt, oldtz) => oldtz.from_utc_datetime(&dt).with_timezone(tz),
         }
     }
 
@@ -329,24 +295,16 @@ impl IcalDateTime {
             IcalDateTime::Date(dt) => tz.from_utc_date(&dt),
             IcalDateTime::Floating(dt) => tz.from_utc_date(&dt.date()),
             IcalDateTime::Utc(dt) => dt.with_timezone(tz).date(),
-            IcalDateTime::Local(dt) => dt.with_timezone(tz).date(),
+            IcalDateTime::Local(dt, oldtz) => oldtz.from_utc_datetime(&dt).with_timezone(tz).date(),
         }
     }
 
     pub fn with_tz(self, tz: &chrono_tz::Tz) -> Self {
         match self {
-            IcalDateTime::Date(dt) => {
-                let offset = tz.offset_from_utc_date(&dt).fix();
-                IcalDateTime::Local(offset.from_utc_date(&dt).and_hms(0, 0, 0))
-            }
-            IcalDateTime::Floating(dt) => {
-                let offset = tz.offset_from_utc_datetime(&dt).fix();
-                IcalDateTime::Local(offset.from_utc_datetime(&dt))
-            }
-            IcalDateTime::Utc(dt) => IcalDateTime::Local(
-                dt.with_timezone(&tz.offset_from_utc_datetime(&dt.naive_utc()).fix()),
-            ),
-            IcalDateTime::Local(dt) => IcalDateTime::Local(dt.with_timezone(&tz.offset_from_utc_datetime(&dt.naive_utc()).fix())),
+            IcalDateTime::Date(dt) => IcalDateTime::Local(dt.and_hms(0, 0, 0), *tz),
+            IcalDateTime::Floating(dt) => IcalDateTime::Local(dt, *tz),
+            IcalDateTime::Utc(dt) => IcalDateTime::Local(dt.naive_utc(), *tz),
+            IcalDateTime::Local(dt, _) => IcalDateTime::Local(dt, *tz),
         }
     }
 
@@ -355,7 +313,7 @@ impl IcalDateTime {
             IcalDateTime::Date(dt) => IcalDateTime::Date(dt + duration),
             IcalDateTime::Floating(dt) => IcalDateTime::Floating(dt + duration),
             IcalDateTime::Utc(dt) => IcalDateTime::Utc(dt + duration),
-            IcalDateTime::Local(dt) => IcalDateTime::Local(dt + duration),
+            IcalDateTime::Local(dt, tz) => IcalDateTime::Local(dt + duration, tz),
         }
     }
 }
@@ -365,20 +323,7 @@ pub struct Event<Tz: TimeZone = Local> {
     path: PathBuf,
     occurrence: Occurrence<Tz>,
     ical: IcalCalendar,
-}
-
-impl TryFrom<IcalCalendar> for Event {
-    type Error = Error;
-
-    fn try_from(ev: IcalCalendar) -> Result<Self> {
-        let occur = Occurrence::try_from(&ev.properties)?;
-
-        Ok(Event {
-            path: PathBuf::new(),
-            occurrence: occur,
-            ical: ev,
-        })
-    }
+    tz: Tz,
 }
 
 impl<Tz: TimeZone> Event<Tz> {
@@ -426,6 +371,8 @@ impl<Tz: TimeZone> Event<Tz> {
         ];
         ical_calendar.events.push(ical_event);
 
+        let tz = occurrence.timezone();
+
         Ok(Event {
             path: if path.is_file() {
                 path.to_owned()
@@ -434,9 +381,81 @@ impl<Tz: TimeZone> Event<Tz> {
             },
             occurrence,
             ical: ical_calendar,
+            tz,
         })
     }
 
+    pub fn new_with_ical_properties(
+        path: &Path,
+        occurrence: Occurrence<Tz>,
+        properties: PropertyList,
+    ) -> Result<Self> {
+        let mut event = Self::new(path, occurrence)?;
+
+        let new_properties: Vec<_> = properties
+            .into_iter()
+            .filter(|p| {
+                event
+                    .ical
+                    .properties
+                    .iter()
+                    .find(|v| v.name == p.name)
+                    .is_none()
+            })
+            .collect();
+
+        event.ical.events[0].properties.extend(new_properties);
+
+        Ok(event)
+    }
+
+    // pub fn with_tz<Tz2: TimeZone>(mut self, tz: Tz2) -> Event<Tz2> {
+    //     self.tz = tz;
+    //     self
+    // }
+
+    fn get_property_value(&self, name: &str) -> Option<&str> {
+        if let Some(prop) = self.ical.properties.iter().find(|prop| prop.name == name) {
+            prop.value.as_deref()
+        } else {
+            None
+        }
+    }
+
+    fn get_property_mut(&self, name: &str) -> Option<&mut Property> {
+        self.ical
+            .properties
+            .iter_mut()
+            .find(|prop| prop.name == name)
+    }
+
+    pub fn set_summary(&mut self, summary: &str) {
+        let summary_prop = self
+            .ical
+            .properties
+            .iter_mut()
+            .find(|prop| prop.name == "SUMMARY");
+
+        if let Some(prop) = summary_prop {
+            prop.value = Some(summary.to_owned());
+        } else {
+            self.ical.add_property(Property {
+                name: "SUMMARY".to_owned(),
+                params: None,
+                value: Some(summary.to_owned()),
+            });
+        }
+    }
+
+    pub fn ical_event(&self) -> &IcalEvent {
+        &self.ical.events[0]
+    }
+}
+
+// Loading from ical files is only supported for chrono_tz::Tz as TimeZone impl.
+// This is due to the fact, that the actual timezone of the event first has to be loaded
+// from the corresponding ical property.
+impl Event<chrono_tz::Tz> {
     pub fn from_file(path: &Path) -> Result<Self> {
         let buf = io::BufReader::new(fs::File::open(path)?);
 
@@ -480,9 +499,52 @@ impl<Tz: TimeZone> Event<Tz> {
                 .with_msg(&format!("Calendar '{}' has no event entry", path.display())));
         }
 
-        let event = &ical.events.first().unwrap();
+        let event = ical.events.first().unwrap();
 
-        let occurrence = Occurrence::try_from(&event.properties)?;
+        let dtstart = event
+            .properties
+            .iter()
+            .find(|p| p.name == "DTSTART")
+            .ok_or(Error::new(ErrorKind::EventMissingKey, "No DTSTART found"))?;
+
+        let dtend = event.properties.iter().find(|p| p.name == "DTEND");
+        // Check if DURATION is set
+        let duration = event.properties.iter().find(|p| p.name == "DURATION");
+
+        // Required (if METHOD not set)
+        let dtstart_spec = IcalDateTime::try_from(dtstart)?;
+
+        // Set TZ id based on start spec
+        let tz = if let IcalDateTime::Local(_, tz) = dtstart_spec {
+            tz
+        } else {
+            chrono_tz::UTC
+        };
+
+        // DTEND does not HAVE to be specified...
+        let occurrence = if let Some(dt) = dtend {
+            // ...but if set it must be parseable
+            let dtend_spec = IcalDateTime::try_from(dt)?;
+            Occurrence::Onetime(TimeSpan::from_start_and_end(
+                dtstart_spec.as_datetime(&tz),
+                dtend_spec.as_datetime(&tz),
+            ))
+        } else if let Some(duration) = duration {
+            let dur_spec = IcalDuration::try_from(duration)?;
+            Occurrence::Onetime(TimeSpan::from_start_and_duration(
+                dtstart_spec.as_datetime(&tz),
+                dur_spec.into(),
+            ))
+        } else {
+            // If neither DTEND, nor DURATION is specified event duration depends solely
+            // on DTSTART. RFC 5545 states, that if DTSTART is...
+            //  ... a date spec, the event has to have the duration of a single day
+            //  ... a datetime spec, the event has to have the dtstart also as dtend
+            match dtstart_spec {
+                date @ IcalDateTime::Date(_) => Occurrence::Allday(date.as_date(&tz)).with_tz(&tz),
+                dt => Occurrence::Instant(dt.as_datetime(&tz)),
+            }
+        };
 
         // TODO: Parse timezone
 
@@ -490,69 +552,10 @@ impl<Tz: TimeZone> Event<Tz> {
             path: path.into(),
             occurrence,
             ical,
+            tz,
         })
     }
 
-    pub fn new_with_ical_properties(
-        path: &Path,
-        occurrence: Occurrence<Tz>,
-        properties: PropertyList,
-    ) -> Result<Self> {
-        let mut event = Self::new(path, occurrence)?;
-
-        let new_properties: Vec<_> = properties
-            .into_iter()
-            .filter(|p| {
-                event
-                    .ical
-                    .properties
-                    .iter()
-                    .find(|v| v.name == p.name)
-                    .is_none()
-            })
-            .collect();
-
-        event.ical.events[0].properties.extend(new_properties);
-
-        Ok(event)
-    }
-
-    fn get_property_value(&self, name: &str) -> Option<&str> {
-        if let Some(prop) = self.ical.properties.iter().find(|prop| prop.name == name) {
-            prop.value.as_deref()
-        } else {
-            None
-        }
-    }
-
-    fn get_property_mut(&self, name: &str) -> Option<&mut Property> {
-        self.ical
-            .properties
-            .iter_mut()
-            .find(|prop| prop.name == name)
-    }
-
-    pub fn set_summary(&mut self, summary: &str) {
-        let summary_prop = self
-            .ical
-            .properties
-            .iter_mut()
-            .find(|prop| prop.name == "SUMMARY");
-
-        if let Some(prop) = summary_prop {
-            prop.value = Some(summary.to_owned());
-        } else {
-            self.ical.add_property(Property {
-                name: "SUMMARY".to_owned(),
-                params: None,
-                value: Some(summary.to_owned()),
-            });
-        }
-    }
-
-    pub fn ical_event(&self) -> &IcalEvent {
-        &self.ical.events[0]
-    }
 }
 
 impl<Tz: TimeZone> Eventlike<Tz> for Event<Tz> {
