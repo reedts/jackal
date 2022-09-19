@@ -24,7 +24,7 @@ impl Agenda {
             .collections
             .iter()
             .map(|collection_spec| {
-                load_collection_with_calendars::<Local>(
+                load_collection_with_calendars(
                     &collection_spec.provider,
                     &collection_spec.path,
                     collection_spec.calendars.as_slice(),
@@ -55,10 +55,19 @@ impl Agenda {
 
         self.collections
             .iter()
-            .flat_map(|collection| collection.event_iter())
+            .flat_map(|collection| collection.calendar_iter())
+            .flat_map(move |calendar| {
+                calendar
+                    .filter_events()
+                    .datetime_range((
+                        Included(b_date.with_timezone(calendar.tz())),
+                        Included(e_date.with_timezone(calendar.tz())),
+                    ))
+                    .apply()
+            })
     }
 
-    pub fn events_of_current_month(&self) -> impl Iterator<Item = &ical::Event> {
+    pub fn events_of_current_month(&self) -> impl Iterator<Item = &dyn Eventlike> {
         let today = Utc::today();
         let curr_month = Month::from_u32(today.month()).unwrap();
         let curr_year = today.year();
@@ -69,17 +78,26 @@ impl Agenda {
     pub fn events_of_day<Tz: TimeZone>(
         &self,
         date: &Date<Tz>,
-    ) -> impl Iterator<Item = &ical::Event> {
+    ) -> impl Iterator<Item = &dyn Eventlike> {
         let begin = Utc.from_utc_date(&date.naive_utc()).and_hms(0, 0, 0);
         let end = begin + Duration::days(1);
+        
+        self.collections
+            .iter()
+            .flat_map(|collection| collection.calendar_iter())
+            .flat_map(move |calendar| {
+                calendar
+                    .filter_events()
+                    .datetime_range((
+                        Included(begin.with_timezone(calendar.tz())),
+                        Included(end.with_timezone(calendar.tz())),
+                    ))
+                    .apply()
+            })
 
-        self.events
-            .range((Included(begin), Excluded(end)))
-            .flat_map(|(_, indices)| indices.iter())
-            .map(move |index| self.lookup_event(index))
     }
 
-    pub fn events_of_current_day(&self) -> impl Iterator<Item = &ical::Event> {
+    pub fn events_of_current_day(&self) -> impl Iterator<Item = &dyn Eventlike> {
         let today = Utc::today();
 
         self.events_of_day(&today)

@@ -1,7 +1,7 @@
 use chrono::{
     Date, DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc,
 };
-use chrono_tz;
+use chrono_tz::Tz;
 use log;
 use nom::{
     branch::alt,
@@ -203,7 +203,7 @@ pub enum IcalDateTime {
     Date(NaiveDate),
     Floating(NaiveDateTime),
     Utc(DateTime<Utc>),
-    Local(NaiveDateTime, chrono_tz::Tz),
+    Local(DateTime<chrono_tz::Tz>),
 }
 
 impl FromStr for IcalDateTime {
@@ -286,7 +286,7 @@ impl IcalDateTime {
             IcalDateTime::Date(dt) => tz.from_utc_date(&dt).and_hms(0, 0, 0),
             IcalDateTime::Floating(dt) => tz.from_utc_datetime(&dt),
             IcalDateTime::Utc(dt) => dt.with_timezone(&tz),
-            IcalDateTime::Local(dt, oldtz) => oldtz.from_utc_datetime(&dt).with_timezone(tz),
+            IcalDateTime::Local(dt) => dt.with_timezone(&tz),
         }
     }
 
@@ -295,16 +295,18 @@ impl IcalDateTime {
             IcalDateTime::Date(dt) => tz.from_utc_date(&dt),
             IcalDateTime::Floating(dt) => tz.from_utc_date(&dt.date()),
             IcalDateTime::Utc(dt) => dt.with_timezone(tz).date(),
-            IcalDateTime::Local(dt, oldtz) => oldtz.from_utc_datetime(&dt).with_timezone(tz).date(),
+            IcalDateTime::Local(dt) => dt.with_timezone(tz).date(),
         }
     }
 
     pub fn with_tz(self, tz: &chrono_tz::Tz) -> Self {
         match self {
-            IcalDateTime::Date(dt) => IcalDateTime::Local(dt.and_hms(0, 0, 0), *tz),
-            IcalDateTime::Floating(dt) => IcalDateTime::Local(dt, *tz),
-            IcalDateTime::Utc(dt) => IcalDateTime::Local(dt.naive_utc(), *tz),
-            IcalDateTime::Local(dt, _) => IcalDateTime::Local(dt, *tz),
+            IcalDateTime::Date(dt) => {
+                IcalDateTime::Local(tz.from_utc_datetime(&dt.and_hms(0, 0, 0)))
+            }
+            IcalDateTime::Floating(dt) => IcalDateTime::Local(tz.from_utc_datetime(&dt)),
+            IcalDateTime::Utc(dt) => IcalDateTime::Local(dt.with_timezone(&tz)),
+            IcalDateTime::Local(dt) => IcalDateTime::Local(dt.with_timezone(&tz)),
         }
     }
 
@@ -313,20 +315,20 @@ impl IcalDateTime {
             IcalDateTime::Date(dt) => IcalDateTime::Date(dt + duration),
             IcalDateTime::Floating(dt) => IcalDateTime::Floating(dt + duration),
             IcalDateTime::Utc(dt) => IcalDateTime::Utc(dt + duration),
-            IcalDateTime::Local(dt, tz) => IcalDateTime::Local(dt + duration, tz),
+            IcalDateTime::Local(dt) => IcalDateTime::Local(dt + duration),
         }
     }
 }
 
 #[derive(Clone)]
-pub struct Event<Tz: TimeZone = Local> {
+pub struct Event {
     path: PathBuf,
     occurrence: Occurrence<Tz>,
     ical: IcalCalendar,
     tz: Tz,
 }
 
-impl<Tz: TimeZone> Event<Tz> {
+impl Event {
     pub fn new(path: &Path, occurrence: Occurrence<Tz>) -> Result<Self> {
         if path.is_file() && path.exists() {
             return Err(Error::new(
@@ -409,53 +411,6 @@ impl<Tz: TimeZone> Event<Tz> {
         Ok(event)
     }
 
-    // pub fn with_tz<Tz2: TimeZone>(mut self, tz: Tz2) -> Event<Tz2> {
-    //     self.tz = tz;
-    //     self
-    // }
-
-    fn get_property_value(&self, name: &str) -> Option<&str> {
-        if let Some(prop) = self.ical.properties.iter().find(|prop| prop.name == name) {
-            prop.value.as_deref()
-        } else {
-            None
-        }
-    }
-
-    fn get_property_mut(&self, name: &str) -> Option<&mut Property> {
-        self.ical
-            .properties
-            .iter_mut()
-            .find(|prop| prop.name == name)
-    }
-
-    pub fn set_summary(&mut self, summary: &str) {
-        let summary_prop = self
-            .ical
-            .properties
-            .iter_mut()
-            .find(|prop| prop.name == "SUMMARY");
-
-        if let Some(prop) = summary_prop {
-            prop.value = Some(summary.to_owned());
-        } else {
-            self.ical.add_property(Property {
-                name: "SUMMARY".to_owned(),
-                params: None,
-                value: Some(summary.to_owned()),
-            });
-        }
-    }
-
-    pub fn ical_event(&self) -> &IcalEvent {
-        &self.ical.events[0]
-    }
-}
-
-// Loading from ical files is only supported for chrono_tz::Tz as TimeZone impl.
-// This is due to the fact, that the actual timezone of the event first has to be loaded
-// from the corresponding ical property.
-impl Event<chrono_tz::Tz> {
     pub fn from_file(path: &Path) -> Result<Self> {
         let buf = io::BufReader::new(fs::File::open(path)?);
 
@@ -515,8 +470,8 @@ impl Event<chrono_tz::Tz> {
         let dtstart_spec = IcalDateTime::try_from(dtstart)?;
 
         // Set TZ id based on start spec
-        let tz = if let IcalDateTime::Local(_, tz) = dtstart_spec {
-            tz
+        let tz = if let IcalDateTime::Local(dt) = dtstart_spec {
+            dt.timezone()
         } else {
             chrono_tz::UTC
         };
@@ -556,9 +511,45 @@ impl Event<chrono_tz::Tz> {
         })
     }
 
+    fn get_property_value(&self, name: &str) -> Option<&str> {
+        if let Some(prop) = self.ical.properties.iter().find(|prop| prop.name == name) {
+            prop.value.as_deref()
+        } else {
+            None
+        }
+    }
+
+    fn get_property_mut(&self, name: &str) -> Option<&mut Property> {
+        self.ical
+            .properties
+            .iter_mut()
+            .find(|prop| prop.name == name)
+    }
+
+    pub fn set_summary(&mut self, summary: &str) {
+        let summary_prop = self
+            .ical
+            .properties
+            .iter_mut()
+            .find(|prop| prop.name == "SUMMARY");
+
+        if let Some(prop) = summary_prop {
+            prop.value = Some(summary.to_owned());
+        } else {
+            self.ical.add_property(Property {
+                name: "SUMMARY".to_owned(),
+                params: None,
+                value: Some(summary.to_owned()),
+            });
+        }
+    }
+
+    pub fn ical_event(&self) -> &IcalEvent {
+        &self.ical.events[0]
+    }
 }
 
-impl<Tz: TimeZone> Eventlike<Tz> for Event<Tz> {
+impl Eventlike for Event {
     fn title(&self) -> &str {
         self.get_property_value("SUMMARY").unwrap()
     }
@@ -593,6 +584,16 @@ impl<Tz: TimeZone> Eventlike<Tz> for Event<Tz> {
 
     fn set_occurrence(&mut self, occurrence: Occurrence<Tz>) {
         // TODO: implement
+        unimplemented!()
+    }
+
+    fn tz(&self) -> &Tz {
+        &self.tz
+    }
+
+    fn set_tz(&mut self, tz: &Tz) {
+        self.tz = *tz;
+        self.occurrence = self.occurrence.with_tz(tz);
     }
 
     fn begin(&self) -> DateTime<Tz> {
@@ -620,14 +621,15 @@ impl From<Event> for IcalCalendar {
     }
 }
 
-pub struct Calendar<Tz: TimeZone = Local> {
+pub struct Calendar {
     path: PathBuf,
     identifier: String,
     friendly_name: String,
-    events: BTreeMap<DateTime<Tz>, Vec<Event<Tz>>>,
+    tz: Tz,
+    events: BTreeMap<DateTime<Tz>, Vec<Event>>,
 }
 
-impl<Tz: TimeZone> Calendar<Tz> {
+impl Calendar {
     pub fn new(path: &Path) -> Self {
         let identifier = uuid::Uuid::new_v4().hyphenated();
         let friendly_name = identifier.clone();
@@ -636,6 +638,7 @@ impl<Tz: TimeZone> Calendar<Tz> {
             path: path.to_owned(),
             identifier: identifier.to_string(),
             friendly_name: friendly_name.to_string(),
+            tz: Tz::UTC,
             events: BTreeMap::new(),
         }
     }
@@ -647,12 +650,13 @@ impl<Tz: TimeZone> Calendar<Tz> {
             path: path.to_owned(),
             identifier: identifier.to_string(),
             friendly_name: name,
+            tz: Tz::UTC,
             events: BTreeMap::new(),
         }
     }
 
     pub fn from_dir(path: &Path) -> Result<Self> {
-        let events = BTreeMap::<DateTime<Tz>, Vec<Event<Tz>>>::new();
+        let events = BTreeMap::<DateTime<Tz>, Vec<Event>>::new();
 
         if !path.is_dir() {
             return Err(Error::new(
@@ -665,8 +669,8 @@ impl<Tz: TimeZone> Calendar<Tz> {
             .map(|dir| {
                 dir.map_or_else(
                     |_| -> Result<_> { Err(Error::from(ErrorKind::CalendarParse)) },
-                    |file: fs::DirEntry| -> Result<Event<Tz>> {
-                        Event::<Tz>::from_file(file.path().as_path())
+                    |file: fs::DirEntry| -> Result<Event> {
+                        Event::from_file(file.path().as_path())
                     },
                 )
             })
@@ -681,10 +685,18 @@ impl<Tz: TimeZone> Calendar<Tz> {
             events.entry(event.begin()).or_default().push(event);
         }
 
+        // TODO: use `BTreeMap::first_entry` once it's stable: https://github.com/rust-lang/rust/issues/62924
+        let tz = if let Some((key, event)) = events.iter().next() {
+            *event.first().unwrap().tz()
+        } else {
+            Tz::UTC
+        };
+
         Ok(Calendar {
             path: path.to_owned(),
             identifier: path.file_stem().unwrap().to_string_lossy().to_string(),
             friendly_name: String::default(),
+            tz,
             events,
         })
     }
@@ -699,7 +711,7 @@ impl<Tz: TimeZone> Calendar<Tz> {
     }
 }
 
-impl<Tz: TimeZone> Calendarlike<Tz> for Calendar<Tz> {
+impl Calendarlike for Calendar {
     fn name(&self) -> &str {
         &self.friendly_name
     }
@@ -708,13 +720,40 @@ impl<Tz: TimeZone> Calendarlike<Tz> for Calendar<Tz> {
         &self.path
     }
 
-    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike<Tz>>> {
+    fn tz(&self) -> &Tz {
+        &self.tz
+    }
+
+    fn set_tz(&mut self, tz: &Tz) {
+        unimplemented!();
+    }
+
+    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike>> {
         Box::new(
             self.events
                 .iter()
                 .flat_map(|(_, v)| v.iter())
-                .map(|ev| (ev as &dyn Eventlike<Tz>)),
+                .map(|ev| (ev as &dyn Eventlike)),
         )
+    }
+
+    fn filter_events(&self) -> EventFilter<Tz> {
+        EventFilter {
+            inner: &self
+                .events
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        *k,
+                        v.iter()
+                            .map(|ev| (ev as &dyn Eventlike))
+                            .collect::<Vec<&dyn Eventlike>>(),
+                    )
+                })
+                .collect(),
+            begin: Bound::Unbounded,
+            end: Bound::Unbounded,
+        }
     }
 
     fn new_event(&mut self) {
@@ -722,13 +761,13 @@ impl<Tz: TimeZone> Calendarlike<Tz> for Calendar<Tz> {
     }
 }
 
-pub struct Collection<Tz: TimeZone = Local> {
+pub struct Collection {
     path: PathBuf,
     friendly_name: String,
-    calendars: Vec<Calendar<Tz>>,
+    calendars: Vec<Calendar>,
 }
 
-impl<Tz: TimeZone> Collection<Tz> {
+impl Collection {
     pub fn from_dir(path: &Path) -> Result<Self> {
         if !path.is_dir() {
             return Err(Error::new(
@@ -737,12 +776,12 @@ impl<Tz: TimeZone> Collection<Tz> {
             ));
         }
 
-        let calendars: Vec<Calendar<Tz>> = fs::read_dir(&path)?
+        let calendars: Vec<Calendar> = fs::read_dir(&path)?
             .map(|dir| {
                 dir.map_or_else(
                     |_| -> Result<_> { Err(Error::from(io::ErrorKind::InvalidData)) },
-                    |file: fs::DirEntry| -> Result<Calendar<Tz>> {
-                        Calendar::<Tz>::from_dir(file.path().as_path())
+                    |file: fs::DirEntry| -> Result<Calendar> {
+                        Calendar::from_dir(file.path().as_path())
                     },
                 )
             })
@@ -773,9 +812,9 @@ impl<Tz: TimeZone> Collection<Tz> {
             return Self::from_dir(path);
         }
 
-        let calendars: Vec<Calendar<Tz>> = calendar_specs
+        let calendars: Vec<Calendar> = calendar_specs
             .into_iter()
-            .filter_map(|spec| match Calendar::<Tz>::from_dir(&path.join(spec.id)) {
+            .filter_map(|spec| match Calendar::from_dir(&path.join(spec.id)) {
                 Ok(calendar) => Some(calendar.with_name(spec.name)),
                 Err(_) => None,
             })
@@ -789,7 +828,7 @@ impl<Tz: TimeZone> Collection<Tz> {
     }
 }
 
-impl<Tz: TimeZone> Collectionlike<Tz> for Collection<Tz> {
+impl Collectionlike for Collection {
     fn name(&self) -> &str {
         &self.friendly_name
     }
@@ -798,13 +837,15 @@ impl<Tz: TimeZone> Collectionlike<Tz> for Collection<Tz> {
         &self.path
     }
 
-    fn calendar_iter(&self) -> Box<dyn Iterator<Item = &dyn Calendarlike<Tz>>> {
-        Box::new(self.calendars.iter().map(|c| c as &dyn Calendarlike<Tz>))
+    fn calendar_iter(&self) -> Box<dyn Iterator<Item = &dyn Calendarlike>> {
+        Box::new(self.calendars.iter().map(|c| c as &dyn Calendarlike))
     }
 
-    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike<Tz>>> {
+    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike>> {
         Box::new(self.calendars.iter().flat_map(|c| c.event_iter()))
     }
 
-    fn new_calendar(&mut self) {}
+    fn new_calendar(&mut self) {
+        unimplemented!();
+    }
 }

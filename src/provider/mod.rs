@@ -1,5 +1,5 @@
 use chrono::{Date, DateTime, Duration, Local, Month, NaiveDate, NaiveTime, TimeZone};
-use chrono_tz;
+use chrono_tz::Tz;
 use std::collections::BTreeMap;
 use std::convert::From;
 use std::default::Default;
@@ -168,7 +168,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
 }
 
 struct EventFilter<'a, Tz: TimeZone> {
-    inner: &'a BTreeMap<DateTime<Tz>, Vec<&'a dyn Eventlike<Tz>>>,
+    inner: &'a BTreeMap<DateTime<Tz>, Vec<&'a dyn Eventlike>>,
     begin: Bound<DateTime<Tz>>,
     end: Bound<DateTime<Tz>>,
 }
@@ -191,7 +191,7 @@ impl<'a, Tz: TimeZone> EventFilter<'a, Tz> {
         self
     }
 
-    pub fn apply(self) -> impl Iterator<Item = &'a dyn Eventlike<Tz>> {
+    pub fn apply(self) -> impl Iterator<Item = &'a dyn Eventlike> {
         self.inner
             .range((self.begin, self.end))
             .into_iter()
@@ -199,7 +199,7 @@ impl<'a, Tz: TimeZone> EventFilter<'a, Tz> {
     }
 }
 
-pub trait Eventlike<Tz: TimeZone = chrono_tz::Tz> {
+pub trait Eventlike {
     fn title(&self) -> &str;
     fn set_title(&mut self, title: &str);
     fn uuid(&self) -> Uuid;
@@ -207,41 +207,46 @@ pub trait Eventlike<Tz: TimeZone = chrono_tz::Tz> {
     fn set_summary(&mut self, summary: &str);
     fn occurrence(&self) -> &Occurrence<Tz>;
     fn set_occurrence(&mut self, occurrence: Occurrence<Tz>);
+    fn tz(&self) -> &Tz;
+    fn set_tz(&mut self, tz: &Tz);
     fn begin(&self) -> DateTime<Tz>;
     fn end(&self) -> DateTime<Tz>;
     fn duration(&self) -> Duration;
 }
 
-pub trait Calendarlike<Tz: TimeZone = chrono_tz::Tz> {
+pub trait Calendarlike {
     fn name(&self) -> &str;
     fn path(&self) -> &Path;
-    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike<Tz>>>;
+    fn tz(&self) -> &Tz;
+    fn set_tz(&mut self, tz: &Tz);
+    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike>>;
+    fn filter_events(&self) -> EventFilter<Tz>;
     fn new_event(&mut self);
 }
 
-pub trait Collectionlike<Tz: TimeZone = chrono_tz::Tz> {
+pub trait Collectionlike {
     fn name(&self) -> &str;
     fn path(&self) -> &Path;
-    fn calendar_iter(&self) -> Box<dyn Iterator<Item = &dyn Calendarlike<Tz>>>;
-    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike<Tz>>>;
+    fn calendar_iter(&self) -> Box<dyn Iterator<Item = &dyn Calendarlike>>;
+    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike>>;
     fn new_calendar(&mut self);
 }
 
-pub fn load_collection<Tz: TimeZone>(
+pub fn load_collection(
     provider: &str,
     path: &Path,
-) -> Result<impl Collectionlike<Tz>> {
+) -> Result<impl Collectionlike> {
     match provider {
-        "ical" => ical::Collection::<Tz>::from_dir(path),
+        "ical" => ical::Collection::from_dir(path),
     }
 }
 
-pub fn load_collection_with_calendars<Tz: TimeZone>(
+pub fn load_collection_with_calendars(
     provider: &str,
     path: &Path,
     calendar_specs: &[CalendarSpec],
-) -> Result<impl Collectionlike<Tz>> {
+) -> Result<impl Collectionlike> {
     match provider {
-        "ical" => ical::Collection::<Tz>::calendars_from_dir(path, calendar_specs),
+        "ical" => ical::Collection::calendars_from_dir(path, calendar_specs),
     }
 }

@@ -5,10 +5,10 @@ use calendar::{IcalDateTime, IcalDuration};
 use super::{Error, ErrorKind, Occurrence, Result, TimeSpan};
 
 use chrono::{DateTime, Local, Month, NaiveDate, Utc};
-use std::path::{Path, PathBuf};
-
+use chrono_tz::Tz;
 use ical::parser::{ical::component::IcalEvent, Component};
 use ical::property::Property;
+use std::path::{Path, PathBuf};
 
 type PropertyList = Vec<Property>;
 
@@ -39,21 +39,23 @@ fn generate_timestamp() -> String {
     format!("{}Z", tstamp.format(ISO8601_2004_LOCAL_FORMAT))
 }
 
-#[derive(Default)]
 pub struct EventBuilder {
     path: PathBuf,
-    start: DateTime<Local>,
-    end: Option<DateTime<Local>>,
+    start: DateTime<Tz>,
+    end: Option<DateTime<Tz>>,
     duration: Option<IcalDuration>,
     ical: IcalEvent,
 }
 
 impl EventBuilder {
-    pub fn new(path: &Path) -> Self {
-        let mut builder = Self::default();
-        builder.path = path.to_owned();
-
-        builder
+    pub fn new(path: &Path, start: DateTime<Tz>) -> Self {
+        EventBuilder {
+            path: path.to_owned(),
+            start: start,
+            end: None,
+            duration: None,
+            ical: IcalEvent::default(),
+        }
     }
 
     pub fn set_description(&mut self, summary: String) {
@@ -69,21 +71,21 @@ impl EventBuilder {
         self
     }
 
-    pub fn set_start(&mut self, start: DateTime<Local>) {
+    pub fn set_start(&mut self, start: DateTime<Tz>) {
         self.start = start;
     }
 
-    pub fn with_start(mut self, start: DateTime<Local>) -> Self {
+    pub fn with_start(mut self, start: DateTime<Tz>) -> Self {
         self.set_start(start);
         self
     }
 
-    pub fn set_end(&mut self, end: DateTime<Local>) {
+    pub fn set_end(&mut self, end: DateTime<Tz>) {
         self.duration = None;
         self.end = Some(end);
     }
 
-    pub fn with_end(mut self, end: DateTime<Local>) -> Self {
+    pub fn with_end(mut self, end: DateTime<Tz>) -> Self {
         self.set_end(end);
         self
     }
@@ -121,7 +123,7 @@ impl EventBuilder {
         } else if let Some(durspec) = self.duration {
             Event::new_with_ical_properties(
                 &self.path,
-                Occurrence::Onetime(TimeSpan::Duration(self.start, durspec)),
+                Occurrence::Onetime(TimeSpan::Duration(self.start, durspec.into())),
                 self.ical.properties,
             )
         } else {
@@ -132,6 +134,6 @@ impl EventBuilder {
             )
         };
 
-        Ok(event)
+        event
     }
 }
