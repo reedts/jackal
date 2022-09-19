@@ -1,18 +1,10 @@
-use chrono::{Date, DateTime, Datelike, Duration, Local, Month, NaiveDate, TimeZone, Utc};
+use chrono::{Date, DateTime, Datelike, Duration, Month, NaiveDate, TimeZone, Utc};
 use log;
 use num_traits::FromPrimitive;
-use std::collections::BTreeMap;
-use std::convert::TryFrom;
-use std::ops::Bound::{Excluded, Included};
-use std::path::{Path, PathBuf};
+use std::ops::Bound::Included;
 
 use crate::config::Config;
 use crate::provider::*;
-
-pub type EventMap = BTreeMap<DateTime<Utc>, Vec<AgendaIndex>>;
-
-#[derive(Debug, Clone)]
-pub struct AgendaIndex(usize, usize, usize);
 
 pub struct Agenda {
     collections: Vec<Box<dyn Collectionlike>>,
@@ -57,13 +49,10 @@ impl Agenda {
             .iter()
             .flat_map(|collection| collection.calendar_iter())
             .flat_map(move |calendar| {
-                calendar
-                    .filter_events()
-                    .datetime_range((
-                        Included(b_date.with_timezone(calendar.tz())),
-                        Included(e_date.with_timezone(calendar.tz())),
-                    ))
-                    .apply()
+                calendar.filter_events(EventFilter::default().datetime_range((
+                    Included(b_date.with_timezone(calendar.tz())),
+                    Included(e_date.with_timezone(calendar.tz())),
+                )))
             })
     }
 
@@ -81,20 +70,16 @@ impl Agenda {
     ) -> impl Iterator<Item = &dyn Eventlike> {
         let begin = Utc.from_utc_date(&date.naive_utc()).and_hms(0, 0, 0);
         let end = begin + Duration::days(1);
-        
+
         self.collections
             .iter()
             .flat_map(|collection| collection.calendar_iter())
             .flat_map(move |calendar| {
-                calendar
-                    .filter_events()
-                    .datetime_range((
-                        Included(begin.with_timezone(calendar.tz())),
-                        Included(end.with_timezone(calendar.tz())),
-                    ))
-                    .apply()
+                calendar.filter_events(EventFilter::default().datetime_range((
+                    Included(begin.with_timezone(calendar.tz())),
+                    Included(end.with_timezone(calendar.tz())),
+                )))
             })
-
     }
 
     pub fn events_of_current_day(&self) -> impl Iterator<Item = &dyn Eventlike> {

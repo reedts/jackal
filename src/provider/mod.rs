@@ -47,22 +47,22 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
 
     pub fn begin(&self) -> DateTime<Tz> {
         match &self {
-            TimeSpan::TimePoints(begin, _) => *begin,
-            TimeSpan::Duration(begin, _) => *begin,
+            TimeSpan::TimePoints(begin, _) => begin.clone(),
+            TimeSpan::Duration(begin, _) => begin.clone(),
         }
     }
 
     pub fn end(&self) -> DateTime<Tz> {
         match &self {
-            TimeSpan::TimePoints(_, end) => *end,
-            TimeSpan::Duration(begin, dur) => *begin + *dur,
+            TimeSpan::TimePoints(_, end) => end.clone(),
+            TimeSpan::Duration(begin, dur) => begin.clone() + dur.clone(),
         }
     }
 
     pub fn duration(&self) -> Duration {
         match &self {
-            TimeSpan::TimePoints(start, end) => *end - *start,
-            TimeSpan::Duration(_, dur) => *dur,
+            TimeSpan::TimePoints(start, end) => end.clone() - start.clone(),
+            TimeSpan::Duration(_, dur) => dur.clone(),
         }
     }
 
@@ -105,7 +105,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn as_date(&self) -> Date<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date) => *date,
+            Allday(date) => date.clone(),
             Onetime(timespan) => timespan.begin().date(),
             Instant(datetime) => datetime.date(),
         }
@@ -116,7 +116,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
         match self {
             Allday(date) => date.and_time(NaiveTime::from_hms(0, 0, 0)).unwrap(),
             Onetime(timespan) => timespan.begin(),
-            Instant(datetime) => *datetime,
+            Instant(datetime) => datetime.clone(),
         }
     }
 
@@ -125,7 +125,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
         match self {
             Allday(date) => date.and_hms(0, 0, 0),
             Onetime(timespan) => timespan.begin(),
-            Instant(datetime) => *datetime,
+            Instant(datetime) => datetime.clone(),
         }
     }
 
@@ -134,7 +134,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
         match self {
             Allday(date) => date.and_hms(23, 59, 59),
             Onetime(timespan) => timespan.end(),
-            Instant(datetime) => *datetime,
+            Instant(datetime) => datetime.clone(),
         }
     }
 
@@ -167,35 +167,36 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     }
 }
 
-struct EventFilter<'a, Tz: TimeZone> {
-    inner: &'a BTreeMap<DateTime<Tz>, Vec<&'a dyn Eventlike>>,
-    begin: Bound<DateTime<Tz>>,
-    end: Bound<DateTime<Tz>>,
+pub struct EventFilter<Tz: TimeZone> {
+    pub begin: Bound<DateTime<Tz>>,
+    pub end: Bound<DateTime<Tz>>,
 }
 
-impl<'a, Tz: TimeZone> EventFilter<'a, Tz> {
-    pub fn from_datetime(self, date: Bound<DateTime<Tz>>) -> Self {
+impl<Tz: TimeZone> Default for EventFilter<Tz> {
+    fn default() -> Self {
+        EventFilter {
+            begin: Bound::Unbounded,
+            end: Bound::Unbounded,
+        }
+    }
+}
+
+impl<Tz: TimeZone> EventFilter<Tz> {
+    pub fn from_datetime(mut self, date: Bound<DateTime<Tz>>) -> Self {
         self.begin = date;
         self
     }
 
-    pub fn to_datetime(self, date: Bound<DateTime<Tz>>) -> Self {
+    pub fn to_datetime(mut self, date: Bound<DateTime<Tz>>) -> Self {
         self.end = date;
         self
     }
 
-    pub fn datetime_range<R: RangeBounds<DateTime<Tz>>>(self, range: R) -> Self {
+    pub fn datetime_range<R: RangeBounds<DateTime<Tz>>>(mut self, range: R) -> Self {
         self.begin = range.start_bound().cloned();
         self.end = range.end_bound().cloned();
 
         self
-    }
-
-    pub fn apply(self) -> impl Iterator<Item = &'a dyn Eventlike> {
-        self.inner
-            .range((self.begin, self.end))
-            .into_iter()
-            .flat_map(|(_, v)| v.iter().cloned())
     }
 }
 
@@ -219,25 +220,26 @@ pub trait Calendarlike {
     fn path(&self) -> &Path;
     fn tz(&self) -> &Tz;
     fn set_tz(&mut self, tz: &Tz);
-    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike>>;
-    fn filter_events(&self) -> EventFilter<Tz>;
+    fn event_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a>;
+    fn filter_events<'a>(
+        &'a self,
+        filter: EventFilter<Tz>,
+    ) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a>;
     fn new_event(&mut self);
 }
 
 pub trait Collectionlike {
     fn name(&self) -> &str;
     fn path(&self) -> &Path;
-    fn calendar_iter(&self) -> Box<dyn Iterator<Item = &dyn Calendarlike>>;
-    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike>>;
+    fn calendar_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Calendarlike + 'a)> + 'a>;
+    fn event_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a>;
     fn new_calendar(&mut self);
 }
 
-pub fn load_collection(
-    provider: &str,
-    path: &Path,
-) -> Result<impl Collectionlike> {
+pub fn load_collection(provider: &str, path: &Path) -> Result<impl Collectionlike> {
     match provider {
         "ical" => ical::Collection::from_dir(path),
+        _ => Err(Error::new(ErrorKind::CalendarParse, "No collection found"))
     }
 }
 
@@ -248,5 +250,6 @@ pub fn load_collection_with_calendars(
 ) -> Result<impl Collectionlike> {
     match provider {
         "ical" => ical::Collection::calendars_from_dir(path, calendar_specs),
+        _ => Err(Error::new(ErrorKind::CalendarParse, "No collection found"))
     }
 }

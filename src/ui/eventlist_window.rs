@@ -4,12 +4,11 @@ use unsegen::base::*;
 use unsegen::input::Scrollable;
 use unsegen::widget::*;
 
-use crate::provider::Occurrence;
-use crate::provider::ical::calendar::Event;
+use crate::provider::{Eventlike, Occurrence};
 use crate::ui::Context;
 
 enum Entry<'a> {
-    Event(&'a Event),
+    Event(&'a dyn Eventlike),
     Time(DateTime<Local>),
     Cursor(DateTime<Local>),
 }
@@ -17,7 +16,7 @@ enum Entry<'a> {
 impl Entry<'_> {
     pub fn datetime(&self) -> DateTime<Local> {
         match self {
-            &Entry::Event(evt) => evt.occurrence().begin(&Local {}),
+            &Entry::Event(evt) => evt.occurrence().clone().with_tz(&Local {}).begin(),
             &Entry::Cursor(dt) | &Entry::Time(dt) => dt,
         }
     }
@@ -31,21 +30,17 @@ impl Display for Entry<'_> {
                     Occurrence::Allday(_) => "Allday".to_owned(),
                     Occurrence::Onetime(timespan) => format!(
                         "{} - {}",
-                        timespan
-                            .begin()
-                            .as_datetime(&Local {})
-                            .time()
-                            .format("%H:%M"),
-                        timespan.end().as_datetime(&Local {}).time().format("%H:%M")
+                        timespan.begin().time().format("%H:%M"),
+                        timespan.end().time().format("%H:%M")
                     ),
                     Occurrence::Instant(dt) => {
-                        format!("{}", dt.as_datetime(&Local {}).time().format("%H:%M"))
+                        format!("{}", dt.time().format("%H:%M"))
                     }
                 };
                 write!(f, "{}: {}", time, event.summary())
             }
             Self::Time(dt) => write!(f, " -> {}", dt.time().format("%H:%M")),
-            Self::Cursor(dt) => write!(f, " -* {}", dt.time().format("%H:%M")),
+            Self::Cursor(dt) => write!(f, " * {}", dt.time().format("%H:%M")),
         }
     }
 }
@@ -97,7 +92,10 @@ impl Widget for EventWindow<'_> {
                         cursor.apply_style_modifier(StyleModifier::new().invert(true));
                     }
 
-                    write!(&mut cursor, "{}", ev).unwrap();
+                    if let Err(err) = write!(&mut cursor, "{}", ev) {
+                        log::warn!("Error while writing event: {}", err);
+                    }
+
                     cursor.fill_and_wrap_line();
 
                     cursor.set_style_modifier(saved_style);

@@ -442,7 +442,7 @@ impl Event {
     }
 
     pub fn from_ical(path: &Path, mut ical: IcalCalendar) -> Result<Self> {
-        if ical.events.len() >= 1 {
+        if ical.events.len() > 1 {
             return Err(Error::from(ErrorKind::CalendarParse).with_msg(&format!(
                 "Calendar '{}' has more than one event entry",
                 path.display()
@@ -512,15 +512,19 @@ impl Event {
     }
 
     fn get_property_value(&self, name: &str) -> Option<&str> {
-        if let Some(prop) = self.ical.properties.iter().find(|prop| prop.name == name) {
+        if let Some(prop) = self.ical.events[0]
+            .properties
+            .iter()
+            .find(|prop| prop.name == name)
+        {
             prop.value.as_deref()
         } else {
             None
         }
     }
 
-    fn get_property_mut(&self, name: &str) -> Option<&mut Property> {
-        self.ical
+    fn get_property_mut(&mut self, name: &str) -> Option<&mut Property> {
+        self.ical.events[0]
             .properties
             .iter_mut()
             .find(|prop| prop.name == name)
@@ -593,7 +597,7 @@ impl Eventlike for Event {
 
     fn set_tz(&mut self, tz: &Tz) {
         self.tz = *tz;
-        self.occurrence = self.occurrence.with_tz(tz);
+        self.occurrence = self.occurrence.clone().with_tz(tz);
     }
 
     fn begin(&self) -> DateTime<Tz> {
@@ -611,7 +615,7 @@ impl Eventlike for Event {
 
 impl From<Event> for IcalEvent {
     fn from(event: Event) -> Self {
-        event.ical.events[0]
+        event.ical.events[0].clone()
     }
 }
 
@@ -656,7 +660,7 @@ impl Calendar {
     }
 
     pub fn from_dir(path: &Path) -> Result<Self> {
-        let events = BTreeMap::<DateTime<Tz>, Vec<Event>>::new();
+        let mut events = BTreeMap::<DateTime<Tz>, Vec<Event>>::new();
 
         if !path.is_dir() {
             return Err(Error::new(
@@ -728,7 +732,7 @@ impl Calendarlike for Calendar {
         unimplemented!();
     }
 
-    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike>> {
+    fn event_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a> {
         Box::new(
             self.events
                 .iter()
@@ -737,23 +741,16 @@ impl Calendarlike for Calendar {
         )
     }
 
-    fn filter_events(&self) -> EventFilter<Tz> {
-        EventFilter {
-            inner: &self
-                .events
-                .iter()
-                .map(|(k, v)| {
-                    (
-                        *k,
-                        v.iter()
-                            .map(|ev| (ev as &dyn Eventlike))
-                            .collect::<Vec<&dyn Eventlike>>(),
-                    )
-                })
-                .collect(),
-            begin: Bound::Unbounded,
-            end: Bound::Unbounded,
-        }
+    fn filter_events<'a>(
+        &'a self,
+        filter: EventFilter<Tz>,
+    ) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a> {
+        Box::new(
+            self.events
+                .range((filter.begin, filter.end))
+                .flat_map(|(_, v)| v.iter())
+                .map(|ev| (ev as &dyn Eventlike)),
+        )
     }
 
     fn new_event(&mut self) {
@@ -814,8 +811,8 @@ impl Collection {
 
         let calendars: Vec<Calendar> = calendar_specs
             .into_iter()
-            .filter_map(|spec| match Calendar::from_dir(&path.join(spec.id)) {
-                Ok(calendar) => Some(calendar.with_name(spec.name)),
+            .filter_map(|spec| match Calendar::from_dir(&path.join(&spec.id)) {
+                Ok(calendar) => Some(calendar.with_name(spec.name.clone())),
                 Err(_) => None,
             })
             .collect();
@@ -837,11 +834,11 @@ impl Collectionlike for Collection {
         &self.path
     }
 
-    fn calendar_iter(&self) -> Box<dyn Iterator<Item = &dyn Calendarlike>> {
+    fn calendar_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Calendarlike + 'a)> + 'a> {
         Box::new(self.calendars.iter().map(|c| c as &dyn Calendarlike))
     }
 
-    fn event_iter(&self) -> Box<dyn Iterator<Item = &dyn Eventlike>> {
+    fn event_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a> {
         Box::new(self.calendars.iter().flat_map(|c| c.event_iter()))
     }
 

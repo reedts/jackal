@@ -90,16 +90,16 @@ impl fmt::Display for Error {
 impl error::Error for Error {}
 
 impl ErrorKind {
-    pub fn as_str(&self) -> &'static str {
-        match *self {
-            ErrorKind::CalendarParse => "invalid calendar format",
-            ErrorKind::CalendarMissingKey => "missing key in calendar definition",
-            ErrorKind::EventParse => "invalid event format",
-            ErrorKind::EventMissingKey => "missing key in event definition",
-            ErrorKind::TimeParse => "invalid time format",
-            ErrorKind::DateParse => "invalid date format",
-            ErrorKind::DurationParse => "invalid duration format",
-            ErrorKind::IOError(err) => &err.to_string(),
+    pub fn as_str(&self) -> String {
+        match self {
+            ErrorKind::CalendarParse => "invalid calendar format".to_owned(),
+            ErrorKind::CalendarMissingKey => "missing key in calendar definition".to_owned(),
+            ErrorKind::EventParse => "invalid event format".to_owned(),
+            ErrorKind::EventMissingKey => "missing key in event definition".to_owned(),
+            ErrorKind::TimeParse => "invalid time format".to_owned(),
+            ErrorKind::DateParse => "invalid date format".to_owned(),
+            ErrorKind::DurationParse => "invalid duration format".to_owned(),
+            ErrorKind::IOError(err) => err.to_string(),
         }
     }
 }

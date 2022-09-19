@@ -31,21 +31,21 @@ const INSERT_ACTIONS: &'static [(&'static str, InsertAction)] = &[
         Ok(())
     }),
     ("begin", |b, v| {
-        let start = IcalDateTime::from_str(v)
-            .or_else(|_| Err(ParseError::from_error_kind(v.into(), ErrorKind::Tag)))?;
-        b.set_start(start);
+        // let start = IcalDateTime::from_str(v)
+        //     .or_else(|_| Err(ParseError::from_error_kind(v.into(), ErrorKind::Tag)))?;
+        // b.set_start(start);
         Ok(())
     }),
     ("duration", |b, v| {
-        let duration = Duration::from_str(v)
-            .or_else(|_| Err(ParseError::from_error_kind(v.into(), ErrorKind::Tag)))?;
-        b.set_duration(duration);
+        // let duration = Duration::from_str(v)
+        //     .or_else(|_| Err(ParseError::from_error_kind(v.into(), ErrorKind::Tag)))?;
+        // b.set_duration(duration);
         Ok(())
     }),
     ("end", |b, v| {
-        let end = IcalDateTime::from_str(v)
-            .or_else(|_| Err(ParseError::from_error_kind(v.into(), ErrorKind::Tag)))?;
-        b.set_end(end);
+        // let end = IcalDateTime::from_str(v)
+        //     .or_else(|_| Err(ParseError::from_error_kind(v.into(), ErrorKind::Tag)))?;
+        // b.set_end(end);
         Ok(())
     }),
     ("location", |b, v| {

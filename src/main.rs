@@ -55,9 +55,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Config::default()
     };
 
-    // print!("{:?}", config);
-    // return Ok(())
-
     let dispatcher = Dispatcher::from_config(&config);
     // Setup unsegen terminal
     let stdout = stdout();
