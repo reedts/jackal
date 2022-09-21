@@ -27,7 +27,7 @@ impl Display for Entry<'_> {
         match *self {
             Self::Event(event) => {
                 let time = match event.occurrence() {
-                    Occurrence::Allday(_) => "Allday".to_owned(),
+                    Occurrence::Allday(a, b) => "Allday".to_owned(),
                     Occurrence::Onetime(timespan) => format!(
                         "{} - {}",
                         timespan.begin().time().format("%H:%M"),
@@ -67,7 +67,7 @@ impl Widget for EventWindow<'_> {
         let mut events = self
             .context
             .agenda()
-            .events_of_day(&self.context.cursor().date())
+            .events_of_day(&self.context.cursor().date_naive())
             .map(|ev| Entry::Event(ev))
             .chain([Entry::Cursor(self.context.cursor().clone())])
             .collect::<Vec<Entry>>();

@@ -42,7 +42,7 @@ pub struct CollectionSpec {
     pub name: String,
     pub provider: String,
     pub path: PathBuf,
-    pub calendars: Vec<CalendarSpec>
+    pub calendars: Vec<CalendarSpec>,
 }
 
 fn default_tick_rate() -> Duration {

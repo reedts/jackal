@@ -64,11 +64,8 @@ impl Agenda {
         self.events_of_month(curr_month, curr_year)
     }
 
-    pub fn events_of_day<Tz: TimeZone>(
-        &self,
-        date: &Date<Tz>,
-    ) -> impl Iterator<Item = &dyn Eventlike> {
-        let begin = Utc.from_utc_date(&date.naive_utc()).and_hms(0, 0, 0);
+    pub fn events_of_day(&self, date: &NaiveDate) -> impl Iterator<Item = &dyn Eventlike> {
+        let begin = Utc.from_utc_date(&date).and_hms(0, 0, 0);
         let end = begin + Duration::days(1);
 
         self.collections
@@ -85,6 +82,6 @@ impl Agenda {
     pub fn events_of_current_day(&self) -> impl Iterator<Item = &dyn Eventlike> {
         let today = Utc::today();
 
-        self.events_of_day(&today)
+        self.events_of_day(&today.naive_utc())
     }
 }

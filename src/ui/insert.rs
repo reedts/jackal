@@ -21,8 +21,8 @@ use super::command::ActionResult;
 use super::context::Context;
 use super::match_action;
 use crate::config::Config;
-use crate::provider::ical::EventBuilder;
 use crate::provider::ical::calendar::IcalDateTime;
+use crate::provider::ical::EventBuilder;
 
 type InsertAction = fn(&mut EventBuilder, &str) -> ActionResult;
 const INSERT_ACTIONS: &'static [(&'static str, InsertAction)] = &[
@@ -99,7 +99,7 @@ impl Behavior for InsertParser<'_> {
                         .finish_line()
                         .to_owned();
 
-                let res = self.parse_line(&line);
+                    let res = self.parse_line(&line);
                     if let Err(e) = res {
                         self.context.last_error_message = Some(format!("{}", e));
                     } else {

@@ -86,7 +86,7 @@ impl<Tz: TimeZone> From<TimeSpan<Tz>> for Duration {
 
 #[derive(Clone)]
 pub enum Occurrence<Tz: TimeZone> {
-    Allday(Date<Tz>),
+    Allday(Date<Tz>, Option<Date<Tz>>),
     Onetime(TimeSpan<Tz>),
     Instant(DateTime<Tz>),
 }
@@ -94,7 +94,7 @@ pub enum Occurrence<Tz: TimeZone> {
 impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn is_allday(&self) -> bool {
         use Occurrence::*;
-        matches!(self, Allday(_))
+        matches!(self, Allday(_, _))
     }
 
     pub fn is_onetime(&self) -> bool {
@@ -102,19 +102,19 @@ impl<Tz: TimeZone> Occurrence<Tz> {
         matches!(self, Onetime(_))
     }
 
-    pub fn as_date(&self) -> Date<Tz> {
+    pub fn as_date(&self) -> NaiveDate {
         use Occurrence::*;
         match self {
-            Allday(date) => date.clone(),
-            Onetime(timespan) => timespan.begin().date(),
-            Instant(datetime) => datetime.date(),
+            Allday(date, _) => date.naive_utc(),
+            Onetime(timespan) => timespan.begin().date_naive(),
+            Instant(datetime) => datetime.date_naive(),
         }
     }
 
     pub fn as_datetime(&self) -> DateTime<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date) => date.and_time(NaiveTime::from_hms(0, 0, 0)).unwrap(),
+            Allday(date, _) => date.and_time(NaiveTime::from_hms(0, 0, 0)).unwrap(),
             Onetime(timespan) => timespan.begin(),
             Instant(datetime) => datetime.clone(),
         }
@@ -123,7 +123,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn begin(&self) -> chrono::DateTime<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date) => date.and_hms(0, 0, 0),
+            Allday(date, _) => date.and_hms(0, 0, 0),
             Onetime(timespan) => timespan.begin(),
             Instant(datetime) => datetime.clone(),
         }
@@ -132,7 +132,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn end(&self) -> chrono::DateTime<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date) => date.and_hms(23, 59, 59),
+            Allday(date, edate) => edate.clone().unwrap_or(date.clone()).and_hms(23, 59, 59),
             Onetime(timespan) => timespan.end(),
             Instant(datetime) => datetime.clone(),
         }
@@ -142,7 +142,9 @@ impl<Tz: TimeZone> Occurrence<Tz> {
         use Occurrence::*;
 
         match self {
-            Allday(_) => Duration::hours(24),
+            Allday(date, edate) => edate
+                .clone()
+                .map_or_else(|| Duration::hours(24), |v| v.clone() - date.clone()),
             Onetime(timespan) => timespan.duration(),
             Instant(_) => Duration::seconds(0),
         }
@@ -151,7 +153,10 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> Occurrence<Tz2> {
         use Occurrence::*;
         match self {
-            Allday(date) => Occurrence::<Tz2>::Allday(date.with_timezone(tz)),
+            Allday(date, edate) => Occurrence::<Tz2>::Allday(
+                date.with_timezone(tz),
+                edate.map(|d| d.with_timezone(tz)),
+            ),
             Onetime(timespan) => Occurrence::<Tz2>::Onetime(timespan.with_tz(tz)),
             Instant(dt) => Occurrence::<Tz2>::Instant(dt.with_timezone(tz)),
         }
@@ -160,7 +165,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn timezone(&self) -> Tz {
         use Occurrence::*;
         match self {
-            Allday(date) => date.timezone(),
+            Allday(date, _) => date.timezone(),
             Onetime(timespan) => timespan.begin().timezone(),
             Instant(dt) => dt.timezone(),
         }
@@ -239,7 +244,7 @@ pub trait Collectionlike {
 pub fn load_collection(provider: &str, path: &Path) -> Result<impl Collectionlike> {
     match provider {
         "ical" => ical::Collection::from_dir(path),
-        _ => Err(Error::new(ErrorKind::CalendarParse, "No collection found"))
+        _ => Err(Error::new(ErrorKind::CalendarParse, "No collection found")),
     }
 }
 
@@ -250,6 +255,6 @@ pub fn load_collection_with_calendars(
 ) -> Result<impl Collectionlike> {
     match provider {
         "ical" => ical::Collection::calendars_from_dir(path, calendar_specs),
-        _ => Err(Error::new(ErrorKind::CalendarParse, "No collection found"))
+        _ => Err(Error::new(ErrorKind::CalendarParse, "No collection found")),
     }
 }

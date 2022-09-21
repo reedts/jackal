@@ -72,7 +72,7 @@ impl<'a> App<'a> {
                         let num_events_of_current_day = self
                             .context
                             .agenda()
-                            .events_of_day(&self.context.cursor().date())
+                            .events_of_day(&self.context.cursor().date_naive())
                             .count();
 
                         if input.matches(Key::Esc) {

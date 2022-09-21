@@ -206,24 +206,6 @@ pub enum IcalDateTime {
     Local(DateTime<chrono_tz::Tz>),
 }
 
-impl FromStr for IcalDateTime {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self> {
-        // First try to read DateTime, if that fails try date only
-        if let Ok(dt) = NaiveDateTime::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT) {
-            if s.ends_with("Z") {
-                Ok(Self::Utc(DateTime::<Utc>::from_utc(dt, Utc)))
-            } else {
-                Ok(Self::Floating(dt))
-            }
-        } else {
-            let date = NaiveDate::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT_DATE)?;
-            Ok(Self::Date(date))
-        }
-    }
-}
-
 impl TryFrom<&Property> for IcalDateTime {
     type Error = Error;
 
@@ -233,19 +215,54 @@ impl TryFrom<&Property> for IcalDateTime {
             .as_ref()
             .ok_or(Self::Error::from(ErrorKind::DateParse).with_msg("Missing datetime value"))?;
 
-        let mut spec = val.parse::<Self>()?;
+        let has_options = value.params.is_some();
+        let mut tz: Option<Tz> = None;
 
-        // check for TZID in options
-        if let Some(options) = &value.params {
-            if let Some(option) = options.iter().find(|o| o.0 == "TZID") {
-                let tz: chrono_tz::Tz = option.1[0]
-                    .parse()
-                    .map_err(|err: String| Error::new(ErrorKind::DateParse, err.as_str()))?;
-                spec = spec.with_tz(&tz);
+        if has_options {
+            // check if value is date
+            if let Some(_) = &value
+                .params
+                .as_ref()
+                .unwrap()
+                .iter()
+                .find(|o| o.0 == "VALUE" && o.1[0] == "DATE")
+            {
+                return Ok(Self::Date(NaiveDate::parse_from_str(
+                    val,
+                    ISO8601_2004_LOCAL_FORMAT_DATE,
+                )?));
             }
+
+            // check for TZID in options
+            if let Some(option) = &value
+                .params
+                .as_ref()
+                .unwrap()
+                .iter()
+                .find(|o| o.0 == "TZID")
+            {
+                tz = Some(
+                    option.1[0]
+                        .parse::<chrono_tz::Tz>()
+                        .map_err(|err: String| Error::new(ErrorKind::DateParse, err.as_str()))?,
+                )
+            };
         }
 
-        Ok(spec)
+        if let Ok(dt) = NaiveDateTime::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT) {
+            if let Some(tz) = tz {
+                Ok(Self::Local(tz.from_local_datetime(&dt).earliest().unwrap()))
+            } else {
+                if val.ends_with("Z") {
+                    Ok(Self::Utc(DateTime::<Utc>::from_utc(dt, Utc)))
+                } else {
+                    Ok(Self::Floating(dt))
+                }
+            }
+        } else {
+            let date = NaiveDate::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT_DATE)?;
+            Ok(Self::Date(date))
+        }
     }
 }
 
@@ -480,10 +497,22 @@ impl Event {
         let occurrence = if let Some(dt) = dtend {
             // ...but if set it must be parseable
             let dtend_spec = IcalDateTime::try_from(dt)?;
-            Occurrence::Onetime(TimeSpan::from_start_and_end(
-                dtstart_spec.as_datetime(&tz),
-                dtend_spec.as_datetime(&tz),
-            ))
+            match &dtend_spec {
+                IcalDateTime::Date(date) => {
+                    if let IcalDateTime::Date(bdate) = dtstart_spec {
+                        Occurrence::Allday(tz.from_utc_date(&bdate), Some(tz.from_utc_date(&date)))
+                    } else {
+                        return Err(Error::new(
+                            ErrorKind::DateParse,
+                            "DTEND must also be of type 'DATE' if DTSTART is",
+                        ));
+                    }
+                }
+                dt @ _ => Occurrence::Onetime(TimeSpan::from_start_and_end(
+                    dtstart_spec.as_datetime(&tz),
+                    dt.as_datetime(&tz),
+                )),
+            }
         } else if let Some(duration) = duration {
             let dur_spec = IcalDuration::try_from(duration)?;
             Occurrence::Onetime(TimeSpan::from_start_and_duration(
@@ -496,7 +525,9 @@ impl Event {
             //  ... a date spec, the event has to have the duration of a single day
             //  ... a datetime spec, the event has to have the dtstart also as dtend
             match dtstart_spec {
-                date @ IcalDateTime::Date(_) => Occurrence::Allday(date.as_date(&tz)).with_tz(&tz),
+                date @ IcalDateTime::Date(_) => {
+                    Occurrence::Allday(date.as_date(&tz), None).with_tz(&tz)
+                }
                 dt => Occurrence::Instant(dt.as_datetime(&tz)),
             }
         };
