@@ -1,4 +1,6 @@
-use chrono::{Date, DateTime, Duration, Local, Month, NaiveDate, NaiveTime, TimeZone};
+use chrono::{
+    Date, DateTime, Duration, Local, Month, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
+};
 use chrono_tz::Tz;
 use std::collections::BTreeMap;
 use std::convert::From;
@@ -172,12 +174,12 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     }
 }
 
-pub struct EventFilter<Tz: TimeZone> {
-    pub begin: Bound<DateTime<Tz>>,
-    pub end: Bound<DateTime<Tz>>,
+pub struct EventFilter {
+    pub begin: Bound<NaiveDateTime>,
+    pub end: Bound<NaiveDateTime>,
 }
 
-impl<Tz: TimeZone> Default for EventFilter<Tz> {
+impl Default for EventFilter {
     fn default() -> Self {
         EventFilter {
             begin: Bound::Unbounded,
@@ -186,18 +188,18 @@ impl<Tz: TimeZone> Default for EventFilter<Tz> {
     }
 }
 
-impl<Tz: TimeZone> EventFilter<Tz> {
-    pub fn from_datetime(mut self, date: Bound<DateTime<Tz>>) -> Self {
+impl EventFilter {
+    pub fn from_datetime(mut self, date: Bound<NaiveDateTime>) -> Self {
         self.begin = date;
         self
     }
 
-    pub fn to_datetime(mut self, date: Bound<DateTime<Tz>>) -> Self {
+    pub fn to_datetime(mut self, date: Bound<NaiveDateTime>) -> Self {
         self.end = date;
         self
     }
 
-    pub fn datetime_range<R: RangeBounds<DateTime<Tz>>>(mut self, range: R) -> Self {
+    pub fn datetime_range<R: RangeBounds<NaiveDateTime>>(mut self, range: R) -> Self {
         self.begin = range.start_bound().cloned();
         self.end = range.end_bound().cloned();
 
@@ -228,7 +230,7 @@ pub trait Calendarlike {
     fn event_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a>;
     fn filter_events<'a>(
         &'a self,
-        filter: EventFilter<Tz>,
+        filter: EventFilter,
     ) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a>;
     fn new_event(&mut self);
 }

@@ -774,11 +774,31 @@ impl Calendarlike for Calendar {
 
     fn filter_events<'a>(
         &'a self,
-        filter: EventFilter<Tz>,
+        filter: EventFilter,
     ) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a> {
+        // TODO: Change once https://github.com/rust-lang/rust/issues/86026 is stable
+        let real_begin = match filter.begin {
+            Bound::Included(dt) => {
+                Bound::Included(self.tz().from_local_datetime(&dt).earliest().unwrap())
+            }
+            Bound::Excluded(dt) => {
+                Bound::Excluded(self.tz().from_local_datetime(&dt).earliest().unwrap())
+            }
+            _ => Bound::Unbounded,
+        };
+        let real_end = match filter.end {
+            Bound::Included(dt) => {
+                Bound::Included(self.tz().from_local_datetime(&dt).earliest().unwrap())
+            }
+            Bound::Excluded(dt) => {
+                Bound::Excluded(self.tz().from_local_datetime(&dt).earliest().unwrap())
+            }
+            _ => Bound::Unbounded,
+        };
+
         Box::new(
             self.events
-                .range((filter.begin, filter.end))
+                .range((real_begin, real_end))
                 .flat_map(|(_, v)| v.iter())
                 .map(|ev| (ev as &dyn Eventlike)),
         )

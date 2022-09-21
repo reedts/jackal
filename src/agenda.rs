@@ -39,20 +39,14 @@ impl Agenda {
         month: Month,
         year: i32,
     ) -> impl Iterator<Item = &'a dyn Eventlike> + 'a {
-        let b_date = DateTime::<Utc>::from_utc(
-            NaiveDate::from_ymd(year, month.number_from_month() as u32, 1).and_hms(0, 0, 0),
-            Utc {},
-        );
-        let e_date = b_date + Duration::days(days_of_month(&month, year) as i64);
+        let begin = NaiveDate::from_ymd(year, month.number_from_month() as u32, 1).and_hms(0, 0, 0);
+        let end = begin + Duration::days(days_of_month(&month, year) as i64);
 
         self.collections
             .iter()
             .flat_map(|collection| collection.calendar_iter())
             .flat_map(move |calendar| {
-                calendar.filter_events(EventFilter::default().datetime_range((
-                    Included(b_date.with_timezone(calendar.tz())),
-                    Included(e_date.with_timezone(calendar.tz())),
-                )))
+                calendar.filter_events(EventFilter::default().datetime_range(begin..=end))
             })
     }
 
@@ -65,17 +59,14 @@ impl Agenda {
     }
 
     pub fn events_of_day(&self, date: &NaiveDate) -> impl Iterator<Item = &dyn Eventlike> {
-        let begin = Utc.from_utc_date(&date).and_hms(0, 0, 0);
+        let begin = date.and_hms(0, 0, 0);
         let end = begin + Duration::days(1);
 
         self.collections
             .iter()
             .flat_map(|collection| collection.calendar_iter())
             .flat_map(move |calendar| {
-                calendar.filter_events(EventFilter::default().datetime_range((
-                    Included(begin.with_timezone(calendar.tz())),
-                    Included(end.with_timezone(calendar.tz())),
-                )))
+                calendar.filter_events(EventFilter::default().datetime_range(begin..=end))
             })
     }
 
