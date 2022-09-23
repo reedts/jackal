@@ -37,16 +37,24 @@ pub struct Args {
         help = "only show calendar non-interactively"
     )]
     pub show: bool,
+
+    #[structopt(long = "log-file", help = "path to log file", parse(from_os_str))]
+    pub log_file: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    Logger::try_with_env_or_str("info")?
-        .log_to_file(FileSpec::default())
-        .print_message()
-        .duplicate_to_stderr(Duplicate::Warn)
-        .start()?;
-
     let args = Args::from_args();
+
+    let mut logger = Logger::try_with_env_or_str("info")?.duplicate_to_stderr(Duplicate::Warn);
+
+    if let Some(log_file) = args.log_file {
+        logger = logger
+            .log_to_file(FileSpec::try_from(log_file)?)
+            .print_message();
+    }
+
+    logger.start()?;
+
     let config = if let Some(path) = args.configfile {
         Config::load(&path)?
     } else if let Ok(path) = config::find_configfile() {
