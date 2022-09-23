@@ -1,3 +1,5 @@
+use nom::InputLength;
+use nom::error::ParseError;
 use std::convert::From;
 use std::error;
 use std::fmt;
@@ -18,6 +20,7 @@ pub enum ErrorKind {
     TimeParse,
     DateParse,
     DurationParse,
+    RecurRuleParse,
     IOError(io::Error),
 }
 
@@ -99,6 +102,7 @@ impl ErrorKind {
             ErrorKind::TimeParse => "invalid time format".to_owned(),
             ErrorKind::DateParse => "invalid date format".to_owned(),
             ErrorKind::DurationParse => "invalid duration format".to_owned(),
+            ErrorKind::RecurRuleParse => "invalid reccurrence format".to_owned(),
             ErrorKind::IOError(err) => err.to_string(),
         }
     }

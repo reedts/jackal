@@ -2,11 +2,18 @@ use chrono::{
     Date, DateTime, Duration, Local, Month, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
 };
 use chrono_tz::Tz;
-use std::collections::BTreeMap;
+use nom::bits::complete::tag;
+use nom::character::complete::{alpha0, char, i32};
+use nom::combinator::all_consuming;
+use nom::multi::separated_list1;
+use nom::sequence::separated_pair;
+use nom::{error as nerror, IResult};
+use std::collections::BTreeSet;
 use std::convert::From;
 use std::default::Default;
 use std::ops::{Bound, RangeBounds};
 use std::path::Path;
+use std::str::FromStr;
 use uuid::Uuid;
 
 pub mod error;
@@ -84,6 +91,98 @@ impl<Tz: TimeZone> From<TimeSpan<Tz>> for Duration {
     fn from(timespan: TimeSpan<Tz>) -> Self {
         timespan.duration()
     }
+}
+
+#[derive(Default, PartialOrd, Ord, PartialEq, Eq)]
+pub enum Frequency {
+    #[default]
+    Secondly,
+    Minutely,
+    Hourly,
+    Daily,
+    Weekly,
+    Monthly,
+    Yearly,
+}
+
+impl FromStr for Frequency {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "secondly" => Ok(Frequency::Secondly),
+            "minutely" => Ok(Frequency::Minutely),
+            "hourly" => Ok(Frequency::Hourly),
+            "daily" => Ok(Frequency::Daily),
+            "weekly" => Ok(Frequency::Weekly),
+            "monthly" => Ok(Frequency::Monthly),
+            "yearly" => Ok(Frequency::Yearly),
+            _ => Err(Error::new(
+                ErrorKind::RecurRuleParse,
+                &format!("Could not match '{}' to a recurrence frequency", s),
+            )),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct RecurFrequency {
+    pub frequency: Frequency,
+    pub filters: BTreeSet<i32>,
+}
+
+impl RecurFrequency {}
+
+impl FromStr for RecurFrequency {
+    type Err = Error;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let (_, (freq, filter)) = all_consuming(separated_pair(
+            alpha0,
+            char(':'),
+            separated_list1(char(','), i32),
+        ))(s)
+        .map_err(|_| Error::new(ErrorKind::RecurRuleParse, "Could not parse recurrence rule"))?;
+
+        let frequency = freq.parse::<Frequency>()?;
+
+        Ok(RecurFrequency {
+            frequency,
+            filters: filter.into_iter().collect(),
+        })
+    }
+}
+
+impl PartialEq for RecurFrequency {
+    fn eq(&self, other: &Self) -> bool {
+        self.frequency == other.frequency
+    }
+}
+
+impl PartialOrd for RecurFrequency {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(&other))
+    }
+}
+
+impl Ord for RecurFrequency {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.frequency.cmp(&other.frequency)
+    }
+}
+
+impl Eq for RecurFrequency {}
+
+pub enum RecurLimit<Tz: TimeZone = chrono_tz::Tz> {
+    Count(u32),
+    Date(NaiveDate),
+    DateTime(DateTime<Tz>),
+    Infinite,
+}
+
+pub struct RecurRule<Tz: TimeZone = chrono_tz::Tz> {
+    freq: RecurFrequency,
+    limit: RecurLimit<Tz>,
+    interval: Option<u32>,
 }
 
 #[derive(Clone)]
