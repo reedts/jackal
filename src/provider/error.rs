@@ -1,5 +1,5 @@
-use nom::InputLength;
 use nom::error::ParseError;
+use nom::InputLength;
 use std::convert::From;
 use std::error;
 use std::fmt;

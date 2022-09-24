@@ -2,12 +2,11 @@ use chrono::{
     Date, DateTime, Duration, Local, Month, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
 };
 use chrono_tz::Tz;
-use nom::bits::complete::tag;
-use nom::character::complete::{alpha0, char, i32};
+use nom::character::complete::{alpha1, char, i32};
 use nom::combinator::all_consuming;
 use nom::multi::separated_list1;
 use nom::sequence::separated_pair;
-use nom::{error as nerror, IResult};
+use nom::{error as nerror, Err, IResult};
 use std::collections::BTreeSet;
 use std::convert::From;
 use std::default::Default;
@@ -136,18 +135,20 @@ impl RecurFrequency {}
 impl FromStr for RecurFrequency {
     type Err = Error;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        let (_, (freq, filter)) = all_consuming(separated_pair(
-            alpha0,
+        let (_, (freq, filters)): (&str, (&str, Vec<i32>)) = all_consuming(separated_pair(
+            alpha1,
             char(':'),
             separated_list1(char(','), i32),
         ))(s)
-        .map_err(|_| Error::new(ErrorKind::RecurRuleParse, "Could not parse recurrence rule"))?;
+        .map_err(|_: nom::Err<nerror::Error<&str>>| {
+            Error::new(ErrorKind::RecurRuleParse, "Could not parse recurrence rule")
+        })?;
 
         let frequency = freq.parse::<Frequency>()?;
 
         Ok(RecurFrequency {
             frequency,
-            filters: filter.into_iter().collect(),
+            filters: filters.into_iter().collect(),
         })
     }
 }
