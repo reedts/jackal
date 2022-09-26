@@ -26,16 +26,16 @@ impl Display for Entry<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             Self::Event(event) => {
-                let time = match event.occurrence() {
-                    Occurrence::Allday(a, b) => "Allday".to_owned(),
-                    Occurrence::Onetime(timespan) => format!(
+                let occur = event.occurrence();
+
+                let time = if occur.is_allday() {
+                    "Allday".to_owned()
+                } else {
+                    format!(
                         "{} - {}",
-                        timespan.begin().time().format("%H:%M"),
-                        timespan.end().time().format("%H:%M")
-                    ),
-                    Occurrence::Instant(dt) => {
-                        format!("{}", dt.time().format("%H:%M"))
-                    }
+                        occur.begin().time().format("%H:%M"),
+                        occur.end().time().format("%H:%M")
+                    )
                 };
                 write!(f, "{}: {}", time, event.summary())
             }

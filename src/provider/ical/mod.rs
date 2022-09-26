@@ -129,7 +129,7 @@ impl EventBuilder {
         } else {
             Event::new_with_ical_properties(
                 &self.path,
-                Occurrence::Instant(self.start),
+                Occurrence::Onetime(TimeSpan::from_start(self.start)),
                 self.ical.properties,
             )
         };

@@ -10,6 +10,7 @@ use nom::{error as nerror, Err, IResult};
 use std::collections::BTreeSet;
 use std::convert::From;
 use std::default::Default;
+use std::iter::FromIterator;
 use std::ops::{Bound, RangeBounds};
 use std::path::Path;
 use std::str::FromStr;
@@ -40,8 +41,10 @@ pub fn days_of_month(month: &Month, year: i32) -> u64 {
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum TimeSpan<Tz: TimeZone> {
+    Allday(Date<Tz>, Option<Date<Tz>>),
     TimePoints(DateTime<Tz>, DateTime<Tz>),
     Duration(DateTime<Tz>, Duration),
+    Instant(DateTime<Tz>),
 }
 
 impl<Tz: TimeZone> TimeSpan<Tz> {
@@ -53,35 +56,67 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
         TimeSpan::Duration(begin, end)
     }
 
+    pub fn from_start(begin: DateTime<Tz>) -> Self {
+        TimeSpan::Instant(begin)
+    }
+
+    pub fn allday(date: Date<Tz>) -> Self {
+        TimeSpan::Allday(date, None)
+    }
+
+    pub fn allday_until(begin: Date<Tz>, end: Date<Tz>) -> Self {
+        TimeSpan::Allday(begin, Some(end))
+    }
+
+    pub fn is_allday(&self) -> bool {
+        matches!(self, TimeSpan::Allday(_, _))
+    }
+
+    pub fn is_instant(&self) -> bool {
+        matches!(self, TimeSpan::Instant(_))
+    }
+
     pub fn begin(&self) -> DateTime<Tz> {
         match &self {
+            TimeSpan::Allday(begin, _) => begin.and_hms(0, 0, 0),
             TimeSpan::TimePoints(begin, _) => begin.clone(),
             TimeSpan::Duration(begin, _) => begin.clone(),
+            TimeSpan::Instant(begin) => begin.clone(),
         }
     }
 
     pub fn end(&self) -> DateTime<Tz> {
         match &self {
+            TimeSpan::Allday(begin, end) => end.as_ref().unwrap_or(&begin).and_hms(23, 59, 59),
             TimeSpan::TimePoints(_, end) => end.clone(),
             TimeSpan::Duration(begin, dur) => begin.clone() + dur.clone(),
+            TimeSpan::Instant(end) => end.clone(),
         }
     }
 
     pub fn duration(&self) -> Duration {
         match &self {
+            TimeSpan::Allday(begin, end) => end
+                .as_ref()
+                .map_or(Duration::hours(24), |e| e.clone() - begin.clone()),
             TimeSpan::TimePoints(start, end) => end.clone() - start.clone(),
             TimeSpan::Duration(_, dur) => dur.clone(),
+            TimeSpan::Instant(_) => chrono::Duration::seconds(0),
         }
     }
 
     pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> TimeSpan<Tz2> {
         match self {
+            TimeSpan::Allday(begin, end) => {
+                TimeSpan::<Tz2>::Allday(begin.with_timezone(tz), end.map(|e| e.with_timezone(tz)))
+            }
             TimeSpan::TimePoints(begin, end) => {
                 TimeSpan::<Tz2>::TimePoints(begin.with_timezone(tz), end.with_timezone(tz))
             }
             TimeSpan::Duration(begin, dur) => {
                 TimeSpan::<Tz2>::Duration(begin.with_timezone(tz), dur)
             }
+            TimeSpan::Instant(begin) => TimeSpan::<Tz2>::Instant(begin.with_timezone(tz)),
         }
     }
 }
@@ -92,7 +127,7 @@ impl<Tz: TimeZone> From<TimeSpan<Tz>> for Duration {
     }
 }
 
-#[derive(Default, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, Default, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Frequency {
     #[default]
     Secondly,
@@ -124,13 +159,25 @@ impl FromStr for Frequency {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct RecurFrequency {
     pub frequency: Frequency,
     pub filters: BTreeSet<i32>,
 }
 
-impl RecurFrequency {}
+impl RecurFrequency {
+    pub fn new(frequency: Frequency) -> Self {
+        RecurFrequency {
+            frequency,
+            filters: BTreeSet::default(),
+        }
+    }
+
+    pub fn occurring_every(mut self, filter: &[i32]) -> Self {
+        self.filters = filter.into_iter().cloned().collect();
+        self
+    }
+}
 
 impl FromStr for RecurFrequency {
     type Err = Error;
@@ -150,6 +197,15 @@ impl FromStr for RecurFrequency {
             frequency,
             filters: filters.into_iter().collect(),
         })
+    }
+}
+
+impl From<Frequency> for RecurFrequency {
+    fn from(frequency: Frequency) -> Self {
+        RecurFrequency {
+            frequency,
+            filters: BTreeSet::default(),
+        }
     }
 }
 
@@ -173,6 +229,7 @@ impl Ord for RecurFrequency {
 
 impl Eq for RecurFrequency {}
 
+#[derive(Clone)]
 pub enum RecurLimit<Tz: TimeZone = chrono_tz::Tz> {
     Count(u32),
     Date(NaiveDate),
@@ -180,23 +237,88 @@ pub enum RecurLimit<Tz: TimeZone = chrono_tz::Tz> {
     Infinite,
 }
 
+impl<Tz: TimeZone> RecurLimit<Tz> {
+    pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> RecurLimit<Tz2> {
+        match self {
+            RecurLimit::Count(i) => RecurLimit::<Tz2>::Count(i),
+            RecurLimit::Date(d) => RecurLimit::<Tz2>::Date(d),
+            RecurLimit::DateTime(dt) => RecurLimit::DateTime(dt.with_timezone(tz)),
+            RecurLimit::Infinite => RecurLimit::<Tz2>::Infinite,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct RecurRule<Tz: TimeZone = chrono_tz::Tz> {
-    freq: RecurFrequency,
+    freq: BTreeSet<RecurFrequency>,
     limit: RecurLimit<Tz>,
     interval: Option<u32>,
 }
 
+impl<Tz: TimeZone> RecurRule<Tz> {
+    pub fn new(freq: RecurFrequency) -> Self {
+        RecurRule {
+            freq: BTreeSet::from([freq]),
+            limit: RecurLimit::Infinite,
+            interval: None,
+        }
+    }
+
+    pub fn with_interval(mut self, interval: u32) -> Self {
+        self.set_interval(Some(interval));
+        self
+    }
+
+    pub fn with_limit(mut self, limit: RecurLimit<Tz>) -> Self {
+        self.set_limit(limit);
+        self
+    }
+
+    pub fn unlimited(mut self) -> Self {
+        self.set_limit(RecurLimit::Infinite);
+        self
+    }
+
+    pub fn set_interval(&mut self, interval: Option<u32>) {
+        self.interval = interval;
+    }
+
+    pub fn set_limit(&mut self, limit: RecurLimit<Tz>) {
+        self.limit = limit;
+    }
+
+    pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> RecurRule<Tz2> {
+        RecurRule {
+            freq: self.freq,
+            limit: self.limit.with_tz(tz),
+            interval: self.interval,
+        }
+    }
+}
+
+impl<Tz: TimeZone> FromIterator<RecurFrequency> for RecurRule<Tz> {
+    fn from_iter<I: IntoIterator<Item = RecurFrequency>>(iter: I) -> Self {
+        RecurRule {
+            freq: iter.into_iter().collect(),
+            limit: RecurLimit::Infinite,
+            interval: None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum Occurrence<Tz: TimeZone> {
-    Allday(Date<Tz>, Option<Date<Tz>>),
     Onetime(TimeSpan<Tz>),
-    Instant(DateTime<Tz>),
+    Recurring(TimeSpan<Tz>, RecurRule<Tz>),
 }
 
 impl<Tz: TimeZone> Occurrence<Tz> {
     pub fn is_allday(&self) -> bool {
         use Occurrence::*;
-        matches!(self, Allday(_, _))
+        match self {
+            Onetime(ts) => ts.is_allday(),
+            Recurring(ts, _) => ts.is_allday(),
+        }
     }
 
     pub fn is_onetime(&self) -> bool {
@@ -204,72 +326,64 @@ impl<Tz: TimeZone> Occurrence<Tz> {
         matches!(self, Onetime(_))
     }
 
+    pub fn is_recurring(&self) -> bool {
+        use Occurrence::*;
+        matches!(self, Recurring(_, _))
+    }
+
     pub fn as_date(&self) -> NaiveDate {
         use Occurrence::*;
         match self {
-            Allday(date, _) => date.naive_utc(),
-            Onetime(timespan) => timespan.begin().date_naive(),
-            Instant(datetime) => datetime.date_naive(),
+            Onetime(ts) => ts.begin().date_naive(),
+            Recurring(ts, _) => ts.begin().date_naive(),
         }
     }
 
     pub fn as_datetime(&self) -> DateTime<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date, _) => date.and_time(NaiveTime::from_hms(0, 0, 0)).unwrap(),
-            Onetime(timespan) => timespan.begin(),
-            Instant(datetime) => datetime.clone(),
+            Onetime(ts) => ts.begin(),
+            Recurring(ts, _) => ts.begin(),
         }
     }
 
-    pub fn begin(&self) -> chrono::DateTime<Tz> {
+    pub fn begin(&self) -> DateTime<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date, _) => date.and_hms(0, 0, 0),
-            Onetime(timespan) => timespan.begin(),
-            Instant(datetime) => datetime.clone(),
+            Onetime(ts) => ts.begin(),
+            Recurring(ts, _) => ts.begin(),
         }
     }
 
-    pub fn end(&self) -> chrono::DateTime<Tz> {
+    pub fn end(&self) -> DateTime<Tz> {
         use Occurrence::*;
         match self {
-            Allday(date, edate) => edate.clone().unwrap_or(date.clone()).and_hms(23, 59, 59),
-            Onetime(timespan) => timespan.end(),
-            Instant(datetime) => datetime.clone(),
+            Onetime(ts) => ts.end(),
+            Recurring(ts, _) => ts.end(),
         }
     }
 
     pub fn duration(&self) -> Duration {
         use Occurrence::*;
-
         match self {
-            Allday(date, edate) => edate
-                .clone()
-                .map_or_else(|| Duration::hours(24), |v| v.clone() - date.clone()),
-            Onetime(timespan) => timespan.duration(),
-            Instant(_) => Duration::seconds(0),
+            Onetime(ts) => ts.duration(),
+            Recurring(ts, _) => ts.duration(),
         }
     }
 
     pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> Occurrence<Tz2> {
         use Occurrence::*;
         match self {
-            Allday(date, edate) => Occurrence::<Tz2>::Allday(
-                date.with_timezone(tz),
-                edate.map(|d| d.with_timezone(tz)),
-            ),
-            Onetime(timespan) => Occurrence::<Tz2>::Onetime(timespan.with_tz(tz)),
-            Instant(dt) => Occurrence::<Tz2>::Instant(dt.with_timezone(tz)),
+            Onetime(ts) => Occurrence::<Tz2>::Onetime(ts.with_tz(tz)),
+            Recurring(ts, rrule) => Occurrence::<Tz2>::Recurring(ts.with_tz(tz), rrule.with_tz(tz)),
         }
     }
 
     pub fn timezone(&self) -> Tz {
         use Occurrence::*;
         match self {
-            Allday(date, _) => date.timezone(),
-            Onetime(timespan) => timespan.begin().timezone(),
-            Instant(dt) => dt.timezone(),
+            Onetime(ts) => ts.begin().timezone(),
+            Recurring(ts, _) => ts.begin().timezone(),
         }
     }
 }

@@ -500,7 +500,10 @@ impl Event {
             match &dtend_spec {
                 IcalDateTime::Date(date) => {
                     if let IcalDateTime::Date(bdate) = dtstart_spec {
-                        Occurrence::Allday(tz.from_utc_date(&bdate), Some(tz.from_utc_date(&date)))
+                        Occurrence::Onetime(TimeSpan::allday_until(
+                            tz.from_utc_date(&bdate),
+                            tz.from_utc_date(&date),
+                        ))
                     } else {
                         return Err(Error::new(
                             ErrorKind::DateParse,
@@ -526,9 +529,9 @@ impl Event {
             //  ... a datetime spec, the event has to have the dtstart also as dtend
             match dtstart_spec {
                 date @ IcalDateTime::Date(_) => {
-                    Occurrence::Allday(date.as_date(&tz), None).with_tz(&tz)
+                    Occurrence::Onetime(TimeSpan::allday(date.as_date(&tz)))
                 }
-                dt => Occurrence::Instant(dt.as_datetime(&tz)),
+                dt => Occurrence::Onetime(TimeSpan::from_start(dt.as_datetime(&tz))),
             }
         };
 
