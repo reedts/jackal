@@ -160,7 +160,7 @@ impl FromStr for Frequency {
 }
 
 #[derive(Clone, Default)]
-pub struct RecurFrequency {
+struct RecurFrequency {
     pub frequency: Frequency,
     pub filters: BTreeSet<i32>,
 }
@@ -250,18 +250,38 @@ impl<Tz: TimeZone> RecurLimit<Tz> {
 
 #[derive(Clone)]
 pub struct RecurRule<Tz: TimeZone = chrono_tz::Tz> {
-    freq: BTreeSet<RecurFrequency>,
+    freq: Frequency,
+    filters: BTreeSet<RecurFrequency>,
     limit: RecurLimit<Tz>,
     interval: Option<u32>,
 }
 
 impl<Tz: TimeZone> RecurRule<Tz> {
-    pub fn new(freq: RecurFrequency) -> Self {
+    pub fn new(freq: Frequency) -> Self {
         RecurRule {
-            freq: BTreeSet::from([freq]),
+            freq,
+            filters: BTreeSet::default(),
             limit: RecurLimit::Infinite,
             interval: None,
         }
+    }
+
+    fn predict_counts_from(&self, root: &DateTime<Tz>, count: u32) -> Vec<DateTime<Tz>> {
+        let mut predictions: Vec<DateTime<Tz>> = Vec::new();
+
+        for _ in 0..=count {
+            let mut dt = root.clone();
+        }
+
+        predictions
+    }
+
+    fn predict_until_from(&self, date: &DateTime<Tz>, end: &DateTime<Tz>) -> Vec<DateTime<Tz>> {
+        vec![]
+    }
+
+    fn predict_from(&self, date: &DateTime<Tz>) -> Vec<DateTime<Tz>> {
+        vec![]
     }
 
     pub fn with_interval(mut self, interval: u32) -> Self {
@@ -290,18 +310,9 @@ impl<Tz: TimeZone> RecurRule<Tz> {
     pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> RecurRule<Tz2> {
         RecurRule {
             freq: self.freq,
+            filters: self.filters,
             limit: self.limit.with_tz(tz),
             interval: self.interval,
-        }
-    }
-}
-
-impl<Tz: TimeZone> FromIterator<RecurFrequency> for RecurRule<Tz> {
-    fn from_iter<I: IntoIterator<Item = RecurFrequency>>(iter: I) -> Self {
-        RecurRule {
-            freq: iter.into_iter().collect(),
-            limit: RecurLimit::Infinite,
-            interval: None,
         }
     }
 }
@@ -362,6 +373,8 @@ impl<Tz: TimeZone> Occurrence<Tz> {
             Recurring(ts, _) => ts.end(),
         }
     }
+
+    // pub fn until(&self, datetime: &DateTime<Tz>) -> Vec<DateTime<Tz>> {}
 
     pub fn duration(&self) -> Duration {
         use Occurrence::*;

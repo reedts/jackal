@@ -16,6 +16,7 @@ use std::convert::{From, TryFrom};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::str::FromStr;
 
 use ::ical::parser::ical::IcalParser;
@@ -664,7 +665,7 @@ pub struct Calendar {
     identifier: String,
     friendly_name: String,
     tz: Tz,
-    events: BTreeMap<DateTime<Tz>, Vec<Event>>,
+    events: BTreeMap<DateTime<Tz>, Vec<Rc<Event>>>,
 }
 
 impl Calendar {
@@ -694,7 +695,7 @@ impl Calendar {
     }
 
     pub fn from_dir(path: &Path) -> Result<Self> {
-        let mut events = BTreeMap::<DateTime<Tz>, Vec<Event>>::new();
+        let mut events = BTreeMap::<DateTime<Tz>, Vec<Rc<Event>>>::new();
 
         if !path.is_dir() {
             return Err(Error::new(
@@ -720,7 +721,8 @@ impl Calendar {
             .filter_map(Result::ok);
 
         for event in event_file_iter {
-            events.entry(event.begin()).or_default().push(event);
+            let event_rc = Rc::new(event);
+            events.entry(event_rc.begin()).or_default().push(event_rc);
         }
 
         // TODO: use `BTreeMap::first_entry` once it's stable: https://github.com/rust-lang/rust/issues/62924
@@ -771,7 +773,7 @@ impl Calendarlike for Calendar {
             self.events
                 .iter()
                 .flat_map(|(_, v)| v.iter())
-                .map(|ev| (ev as &dyn Eventlike)),
+                .map(|ev| (ev.as_ref() as &dyn Eventlike)),
         )
     }
 
@@ -803,7 +805,7 @@ impl Calendarlike for Calendar {
             self.events
                 .range((real_begin, real_end))
                 .flat_map(|(_, v)| v.iter())
-                .map(|ev| (ev as &dyn Eventlike)),
+                .map(|ev| (ev.as_ref() as &dyn Eventlike)),
         )
     }
 
