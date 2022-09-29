@@ -722,7 +722,15 @@ impl Calendar {
 
         for event in event_file_iter {
             let event_rc = Rc::new(event);
-            events.entry(event_rc.begin()).or_default().push(event_rc);
+
+            match event_rc.occurrence() {
+                Occurrence::Onetime(ts) => events.entry(ts.begin()).or_default().push(event_rc),
+                Occurrence::Recurring(ts, rrule) => rrule
+                    .occurrences_from(&ts.begin())
+                    .into_iter()
+                    .take(30)
+                    .for_each(|dt| events.entry(dt).or_default().push(Rc::clone(&event_rc))),
+            }
         }
 
         // TODO: use `BTreeMap::first_entry` once it's stable: https://github.com/rust-lang/rust/issues/62924

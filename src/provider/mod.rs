@@ -1,13 +1,18 @@
 use chrono::{
-    Date, DateTime, Duration, Local, Month, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
+    Date, DateTime, Datelike, Duration, Local, Month, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
 };
 use chrono_tz::Tz;
+use genawaiter::{
+    rc::{Co, Gen},
+    Generator,
+};
 use nom::character::complete::{alpha1, char, i32};
 use nom::combinator::all_consuming;
 use nom::multi::separated_list1;
 use nom::sequence::separated_pair;
 use nom::{error as nerror, Err, IResult};
-use std::collections::BTreeSet;
+use num_traits::FromPrimitive;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::From;
 use std::default::Default;
 use std::iter::FromIterator;
@@ -25,7 +30,7 @@ use crate::config::CalendarSpec;
 
 pub type Result<T> = std::result::Result<T, self::Error>;
 
-pub fn days_of_month(month: &Month, year: i32) -> u64 {
+pub fn days_of_month(month: &Month, year: i32) -> u32 {
     if month.number_from_month() == 12 {
         NaiveDate::from_ymd(year + 1, 1, 1)
     } else {
@@ -36,7 +41,13 @@ pub fn days_of_month(month: &Month, year: i32) -> u64 {
         month.number_from_month() as u32,
         1,
     ))
-    .num_days() as u64
+    .num_days() as u32
+}
+
+pub fn days_of_year(year: i32) -> u32 {
+    NaiveDate::from_ymd(year, 1, 1)
+        .signed_duration_since(NaiveDate::from_ymd(year + 1, 1, 1))
+        .num_days() as u32
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -127,7 +138,7 @@ impl<Tz: TimeZone> From<TimeSpan<Tz>> for Duration {
     }
 }
 
-#[derive(Clone, Default, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Frequency {
     #[default]
     Secondly,
@@ -137,6 +148,28 @@ pub enum Frequency {
     Weekly,
     Monthly,
     Yearly,
+}
+
+impl Frequency {
+    pub fn next_duration_from<Tz: TimeZone>(
+        &self,
+        dt: &DateTime<Tz>,
+        interval: Option<u32>,
+    ) -> Duration {
+        let i = interval.unwrap_or(1) as i64;
+        match self {
+            Frequency::Yearly => Duration::days(days_of_year(dt.year()) as i64),
+            Frequency::Monthly => Duration::days(days_of_month(
+                &chrono::Month::from_u32(dt.month()).unwrap(),
+                dt.year(),
+            ) as i64),
+            Frequency::Weekly => Duration::weeks(i),
+            Frequency::Daily => Duration::days(i),
+            Frequency::Hourly => Duration::hours(i),
+            Frequency::Minutely => Duration::minutes(i),
+            Frequency::Secondly => Duration::seconds(i),
+        }
+    }
 }
 
 impl FromStr for Frequency {
@@ -159,80 +192,30 @@ impl FromStr for Frequency {
     }
 }
 
-#[derive(Clone, Default)]
-struct RecurFrequency {
-    pub frequency: Frequency,
-    pub filters: BTreeSet<i32>,
-}
+// impl FromStr for RecurFrequency {
+//     type Err = Error;
+//     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+//         let (_, (freq, filters)): (&str, (&str, Vec<i32>)) = all_consuming(separated_pair(
+//             alpha1,
+//             char(':'),
+//             separated_list1(char(','), i32),
+//         ))(s)
+//         .map_err(|_: nom::Err<nerror::Error<&str>>| {
+//             Error::new(ErrorKind::RecurRuleParse, "Could not parse recurrence rule")
+//         })?;
 
-impl RecurFrequency {
-    pub fn new(frequency: Frequency) -> Self {
-        RecurFrequency {
-            frequency,
-            filters: BTreeSet::default(),
-        }
-    }
+//         let frequency = freq.parse::<Frequency>()?;
 
-    pub fn occurring_every(mut self, filter: &[i32]) -> Self {
-        self.filters = filter.into_iter().cloned().collect();
-        self
-    }
-}
-
-impl FromStr for RecurFrequency {
-    type Err = Error;
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        let (_, (freq, filters)): (&str, (&str, Vec<i32>)) = all_consuming(separated_pair(
-            alpha1,
-            char(':'),
-            separated_list1(char(','), i32),
-        ))(s)
-        .map_err(|_: nom::Err<nerror::Error<&str>>| {
-            Error::new(ErrorKind::RecurRuleParse, "Could not parse recurrence rule")
-        })?;
-
-        let frequency = freq.parse::<Frequency>()?;
-
-        Ok(RecurFrequency {
-            frequency,
-            filters: filters.into_iter().collect(),
-        })
-    }
-}
-
-impl From<Frequency> for RecurFrequency {
-    fn from(frequency: Frequency) -> Self {
-        RecurFrequency {
-            frequency,
-            filters: BTreeSet::default(),
-        }
-    }
-}
-
-impl PartialEq for RecurFrequency {
-    fn eq(&self, other: &Self) -> bool {
-        self.frequency == other.frequency
-    }
-}
-
-impl PartialOrd for RecurFrequency {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(&other))
-    }
-}
-
-impl Ord for RecurFrequency {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.frequency.cmp(&other.frequency)
-    }
-}
-
-impl Eq for RecurFrequency {}
+//         Ok(RecurFrequency {
+//             frequency,
+//             filters: filters.into_iter().collect(),
+//         })
+//     }
+// }
 
 #[derive(Clone)]
 pub enum RecurLimit<Tz: TimeZone = chrono_tz::Tz> {
     Count(u32),
-    Date(NaiveDate),
     DateTime(DateTime<Tz>),
     Infinite,
 }
@@ -241,7 +224,6 @@ impl<Tz: TimeZone> RecurLimit<Tz> {
     pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> RecurLimit<Tz2> {
         match self {
             RecurLimit::Count(i) => RecurLimit::<Tz2>::Count(i),
-            RecurLimit::Date(d) => RecurLimit::<Tz2>::Date(d),
             RecurLimit::DateTime(dt) => RecurLimit::DateTime(dt.with_timezone(tz)),
             RecurLimit::Infinite => RecurLimit::<Tz2>::Infinite,
         }
@@ -251,41 +233,21 @@ impl<Tz: TimeZone> RecurLimit<Tz> {
 #[derive(Clone)]
 pub struct RecurRule<Tz: TimeZone = chrono_tz::Tz> {
     freq: Frequency,
-    filters: BTreeSet<RecurFrequency>,
     limit: RecurLimit<Tz>,
-    interval: Option<u32>,
+    interval: u32,
 }
 
 impl<Tz: TimeZone> RecurRule<Tz> {
     pub fn new(freq: Frequency) -> Self {
         RecurRule {
             freq,
-            filters: BTreeSet::default(),
             limit: RecurLimit::Infinite,
-            interval: None,
+            interval: 1,
         }
-    }
-
-    fn predict_counts_from(&self, root: &DateTime<Tz>, count: u32) -> Vec<DateTime<Tz>> {
-        let mut predictions: Vec<DateTime<Tz>> = Vec::new();
-
-        for _ in 0..=count {
-            let mut dt = root.clone();
-        }
-
-        predictions
-    }
-
-    fn predict_until_from(&self, date: &DateTime<Tz>, end: &DateTime<Tz>) -> Vec<DateTime<Tz>> {
-        vec![]
-    }
-
-    fn predict_from(&self, date: &DateTime<Tz>) -> Vec<DateTime<Tz>> {
-        vec![]
     }
 
     pub fn with_interval(mut self, interval: u32) -> Self {
-        self.set_interval(Some(interval));
+        self.set_interval(interval);
         self
     }
 
@@ -299,7 +261,7 @@ impl<Tz: TimeZone> RecurRule<Tz> {
         self
     }
 
-    pub fn set_interval(&mut self, interval: Option<u32>) {
+    pub fn set_interval(&mut self, interval: u32) {
         self.interval = interval;
     }
 
@@ -310,10 +272,48 @@ impl<Tz: TimeZone> RecurRule<Tz> {
     pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> RecurRule<Tz2> {
         RecurRule {
             freq: self.freq,
-            filters: self.filters,
             limit: self.limit.with_tz(tz),
             interval: self.interval,
         }
+    }
+
+    async fn occurrences_from_worker<'a>(&'a self, from: DateTime<Tz>, co: Co<DateTime<Tz>>) {
+        match &self.limit {
+            RecurLimit::Count(i) => {
+                let mut current = from;
+                for _ in 0..*i {
+                    let duration = self.freq.next_duration_from(&current, Some(self.interval));
+
+                    co.yield_(current.clone()).await;
+                    current = current + duration;
+                }
+            }
+            RecurLimit::DateTime(d) => {
+                let mut current = from;
+                while &current < d {
+                    let duration = self.freq.next_duration_from(&current, Some(self.interval));
+
+                    co.yield_(current.clone()).await;
+                    current = current + duration;
+                }
+            }
+            RecurLimit::Infinite => {
+                let mut current = from;
+                loop {
+                    let duration = self.freq.next_duration_from(&current, Some(self.interval));
+
+                    co.yield_(current.clone()).await;
+                    current = current + duration;
+                }
+            }
+        }
+    }
+
+    pub fn occurrences_from<'a>(
+        &'a self,
+        from: &DateTime<Tz>,
+    ) -> Gen<DateTime<Tz>, (), impl std::future::Future<Output = ()> + 'a> {
+        Gen::new(|co| self.occurrences_from_worker(from.clone(), co))
     }
 }
 
