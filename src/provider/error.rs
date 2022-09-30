@@ -1,5 +1,4 @@
-use nom::error::ParseError;
-use nom::InputLength;
+use nom;
 use std::convert::From;
 use std::error;
 use std::fmt;
@@ -21,6 +20,7 @@ pub enum ErrorKind {
     DateParse,
     DurationParse,
     RecurRuleParse,
+    ParseError,
     IOError(io::Error),
 }
 
@@ -68,6 +68,15 @@ impl From<io::Error> for Error {
     }
 }
 
+impl<E: std::fmt::Debug> From<nom::Err<E>> for Error {
+    fn from(error: nom::Err<E>) -> Self {
+        Error::new(
+            ErrorKind::ParseError,
+            &format!("Error while parsing: {}", error),
+        )
+    }
+}
+
 impl From<Error> for io::Error {
     fn from(err: Error) -> Self {
         if let ErrorKind::IOError(err) = err.kind {
@@ -103,6 +112,7 @@ impl ErrorKind {
             ErrorKind::DateParse => "invalid date format".to_owned(),
             ErrorKind::DurationParse => "invalid duration format".to_owned(),
             ErrorKind::RecurRuleParse => "invalid reccurrence format".to_owned(),
+            ErrorKind::ParseError => "invalid format".to_owned(),
             ErrorKind::IOError(err) => err.to_string(),
         }
     }

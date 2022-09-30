@@ -5,9 +5,10 @@ use chrono_tz::Tz;
 use log;
 use nom::{
     branch::alt,
-    bytes::complete::tag,
+    bytes::complete::{tag, tag_no_case, take_until},
     character::complete::{char, digit1, one_of},
-    combinator::{all_consuming, map_res, opt},
+    combinator::{all_consuming, map_res, opt, rest},
+    error as nerror,
     sequence::{preceded, terminated, tuple},
     IResult,
 };
@@ -267,6 +268,27 @@ impl TryFrom<&Property> for IcalDateTime {
     }
 }
 
+impl FromStr for IcalDateTime {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        if let Ok(dt) =
+            NaiveDateTime::parse_from_str(s, &format!("{}z", ISO8601_2004_LOCAL_FORMAT_DATE))
+        {
+            return Ok(IcalDateTime::Utc(Utc {}.from_utc_datetime(&dt)));
+        }
+
+        if let Ok(dt) = NaiveDate::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT_DATE) {
+            return Ok(IcalDateTime::Date(dt));
+        }
+
+        Err(Error::new(
+            ErrorKind::TimeParse,
+            &format!("Could not extract datetime from '{}'", s),
+        ))
+    }
+}
+
 impl<Tz: TimeZone> From<DateTime<Tz>> for IcalDateTime {
     fn from(dt: DateTime<Tz>) -> Self {
         let fixed_offset = dt.offset().fix();
@@ -335,6 +357,118 @@ impl IcalDateTime {
             IcalDateTime::Utc(dt) => IcalDateTime::Utc(dt + duration),
             IcalDateTime::Local(dt) => IcalDateTime::Local(dt + duration),
         }
+    }
+}
+
+struct IcalRrule(RecurRule<Tz>);
+
+fn parse_bykey_to_frequency(s: &str) -> IResult<&'static str, Frequency, nerror::Error<String>> {
+    match s.to_lowercase().as_str() {
+        "bymonth" => Ok(("", Frequency::Monthly)),
+        "byweek" => Ok(("", Frequency::Weekly)),
+        "byday" => Ok(("", Frequency::Daily)),
+        "byhour" => Ok(("", Frequency::Hourly)),
+        "byminute" => Ok(("", Frequency::Minutely)),
+        "byseconds" => Ok(("", Frequency::Secondly)),
+        _ => Err(nom::Err::Error(nerror::ParseError::from_error_kind(
+            s.to_owned(),
+            nerror::ErrorKind::Tag,
+        ))),
+    }
+}
+
+impl FromStr for IcalRrule {
+    type Err = Error;
+    fn from_str(value: &str) -> Result<Self> {
+        let (_, key_values) = all_consuming::<&str, Vec<(&str, Vec<&str>)>, nerror::Error<&str>, _>(
+            separated_list1(
+                tag(";"),
+                separated_pair(alpha1, tag("="), separated_list1(tag(","), take_until(";"))),
+            ),
+        )(value)?;
+
+        let mut key_map = BTreeMap::<String, &Vec<&str>>::from_iter(
+            key_values.iter().map(|(key, v)| (key.to_lowercase(), v)),
+        );
+
+        let freq = key_map
+            .remove("freq")
+            .map(|v| v.first().unwrap().parse::<Frequency>())
+            .ok_or(Error::new(
+                ErrorKind::RecurRuleParse,
+                "No frequency specifier",
+            ))??;
+
+        let until = if let Some(value) = key_map.remove("until").map(|v| v.first().unwrap()) {
+            value.parse::<IcalDateTime>().ok()
+        } else {
+            None
+        };
+
+        let count = key_map
+            .remove("count")
+            .map(|v| v.first().unwrap().parse::<u32>().ok())
+            .unwrap();
+        let interval = key_map
+            .remove("interval")
+            .map(|v| v.first().unwrap().parse::<u32>().ok())
+            .unwrap();
+
+        let rules: BTreeMap<Frequency, Vec<i32>> = key_map
+            .into_iter()
+            .map(|(key, values)| {
+                (
+                    parse_bykey_to_frequency(&key),
+                    values.iter().map(|v| v.parse::<i32>().unwrap()).collect(),
+                )
+            })
+            .inspect(|(k, _)| {
+                if k.is_err() {
+                    log::warn!("Some keys are not supported and ignored.")
+                }
+            })
+            .filter_map(|(key, values)| {
+                if let Ok((_, key)) = key {
+                    Some((key, values))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let mut rrule = RecurRule::<Tz>::new_with_filters(freq, rules);
+
+        rrule.set_interval_opt(interval);
+
+        if count.is_some() && until.is_some() {
+            return Err(Error::new(
+                ErrorKind::RecurRuleParse,
+                "'COUNT' and 'UNTIL' must not occur in the same rule",
+            ));
+        }
+
+        if let Some(i) = count {
+            rrule.set_limit(RecurLimit::Count(i));
+        }
+
+        if let Some(u) = until {
+            match u {
+                IcalDateTime::Date(d) => rrule.set_limit(RecurLimit::DateTime(
+                    Tz::UTC.from_utc_datetime(&d.and_hms(0, 0, 0)),
+                )),
+                IcalDateTime::Utc(dt) => rrule.set_limit(RecurLimit::DateTime(
+                    Tz::UTC.from_utc_datetime(&dt.naive_utc()),
+                )),
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::RecurRuleParse,
+                        "'UNTIL' must be a date or UTC-datetime",
+                    ))
+                }
+            }
+        }
+
+        Ok(IcalRrule(rrule))
     }
 }
 
@@ -536,7 +670,7 @@ impl Event {
             }
         };
 
-        // TODO: Parse timezone
+        // TODO: Check for recurrence
 
         Ok(Event {
             path: path.into(),
@@ -734,8 +868,8 @@ impl Calendar {
         }
 
         // TODO: use `BTreeMap::first_entry` once it's stable: https://github.com/rust-lang/rust/issues/62924
-        let tz = if let Some((key, event)) = events.iter().next() {
-            *event.first().unwrap().tz()
+        let tz = if let Some((_, event)) = events.iter().next() {
+            *(event.first().unwrap().tz())
         } else {
             Tz::UTC
         };

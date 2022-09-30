@@ -230,11 +230,14 @@ impl<Tz: TimeZone> RecurLimit<Tz> {
     }
 }
 
+type FilterRule = Vec<(Frequency, i32)>;
+
 #[derive(Clone)]
 pub struct RecurRule<Tz: TimeZone = chrono_tz::Tz> {
     freq: Frequency,
     limit: RecurLimit<Tz>,
     interval: u32,
+    filters: BTreeMap<Frequency, BTreeSet<i32>>,
 }
 
 impl<Tz: TimeZone> RecurRule<Tz> {
@@ -243,6 +246,22 @@ impl<Tz: TimeZone> RecurRule<Tz> {
             freq,
             limit: RecurLimit::Infinite,
             interval: 1,
+            filters: BTreeMap::default(),
+        }
+    }
+
+    pub fn new_with_filters<It>(freq: Frequency, it: It) -> Self
+    where
+        It: IntoIterator<Item = (Frequency, Vec<i32>)>,
+    {
+        RecurRule {
+            freq,
+            limit: RecurLimit::Infinite,
+            interval: 1,
+            filters: it
+                .into_iter()
+                .map(|(f, v)| (f, BTreeSet::<i32>::from_iter(v.into_iter())))
+                .collect(),
         }
     }
 
@@ -265,6 +284,12 @@ impl<Tz: TimeZone> RecurRule<Tz> {
         self.interval = interval;
     }
 
+    pub fn set_interval_opt(&mut self, interval: Option<u32>) {
+        if let Some(i) = interval {
+            self.interval = i;
+        }
+    }
+
     pub fn set_limit(&mut self, limit: RecurLimit<Tz>) {
         self.limit = limit;
     }
@@ -274,38 +299,69 @@ impl<Tz: TimeZone> RecurRule<Tz> {
             freq: self.freq,
             limit: self.limit.with_tz(tz),
             interval: self.interval,
+            filters: self.filters,
         }
     }
 
+    fn expand_rules(&self, root: &FilterRule) -> Vec<FilterRule> {
+        // Is never empty
+        let (last_freq, last_value) = root.last().unwrap();
+        let rest = self.filters.range(last_freq..);
+
+        let mut rules: Vec<FilterRule> = vec![];
+
+        for (freq, values) in rest.into_iter() {
+            for value in values.range(last_value..) {
+                let mut new_root = root.clone();
+                new_root.push((*freq, *value));
+                rules.append(&mut self.expand_rules(&new_root));
+            }
+        }
+
+        return rules;
+    }
+
     async fn occurrences_from_worker<'a>(&'a self, from: DateTime<Tz>, co: Co<DateTime<Tz>>) {
-        match &self.limit {
-            RecurLimit::Count(i) => {
-                let mut current = from;
-                for _ in 0..*i {
-                    let duration = self.freq.next_duration_from(&current, Some(self.interval));
+        let rules = if !self.filters.is_empty() {
+            Some(self.expand_rules(&vec![self
+                    .filters
+                    .iter()
+                    .next()
+                    .map(|(f, vs)| (*f, vs.iter().next().unwrap().clone()))
+                    .unwrap()]))
+        } else {
+            None
+        };
 
-                    co.yield_(current.clone()).await;
-                    current = current + duration;
-                }
-            }
-            RecurLimit::DateTime(d) => {
-                let mut current = from;
-                while &current < d {
-                    let duration = self.freq.next_duration_from(&current, Some(self.interval));
+        let mut count = 0u32;
+        let mut current = from;
 
-                    co.yield_(current.clone()).await;
-                    current = current + duration;
-                }
+        loop {
+            match &self.limit {
+                RecurLimit::Count(i) if &count >= i => return,
+                RecurLimit::DateTime(d) if &current >= d => return,
+                _ => (),
             }
-            RecurLimit::Infinite => {
-                let mut current = from;
-                loop {
-                    let duration = self.freq.next_duration_from(&current, Some(self.interval));
 
-                    co.yield_(current.clone()).await;
-                    current = current + duration;
+            let base_duration = self.freq.next_duration_from(&current, Some(self.interval));
+
+            if let Some(rules) = &rules {
+                let mut rule_current = current.clone();
+                for rule in rules {
+                    let duration = rule
+                        .iter()
+                        .map(|(f, v)| f.next_duration_from(&current, Some(*v as u32)))
+                        .fold(base_duration, |d, new_d| d + new_d);
+                    co.yield_(rule_current.clone()).await;
+                    rule_current = rule_current + duration;
                 }
+                current = rule_current;
+            } else {
+                co.yield_(current.clone()).await;
+                current = current + base_duration;
             }
+
+            count += 1;
         }
     }
 
