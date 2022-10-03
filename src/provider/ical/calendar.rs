@@ -1,12 +1,13 @@
 use chrono::{
     Date, DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc,
+    Weekday,
 };
 use chrono_tz::Tz;
 use log;
 use nom::{
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_until},
-    character::complete::{char, digit1, one_of},
+    character::complete::{alphanumeric1, char, digit1, one_of},
     combinator::{all_consuming, map_res, opt, rest},
     error as nerror,
     sequence::{preceded, terminated, tuple},
@@ -377,18 +378,72 @@ fn parse_bykey_to_frequency(s: &str) -> IResult<&'static str, Frequency, nerror:
     }
 }
 
+fn parse_bykey_value_pair(
+    key: &str,
+    values: &Vec<&str>,
+) -> IResult<&'static str, (Frequency, Vec<i32>), nerror::Error<String>> {
+    if let Ok((_, freq)) = parse_bykey_to_frequency(key) {
+        match freq {
+            Frequency::Daily => Ok((
+                "",
+                (
+                    freq,
+                    values
+                        .into_iter()
+                        .filter_map(|v| match v.to_lowercase().as_ref() {
+                            "mo" => Some(Weekday::Mon.number_from_monday() as i32),
+                            "tu" => Some(Weekday::Tue.number_from_monday() as i32),
+                            "we" => Some(Weekday::Wed.number_from_monday() as i32),
+                            "th" => Some(Weekday::Thu.number_from_monday() as i32),
+                            "fr" => Some(Weekday::Fri.number_from_monday() as i32),
+                            "sa" => Some(Weekday::Sat.number_from_monday() as i32),
+                            "su" => Some(Weekday::Sun.number_from_monday() as i32),
+                            _ => {
+                                log::warn!("'{}' not a valid weekday. Ignoring.", v);
+                                None
+                            }
+                        })
+                        .collect(),
+                ),
+            )),
+            _ => Ok((
+                "",
+                (
+                    freq,
+                    values
+                        .into_iter()
+                        .map(|v| v.parse::<i32>().unwrap())
+                        .collect(),
+                ),
+            )),
+        }
+    } else {
+        Err(nom::Err::Error(nerror::Error::new(
+            key.to_owned(),
+            nerror::ErrorKind::Tag,
+        )))
+    }
+}
+
 impl FromStr for IcalRrule {
     type Err = Error;
     fn from_str(value: &str) -> Result<Self> {
-        let (_, key_values) = all_consuming::<&str, Vec<(&str, Vec<&str>)>, nerror::Error<&str>, _>(
-            separated_list1(
-                tag(";"),
-                separated_pair(alpha1, tag("="), separated_list1(tag(","), take_until(";"))),
-            ),
-        )(value)?;
+        let (_, key_values) =
+            all_consuming::<&str, Vec<(String, Vec<&str>)>, nerror::Error<&str>, _>(
+                separated_list1(
+                    tag(";"),
+                    separated_pair(
+                        map_res(alpha1, |s: &str| {
+                            Ok::<String, nerror::Error<String>>(s.to_lowercase())
+                        }),
+                        tag("="),
+                        separated_list1(tag(","), alphanumeric1),
+                    ),
+                ),
+            )(value)?;
 
-        let mut key_map = BTreeMap::<String, &Vec<&str>>::from_iter(
-            key_values.iter().map(|(key, v)| (key.to_lowercase(), v)),
+        let mut key_map = BTreeMap::<&str, &Vec<&str>>::from_iter(
+            key_values.iter().map(|(k, v)| (k.as_ref(), v)),
         );
 
         let freq = key_map
@@ -408,32 +463,21 @@ impl FromStr for IcalRrule {
         let count = key_map
             .remove("count")
             .map(|v| v.first().unwrap().parse::<u32>().ok())
-            .unwrap();
+            .unwrap_or(None);
         let interval = key_map
             .remove("interval")
             .map(|v| v.first().unwrap().parse::<u32>().ok())
-            .unwrap();
+            .unwrap_or(None);
 
         let rules: BTreeMap<Frequency, Vec<i32>> = key_map
             .into_iter()
-            .map(|(key, values)| {
-                (
-                    parse_bykey_to_frequency(&key),
-                    values.iter().map(|v| v.parse::<i32>().unwrap()).collect(),
-                )
-            })
-            .inspect(|(k, _)| {
-                if k.is_err() {
+            .map(|(key, values)| parse_bykey_value_pair(key, values))
+            .inspect(|res| {
+                if res.is_err() {
                     log::warn!("Some keys are not supported and ignored.")
                 }
             })
-            .filter_map(|(key, values)| {
-                if let Ok((_, key)) = key {
-                    Some((key, values))
-                } else {
-                    None
-                }
-            })
+            .filter_map(|res| res.ok().map(|(_, (key, values))| (key, values)))
             .collect();
 
         let mut rrule = RecurRule::<Tz>::new_with_filters(freq, rules);
@@ -629,7 +673,7 @@ impl Event {
         };
 
         // DTEND does not HAVE to be specified...
-        let occurrence = if let Some(dt) = dtend {
+        let mut occurrence = if let Some(dt) = dtend {
             // ...but if set it must be parseable
             let dtend_spec = IcalDateTime::try_from(dt)?;
             match &dtend_spec {
@@ -671,6 +715,20 @@ impl Event {
         };
 
         // TODO: Check for recurrence
+        let ical_rrule = event
+            .properties
+            .iter()
+            .find(|p| p.name == "RRULE")
+            .map(|p| IcalRrule::from_str(p.value.as_ref().unwrap()))
+            .transpose()
+            .map_err(|err| {
+                let old_message = err.message.clone().unwrap_or("".to_owned());
+                err.with_msg(&format!("{}: {}", path.display(), old_message))
+            })?;
+
+        if let Some(rule) = ical_rrule {
+            occurrence = occurrence.recurring(rule.0);
+        }
 
         Ok(Event {
             path: path.into(),
