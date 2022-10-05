@@ -151,18 +151,15 @@ pub enum Frequency {
 }
 
 impl Frequency {
-    pub fn next_duration_from<Tz: TimeZone>(
+    pub fn next_from<Tz: TimeZone>(
         &self,
         dt: &DateTime<Tz>,
         interval: Option<u32>,
-    ) -> Duration {
-        let i = interval.unwrap_or(1) as i64;
+    ) -> DateTime<Tz> {
+        let i = interval.unwrap_or(1) as i32;
         match self {
-            Frequency::Yearly => Duration::days(days_of_year(dt.year()) as i64),
-            Frequency::Monthly => Duration::days(days_of_month(
-                &chrono::Month::from_u32(dt.month()).unwrap(),
-                dt.year(),
-            ) as i64),
+            Frequency::Yearly => dt.with_year(dt.year() + i).unwrap(),
+            Frequency::Monthly => dt.with_month(i as u32).unwrap(),
             Frequency::Weekly => Duration::weeks(i),
             Frequency::Daily => Duration::days(i),
             Frequency::Hourly => Duration::hours(i),
@@ -230,7 +227,36 @@ impl<Tz: TimeZone> RecurLimit<Tz> {
     }
 }
 
-type FilterRule = Vec<(Frequency, i32)>;
+#[derive(Clone)]
+struct RecurFilterRule(BTreeMap<Frequency, i32>);
+
+impl RecurFilterRule {
+    pub fn next_from(&self, dt: &DateTime<Tz>) -> DateTime<Tz> {
+        let mut current = dt.clone();
+
+        for (freq, value) in self.0.iter().rev() {
+            match freq {
+                Frequency::Yearly => current = current.with_year(current.year() + value),
+            }
+        }
+        todo!();
+    }
+}
+
+impl IntoIterator for RecurFilterRule {
+    type Item = (Frequency, i32);
+    type IntoIter = std::collections::btree_map::IntoIter<Frequency, i32>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl FromIterator<(Frequency, i32)> for RecurFilterRule {
+    fn from_iter<T: IntoIterator<Item = (Frequency, i32)>>(iter: T) -> Self {
+        RecurFilterRule(BTreeMap::from_iter(iter))
+    }
+}
 
 #[derive(Clone)]
 pub struct RecurRule<Tz: TimeZone = chrono_tz::Tz> {
@@ -303,18 +329,22 @@ impl<Tz: TimeZone> RecurRule<Tz> {
         }
     }
 
-    fn expand_rules(&self, root: &FilterRule) -> Vec<FilterRule> {
+    fn expand_rules(&self, root: RecurFilterRule) -> Vec<RecurFilterRule> {
         // Is never empty
-        let (last_freq, last_value) = root.last().unwrap();
-        let rest = self.filters.range(last_freq..);
+        let (last_freq, last_value) = root.0.iter().rev().next().unwrap();
+        let rest = self.filters.range(..last_freq);
 
-        let mut rules: Vec<FilterRule> = vec![];
+        let mut rules: Vec<RecurFilterRule> = vec![];
 
-        for (freq, values) in rest.into_iter() {
-            for value in values.range(last_value..) {
-                let mut new_root = root.clone();
-                new_root.push((*freq, *value));
-                rules.append(&mut self.expand_rules(&new_root));
+        if rest.clone().peekable().peek().is_none() {
+            rules.push(root);
+        } else {
+            for (freq, values) in rest.into_iter() {
+                for value in values.range(last_value..) {
+                    let mut new_root = root.clone();
+                    new_root.0.insert(*freq, *value);
+                    rules.append(&mut self.expand_rules(new_root));
+                }
             }
         }
 
@@ -323,12 +353,16 @@ impl<Tz: TimeZone> RecurRule<Tz> {
 
     async fn occurrences_from_worker<'a>(&'a self, from: DateTime<Tz>, co: Co<DateTime<Tz>>) {
         let rules = if !self.filters.is_empty() {
-            Some(self.expand_rules(&vec![self
-                    .filters
-                    .iter()
-                    .next()
-                    .map(|(f, vs)| (*f, vs.iter().next().unwrap().clone()))
-                    .unwrap()]))
+            Some(
+                self.expand_rules(RecurFilterRule(BTreeMap::from(
+                    [self.filters
+                        .iter()
+                        .rev()
+                        .next()
+                        .map(|(f, vs)| (*f, vs.iter().next().unwrap().clone()))
+                        .unwrap(); 1],
+                ))),
+            )
         } else {
             None
         };
@@ -343,15 +377,11 @@ impl<Tz: TimeZone> RecurRule<Tz> {
                 _ => (),
             }
 
-            let base_duration = self.freq.next_duration_from(&current, Some(self.interval));
+            let base_duration = self.freq.next_from(&current, Some(self.interval));
 
             if let Some(rules) = &rules {
                 let mut rule_current = current.clone();
                 for rule in rules {
-                    let duration = rule
-                        .iter()
-                        .map(|(f, v)| f.next_duration_from(&current, Some(*v as u32)))
-                        .fold(base_duration, |d, new_d| d + new_d);
                     co.yield_(rule_current.clone()).await;
                     rule_current = rule_current + duration;
                 }
@@ -430,8 +460,6 @@ impl<Tz: TimeZone> Occurrence<Tz> {
         }
     }
 
-    // pub fn until(&self, datetime: &DateTime<Tz>) -> Vec<DateTime<Tz>> {}
-
     pub fn duration(&self) -> Duration {
         use Occurrence::*;
         match self {
@@ -445,6 +473,14 @@ impl<Tz: TimeZone> Occurrence<Tz> {
         match self {
             Onetime(ts) => Occurrence::<Tz2>::Onetime(ts.with_tz(tz)),
             Recurring(ts, rrule) => Occurrence::<Tz2>::Recurring(ts.with_tz(tz), rrule.with_tz(tz)),
+        }
+    }
+
+    pub fn recurring(self, rule: RecurRule<Tz>) -> Self {
+        use Occurrence::*;
+        match self {
+            Onetime(ts) => Occurrence::Recurring(ts, rule),
+            Recurring(ts, _) => Occurrence::Recurring(ts, rule),
         }
     }
 
