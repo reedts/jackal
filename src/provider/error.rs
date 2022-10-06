@@ -1,4 +1,5 @@
 use nom;
+use rrule::RRuleError;
 use std::convert::From;
 use std::error;
 use std::fmt;
@@ -74,6 +75,12 @@ impl<E: std::fmt::Debug> From<nom::Err<E>> for Error {
             ErrorKind::ParseError,
             &format!("Error while parsing: {}", error),
         )
+    }
+}
+
+impl From<RRuleError> for Error {
+    fn from(rrule_error: RRuleError) -> Self {
+        Error::new(ErrorKind::RecurRuleParse, &format!("{}", rrule_error))
     }
 }
 

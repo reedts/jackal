@@ -13,6 +13,7 @@ use nom::{
     sequence::{preceded, terminated, tuple},
     IResult,
 };
+use rrule::RRule;
 use std::collections::BTreeMap;
 use std::convert::{From, TryFrom};
 use std::fs;
@@ -361,156 +362,6 @@ impl IcalDateTime {
     }
 }
 
-struct IcalRrule(RecurRule<Tz>);
-
-fn parse_bykey_to_filter(s: &str) -> IResult<&'static str, RecurFilter, nerror::Error<String>> {
-    s.parse::<RecurFilter>().map_or(
-        Err(nom::Err::Error(nerror::Error::new(
-            s.to_owned(),
-            nerror::ErrorKind::Tag,
-        ))),
-        |res| Ok(("", res)),
-    )
-}
-
-fn parse_bykey_value_pair(
-    key: &str,
-    values: &Vec<&str>,
-) -> IResult<&'static str, (RecurFilter, Vec<i32>), nerror::Error<String>> {
-    if let Ok((_, filter)) = parse_bykey_to_filter(key) {
-        match filter {
-            RecurFilter::ByDay => Ok((
-                "",
-                (
-                    filter,
-                    values
-                        .into_iter()
-                        .filter_map(|v| match v.to_lowercase().as_ref() {
-                            "mo" => Some(Weekday::Mon.number_from_monday() as i32),
-                            "tu" => Some(Weekday::Tue.number_from_monday() as i32),
-                            "we" => Some(Weekday::Wed.number_from_monday() as i32),
-                            "th" => Some(Weekday::Thu.number_from_monday() as i32),
-                            "fr" => Some(Weekday::Fri.number_from_monday() as i32),
-                            "sa" => Some(Weekday::Sat.number_from_monday() as i32),
-                            "su" => Some(Weekday::Sun.number_from_monday() as i32),
-                            _ => {
-                                log::warn!("'{}' not a valid weekday. Ignoring.", v);
-                                None
-                            }
-                        })
-                        .collect(),
-                ),
-            )),
-            _ => Ok((
-                "",
-                (
-                    filter,
-                    values
-                        .into_iter()
-                        .map(|v| v.parse::<i32>().unwrap())
-                        .collect(),
-                ),
-            )),
-        }
-    } else {
-        Err(nom::Err::Error(nerror::Error::new(
-            key.to_owned(),
-            nerror::ErrorKind::Tag,
-        )))
-    }
-}
-
-impl FromStr for IcalRrule {
-    type Err = Error;
-    fn from_str(value: &str) -> Result<Self> {
-        let (_, key_values) =
-            all_consuming::<&str, Vec<(String, Vec<&str>)>, nerror::Error<&str>, _>(
-                separated_list1(
-                    tag(";"),
-                    separated_pair(
-                        map_res(alpha1, |s: &str| {
-                            Ok::<String, nerror::Error<String>>(s.to_lowercase())
-                        }),
-                        tag("="),
-                        separated_list1(tag(","), alphanumeric1),
-                    ),
-                ),
-            )(value)?;
-
-        let mut key_map = BTreeMap::<&str, &Vec<&str>>::from_iter(
-            key_values.iter().map(|(k, v)| (k.as_ref(), v)),
-        );
-
-        let freq = key_map
-            .remove("freq")
-            .map(|v| v.first().unwrap().parse::<Frequency>())
-            .ok_or(Error::new(
-                ErrorKind::RecurRuleParse,
-                "No frequency specifier",
-            ))??;
-
-        let until = if let Some(value) = key_map.remove("until").map(|v| v.first().unwrap()) {
-            value.parse::<IcalDateTime>().ok()
-        } else {
-            None
-        };
-
-        let count = key_map
-            .remove("count")
-            .map(|v| v.first().unwrap().parse::<u32>().ok())
-            .unwrap_or(None);
-        let interval = key_map
-            .remove("interval")
-            .map(|v| v.first().unwrap().parse::<u32>().ok())
-            .unwrap_or(None);
-
-        let rules: BTreeMap<RecurFilter, Vec<i32>> = key_map
-            .into_iter()
-            .map(|(key, values)| parse_bykey_value_pair(key, values))
-            .inspect(|res| {
-                if res.is_err() {
-                    log::warn!("Some keys are not supported and ignored.")
-                }
-            })
-            .filter_map(|res| res.ok().map(|(_, (key, values))| (key, values)))
-            .collect();
-
-        let mut rrule = RecurRule::<Tz>::new_with_filters(freq, rules);
-
-        rrule.set_interval_opt(interval);
-
-        if count.is_some() && until.is_some() {
-            return Err(Error::new(
-                ErrorKind::RecurRuleParse,
-                "'COUNT' and 'UNTIL' must not occur in the same rule",
-            ));
-        }
-
-        if let Some(i) = count {
-            rrule.set_limit(RecurLimit::Count(i));
-        }
-
-        if let Some(u) = until {
-            match u {
-                IcalDateTime::Date(d) => rrule.set_limit(RecurLimit::DateTime(
-                    Tz::UTC.from_utc_datetime(&d.and_hms(0, 0, 0)),
-                )),
-                IcalDateTime::Utc(dt) => rrule.set_limit(RecurLimit::DateTime(
-                    Tz::UTC.from_utc_datetime(&dt.naive_utc()),
-                )),
-                _ => {
-                    return Err(Error::new(
-                        ErrorKind::RecurRuleParse,
-                        "'UNTIL' must be a date or UTC-datetime",
-                    ))
-                }
-            }
-        }
-
-        Ok(IcalRrule(rrule))
-    }
-}
-
 #[derive(Clone)]
 pub struct Event {
     path: PathBuf,
@@ -709,21 +560,23 @@ impl Event {
             }
         };
 
-        // TODO: Check for recurrence
-        let ical_rrule = event
-            .properties
-            .iter()
-            .find(|p| p.name == "RRULE")
-            .map(|p| IcalRrule::from_str(p.value.as_ref().unwrap()))
-            .transpose()
-            .map_err(|err| {
-                let old_message = err.message.clone().unwrap_or("".to_owned());
-                err.with_msg(&format!("{}: {}", path.display(), old_message))
-            })?;
+        let ical_rrule = event.properties.iter().find(|p| p.name == "RRULE");
 
         if let Some(rule) = ical_rrule {
-            occurrence = occurrence.recurring(rule.0);
+            if let Ok(ruleset) = rule
+                .value
+                .as_ref()
+                .unwrap()
+                .parse::<RRule<rrule::Unvalidated>>()
+            {
+                let start = occurrence.begin();
+                let tz = occurrence.timezone();
+                occurrence =
+                    occurrence.recurring(ruleset.build(start.with_timezone(&rrule::Tz::Tz(tz)))?);
+            }
         }
+
+        // TODO: Check for exdate
 
         Ok(Event {
             path: path.into(),
@@ -910,14 +763,11 @@ impl Calendar {
         for event in event_file_iter {
             let event_rc = Rc::new(event);
 
-            match event_rc.occurrence() {
-                Occurrence::Onetime(ts) => events.entry(ts.begin()).or_default().push(event_rc),
-                Occurrence::Recurring(ts, rrule) => rrule
-                    .occurrences_from(&ts.begin())
-                    .into_iter()
-                    .take(30)
-                    .for_each(|dt| events.entry(dt).or_default().push(Rc::clone(&event_rc))),
-            }
+            event_rc
+                .occurrence()
+                .iter()
+                .take(30)
+                .for_each(|dt| events.entry(dt).or_default().push(Rc::clone(&event_rc)));
         }
 
         // TODO: use `BTreeMap::first_entry` once it's stable: https://github.com/rust-lang/rust/issues/62924

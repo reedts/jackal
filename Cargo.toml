@@ -5,8 +5,8 @@ authors = ["reedts <j.reedts@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-chrono = "0.4.0"
-chrono-tz = "0.4.0"
+chrono = "0.4.*"
+chrono-tz = "0.6.1"
 termion = "1.5"
 ical = "0.6.*"
 structopt = "0.3"
@@ -20,7 +20,7 @@ flexi_logger = "0.20"
 nom = "7.1.0"
 dirs = "4.0.0"
 uuid = { version = "1.0.0", features = ["v4"] }
-genawaiter = "0.99.1"
+rrule = "0.10.0"
 
 [dev-dependencies]
 rusty-hook = "0.11.2"
