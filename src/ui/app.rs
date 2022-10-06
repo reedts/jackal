@@ -1,14 +1,12 @@
-use std::pin::Pin;
-
 use crate::agenda::Agenda;
 use crate::config::Config;
 use crate::events::{Dispatcher, Event};
 
-use super::{CalendarWindow, Context, EventWindow, EventWindowBehaviour, Mode, MonthPane};
+use super::{CalendarWindow, Context, EventWindow, EventWindowBehaviour, Mode};
 
-use unsegen::base::{Cursor, GraphemeCluster, Terminal};
+use unsegen::base::{GraphemeCluster, Terminal};
 use unsegen::input::{
-    EditBehavior, Input, Key, Navigatable, NavigateBehavior, OperationResult, ScrollBehavior,
+    EditBehavior, Key, Navigatable, NavigateBehavior, OperationResult, ScrollBehavior,
 };
 use unsegen::widget::*;
 
@@ -45,7 +43,7 @@ impl<'a> App<'a> {
     where
         'a: 'w,
     {
-        let mut layout = VLayout::new()
+        let layout = VLayout::new()
             .widget(
                 HLayout::new()
                     .widget(CalendarWindow::new(&self.context))
@@ -132,9 +130,9 @@ impl<'a> App<'a> {
             }
 
             // Draw
-            let mut root = term.create_root_window();
+            let root = term.create_root_window();
 
-            let mut layout = self.as_widget().draw(root, RenderingHints::new());
+            let layout = self.as_widget().draw(root, RenderingHints::new());
 
             term.present();
         }

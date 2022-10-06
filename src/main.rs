@@ -8,9 +8,8 @@ use agenda::Agenda;
 use config::Config;
 use events::Dispatcher;
 use flexi_logger::{Duplicate, FileSpec, Logger};
-use std::convert::TryFrom;
 use std::io::stdout;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use structopt::StructOpt;
 use ui::app::App;
 use unsegen::base::Terminal;
@@ -66,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dispatcher = Dispatcher::from_config(&config);
     // Setup unsegen terminal
     let stdout = stdout();
-    let mut term = Terminal::new(stdout.lock())?;
+    let term = Terminal::new(stdout.lock())?;
 
     let calendar = Agenda::from_config(&config)?;
 

@@ -1,15 +1,11 @@
-use chrono::{
-    Date, DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc,
-    Weekday,
-};
+use chrono::{Date, DateTime, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc};
 use chrono_tz::Tz;
 use log;
 use nom::{
     branch::alt,
-    bytes::complete::{tag, tag_no_case, take_until},
-    character::complete::{alphanumeric1, char, digit1, one_of},
-    combinator::{all_consuming, map_res, opt, rest},
-    error as nerror,
+    bytes::complete::tag,
+    character::complete::{char, digit1, one_of},
+    combinator::{all_consuming, map_res, opt},
     sequence::{preceded, terminated, tuple},
     IResult,
 };
@@ -483,7 +479,7 @@ impl Event {
         Self::from_ical(path, ical)
     }
 
-    pub fn from_ical(path: &Path, mut ical: IcalCalendar) -> Result<Self> {
+    pub fn from_ical(path: &Path, ical: IcalCalendar) -> Result<Self> {
         if ical.events.len() > 1 {
             return Err(Error::from(ErrorKind::CalendarParse).with_msg(&format!(
                 "Calendar '{}' has more than one event entry",

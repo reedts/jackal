@@ -1,10 +1,10 @@
 pub mod calendar;
+use calendar::IcalDuration;
 pub use calendar::{Calendar, Collection, Event};
-use calendar::{IcalDateTime, IcalDuration};
 
 use super::{Error, ErrorKind, Occurrence, Result, TimeSpan};
 
-use chrono::{DateTime, Local, Month, NaiveDate, Utc};
+use chrono::{DateTime, Month, NaiveDate, Utc};
 use chrono_tz::Tz;
 use ical::parser::{ical::component::IcalEvent, Component};
 use ical::property::Property;
@@ -51,7 +51,7 @@ impl EventBuilder {
     pub fn new(path: &Path, start: DateTime<Tz>) -> Self {
         EventBuilder {
             path: path.to_owned(),
-            start: start,
+            start,
             end: None,
             duration: None,
             ical: IcalEvent::default(),
@@ -114,7 +114,7 @@ impl EventBuilder {
     }
 
     pub fn finish(self) -> Result<Event> {
-        let mut event = if let Some(dtspec) = self.end {
+        let event = if let Some(dtspec) = self.end {
             Event::new_with_ical_properties(
                 &self.path,
                 Occurrence::Onetime(TimeSpan::TimePoints(self.start, dtspec)),

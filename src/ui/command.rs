@@ -1,18 +1,11 @@
-use std::collections::BTreeMap;
 use std::result::Result;
-use std::str::FromStr;
 use unsegen::input::*;
-use unsegen::widget::builtin::PromptLine;
-
-use chrono::{Duration, NaiveDateTime};
 
 use nom::{
-    branch::alt,
-    bytes::complete::*,
     character::complete::*,
     combinator::*,
     error::{Error, ErrorKind, ParseError},
-    sequence::{pair, separated_pair, tuple},
+    sequence::{separated_pair, tuple},
     Err, IResult,
 };
 

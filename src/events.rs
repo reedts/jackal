@@ -1,9 +1,6 @@
 use crate::config;
 use std::io;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    mpsc, Arc,
-};
+use std::sync::mpsc;
 use std::thread;
 
 use unsegen::input::Input;

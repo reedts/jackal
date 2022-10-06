@@ -1,27 +1,19 @@
-use std::str::FromStr;
 use unsegen::input::*;
 
 use nom::{
     branch::alt,
     bytes::complete::take_until1,
-    character::{
-        complete::{char, space1},
-        is_space,
-    },
-    combinator::all_consuming,
+    character::complete::{char, space1},
     error::*,
-    multi::{many1, separated_list1},
+    multi::many1,
     sequence::{delimited, separated_pair, terminated},
     IResult,
 };
-
-use chrono::Duration;
 
 use super::command::ActionResult;
 use super::context::Context;
 use super::match_action;
 use crate::config::Config;
-use crate::provider::ical::calendar::IcalDateTime;
 use crate::provider::ical::EventBuilder;
 
 type InsertAction = fn(&mut EventBuilder, &str) -> ActionResult;

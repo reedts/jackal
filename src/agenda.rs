@@ -1,7 +1,6 @@
-use chrono::{Date, DateTime, Datelike, Duration, Month, NaiveDate, TimeZone, Utc};
+use chrono::{Datelike, Duration, Month, NaiveDate, Utc};
 use log;
 use num_traits::FromPrimitive;
-use std::ops::Bound::Included;
 
 use crate::config::Config;
 use crate::provider::*;
