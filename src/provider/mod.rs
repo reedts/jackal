@@ -1,5 +1,6 @@
 use chrono::{
-    Date, DateTime, Datelike, Duration, Local, Month, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
+    Date, DateTime, Datelike, Duration, Local, Month, NaiveDate, NaiveDateTime, NaiveTime,
+    TimeZone, Timelike,
 };
 use chrono_tz::Tz;
 use genawaiter::{
@@ -12,7 +13,7 @@ use nom::multi::separated_list1;
 use nom::sequence::separated_pair;
 use nom::{error as nerror, Err, IResult};
 use num_traits::FromPrimitive;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::convert::From;
 use std::default::Default;
 use std::iter::FromIterator;
@@ -150,25 +151,6 @@ pub enum Frequency {
     Yearly,
 }
 
-impl Frequency {
-    pub fn next_from<Tz: TimeZone>(
-        &self,
-        dt: &DateTime<Tz>,
-        interval: Option<u32>,
-    ) -> DateTime<Tz> {
-        let i = interval.unwrap_or(1) as i32;
-        match self {
-            Frequency::Yearly => dt.with_year(dt.year() + i).unwrap(),
-            Frequency::Monthly => dt.with_month(i as u32).unwrap(),
-            Frequency::Weekly => Duration::weeks(i),
-            Frequency::Daily => Duration::days(i),
-            Frequency::Hourly => Duration::hours(i),
-            Frequency::Minutely => Duration::minutes(i),
-            Frequency::Secondly => Duration::seconds(i),
-        }
-    }
-}
-
 impl FromStr for Frequency {
     type Err = Error;
 
@@ -221,41 +203,126 @@ impl<Tz: TimeZone> RecurLimit<Tz> {
     pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> RecurLimit<Tz2> {
         match self {
             RecurLimit::Count(i) => RecurLimit::<Tz2>::Count(i),
-            RecurLimit::DateTime(dt) => RecurLimit::DateTime(dt.with_timezone(tz)),
+            RecurLimit::DateTime(dt) => RecurLimit::<Tz2>::DateTime(dt.with_timezone(tz)),
             RecurLimit::Infinite => RecurLimit::<Tz2>::Infinite,
         }
     }
 }
 
-#[derive(Clone)]
-struct RecurFilterRule(BTreeMap<Frequency, i32>);
+// Ordering of elements is adapted from ical
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Ord, Eq)]
+pub enum RecurFilter {
+    ByMonth,
+    ByWeekNo,
+    ByYearDay,
+    ByMonthDay,
+    ByDay,
+    ByHour,
+    ByMinute,
+    BySecond,
+    BySetPos,
+}
 
-impl RecurFilterRule {
-    pub fn next_from(&self, dt: &DateTime<Tz>) -> DateTime<Tz> {
-        let mut current = dt.clone();
-
-        for (freq, value) in self.0.iter().rev() {
-            match freq {
-                Frequency::Yearly => current = current.with_year(current.year() + value),
-            }
+impl FromStr for RecurFilter {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "bymonth" => Ok(RecurFilter::ByMonth),
+            "byweekno" => Ok(RecurFilter::ByWeekNo),
+            "byyearday" => Ok(RecurFilter::ByYearDay),
+            "bymonthday" => Ok(RecurFilter::ByMonthDay),
+            "byday" => Ok(RecurFilter::ByDay),
+            "byhour" => Ok(RecurFilter::ByHour),
+            "byminute" => Ok(RecurFilter::ByMinute),
+            "bysecond" => Ok(RecurFilter::BySecond),
+            "bysetpos" => Ok(RecurFilter::BySetPos),
+            s @ _ => Err(Error::new(
+                ErrorKind::RecurRuleParse,
+                &format!("'{}' does not match a recurrence filter key", s),
+            )),
         }
-        todo!();
     }
 }
 
+#[derive(Clone, Ord, Eq)]
+struct RecurFilterRule(BTreeMap<RecurFilter, i32>);
+
 impl IntoIterator for RecurFilterRule {
-    type Item = (Frequency, i32);
-    type IntoIter = std::collections::btree_map::IntoIter<Frequency, i32>;
+    type Item = (RecurFilter, i32);
+    type IntoIter = std::collections::btree_map::IntoIter<RecurFilter, i32>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 
-impl FromIterator<(Frequency, i32)> for RecurFilterRule {
-    fn from_iter<T: IntoIterator<Item = (Frequency, i32)>>(iter: T) -> Self {
+impl FromIterator<(RecurFilter, i32)> for RecurFilterRule {
+    fn from_iter<T: IntoIterator<Item = (RecurFilter, i32)>>(iter: T) -> Self {
         RecurFilterRule(BTreeMap::from_iter(iter))
     }
+}
+
+impl PartialEq for RecurFilterRule {
+    fn eq(&self, other: &Self) -> bool {
+        self.0
+            .iter()
+            .next()
+            .unwrap()
+            .eq(&other.0.iter().next().unwrap())
+    }
+}
+
+impl PartialOrd for RecurFilterRule {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let lhs = if let Some(v) = self.0.iter().next() {
+        } else {
+            return None;
+        };
+
+        let rhs = if let Some(v) = self.0.iter().next() {
+        } else {
+            return None;
+        };
+
+        lhs.partial_cmp(&rhs)
+    }
+}
+
+fn expand_rules(
+    filters: &BTreeMap<RecurFilter, BTreeSet<i32>>,
+    root: Option<RecurFilterRule>,
+) -> BTreeSet<RecurFilterRule> {
+    if filters.is_empty() {
+        return BTreeSet::default();
+    }
+
+    let up_to_now = root.unwrap_or(RecurFilterRule(BTreeMap::from(
+        [filters
+            .iter()
+            .rev()
+            .next()
+            .map(|(f, vs)| (*f, vs.iter().next().unwrap().clone()))
+            .unwrap(); 1],
+    )));
+    // Is never empty
+    let (last_freq, last_value) = up_to_now.0.iter().rev().next().unwrap();
+    let rest = filters.range(..last_freq);
+
+    let mut rules: BTreeSet<RecurFilterRule> = BTreeSet::default();
+
+    if rest.clone().peekable().peek().is_none() {
+        rules.insert(up_to_now);
+    } else {
+        for (freq, values) in rest.into_iter() {
+            for value in values.range(last_value..) {
+                let mut new_root = up_to_now.clone();
+                new_root.0.insert(*freq, *value);
+                rules.append(&mut expand_rules(&filters, Some(new_root)));
+            }
+        }
+    }
+
+    return rules;
 }
 
 #[derive(Clone)]
@@ -263,7 +330,7 @@ pub struct RecurRule<Tz: TimeZone = chrono_tz::Tz> {
     freq: Frequency,
     limit: RecurLimit<Tz>,
     interval: u32,
-    filters: BTreeMap<Frequency, BTreeSet<i32>>,
+    filters: BTreeSet<RecurFilterRule>,
 }
 
 impl<Tz: TimeZone> RecurRule<Tz> {
@@ -272,22 +339,24 @@ impl<Tz: TimeZone> RecurRule<Tz> {
             freq,
             limit: RecurLimit::Infinite,
             interval: 1,
-            filters: BTreeMap::default(),
+            filters: BTreeSet::default(),
         }
     }
 
     pub fn new_with_filters<It>(freq: Frequency, it: It) -> Self
     where
-        It: IntoIterator<Item = (Frequency, Vec<i32>)>,
+        It: IntoIterator<Item = (RecurFilter, Vec<i32>)>,
     {
+        let map: BTreeMap<RecurFilter, BTreeSet<i32>> = it
+            .into_iter()
+            .map(|(f, v)| (f, BTreeSet::<i32>::from_iter(v)))
+            .collect();
+
         RecurRule {
             freq,
             limit: RecurLimit::Infinite,
             interval: 1,
-            filters: it
-                .into_iter()
-                .map(|(f, v)| (f, BTreeSet::<i32>::from_iter(v.into_iter())))
-                .collect(),
+            filters: expand_rules(&map, None),
         }
     }
 
@@ -329,40 +398,9 @@ impl<Tz: TimeZone> RecurRule<Tz> {
         }
     }
 
-    fn expand_rules(&self, root: RecurFilterRule) -> Vec<RecurFilterRule> {
-        // Is never empty
-        let (last_freq, last_value) = root.0.iter().rev().next().unwrap();
-        let rest = self.filters.range(..last_freq);
-
-        let mut rules: Vec<RecurFilterRule> = vec![];
-
-        if rest.clone().peekable().peek().is_none() {
-            rules.push(root);
-        } else {
-            for (freq, values) in rest.into_iter() {
-                for value in values.range(last_value..) {
-                    let mut new_root = root.clone();
-                    new_root.0.insert(*freq, *value);
-                    rules.append(&mut self.expand_rules(new_root));
-                }
-            }
-        }
-
-        return rules;
-    }
-
     async fn occurrences_from_worker<'a>(&'a self, from: DateTime<Tz>, co: Co<DateTime<Tz>>) {
         let rules = if !self.filters.is_empty() {
-            Some(
-                self.expand_rules(RecurFilterRule(BTreeMap::from(
-                    [self.filters
-                        .iter()
-                        .rev()
-                        .next()
-                        .map(|(f, vs)| (*f, vs.iter().next().unwrap().clone()))
-                        .unwrap(); 1],
-                ))),
-            )
+            Some(&self.filters)
         } else {
             None
         };
@@ -370,25 +408,67 @@ impl<Tz: TimeZone> RecurRule<Tz> {
         let mut count = 0u32;
         let mut current = from;
 
+        // Each iterations goes through each filter rules (if present)
+        // Otherwise, exactly ONE occurence is yielded
         loop {
+            // Yield current as first occurrence
+            co.yield_(current.clone()).await;
+
+            // Perform range check
             match &self.limit {
                 RecurLimit::Count(i) if &count >= i => return,
                 RecurLimit::DateTime(d) if &current >= d => return,
                 _ => (),
             }
 
-            let base_duration = self.freq.next_from(&current, Some(self.interval));
+            // Apply base frequency interval
+            let base_duration = match self.freq {
+                // Years can vary in days so we iterate `self.interval` many years to
+                // get the correct days for each year
+                Frequency::Yearly => Duration::days(
+                    (current.year() as u32..=(current.year() as u32 + self.interval))
+                        .map(|y| days_of_year(y as i32) as i64)
+                        .sum(),
+                ),
+                // The same goes for months
+                Frequency::Monthly => {
+                    let mut days = 0u32;
+                    let mut year = current.year();
+                    let mut month = Month::from_u32(current.month()).unwrap();
+                    for _ in 0..self.interval {
+                        days += days_of_month(&month, year);
+                        month = month.succ();
 
-            if let Some(rules) = &rules {
-                let mut rule_current = current.clone();
-                for rule in rules {
-                    co.yield_(rule_current.clone()).await;
-                    rule_current = rule_current + duration;
+                        // Year overflow
+                        if month == Month::January {
+                            year += 1;
+                        }
+                    }
+
+                    Duration::days(days as i64)
                 }
-                current = rule_current;
+                Frequency::Weekly => Duration::weeks(self.interval as i64),
+                Frequency::Daily => Duration::days(self.interval as i64),
+                Frequency::Hourly => Duration::hours(self.interval as i64),
+                Frequency::Minutely => Duration::minutes(self.interval as i64),
+                Frequency::Secondly => Duration::seconds(self.interval as i64),
+            };
+
+            // Check if filter rules exist
+            if let Some(rules) = rules {
+                for rule in rules.iter() {
+                    let mut rule_current = current.clone();
+
+                    for (filter, value) in rule.0.iter() {
+                        match filter {
+                            RecurFilter::ByMonth => {}
+                            _ => (),
+                        }
+                    }
+                }
             } else {
+                // No filter rules, we can just apply
                 co.yield_(current.clone()).await;
-                current = current + base_duration;
             }
 
             count += 1;

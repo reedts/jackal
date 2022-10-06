@@ -363,31 +363,26 @@ impl IcalDateTime {
 
 struct IcalRrule(RecurRule<Tz>);
 
-fn parse_bykey_to_frequency(s: &str) -> IResult<&'static str, Frequency, nerror::Error<String>> {
-    match s.to_lowercase().as_str() {
-        "bymonth" => Ok(("", Frequency::Monthly)),
-        "byweek" => Ok(("", Frequency::Weekly)),
-        "byday" => Ok(("", Frequency::Daily)),
-        "byhour" => Ok(("", Frequency::Hourly)),
-        "byminute" => Ok(("", Frequency::Minutely)),
-        "byseconds" => Ok(("", Frequency::Secondly)),
-        _ => Err(nom::Err::Error(nerror::ParseError::from_error_kind(
+fn parse_bykey_to_filter(s: &str) -> IResult<&'static str, RecurFilter, nerror::Error<String>> {
+    s.parse::<RecurFilter>().map_or(
+        Err(nom::Err::Error(nerror::Error::new(
             s.to_owned(),
             nerror::ErrorKind::Tag,
         ))),
-    }
+        |res| Ok(("", res)),
+    )
 }
 
 fn parse_bykey_value_pair(
     key: &str,
     values: &Vec<&str>,
-) -> IResult<&'static str, (Frequency, Vec<i32>), nerror::Error<String>> {
-    if let Ok((_, freq)) = parse_bykey_to_frequency(key) {
-        match freq {
-            Frequency::Daily => Ok((
+) -> IResult<&'static str, (RecurFilter, Vec<i32>), nerror::Error<String>> {
+    if let Ok((_, filter)) = parse_bykey_to_filter(key) {
+        match filter {
+            RecurFilter::ByDay => Ok((
                 "",
                 (
-                    freq,
+                    filter,
                     values
                         .into_iter()
                         .filter_map(|v| match v.to_lowercase().as_ref() {
@@ -409,7 +404,7 @@ fn parse_bykey_value_pair(
             _ => Ok((
                 "",
                 (
-                    freq,
+                    filter,
                     values
                         .into_iter()
                         .map(|v| v.parse::<i32>().unwrap())
@@ -469,7 +464,7 @@ impl FromStr for IcalRrule {
             .map(|v| v.first().unwrap().parse::<u32>().ok())
             .unwrap_or(None);
 
-        let rules: BTreeMap<Frequency, Vec<i32>> = key_map
+        let rules: BTreeMap<RecurFilter, Vec<i32>> = key_map
             .into_iter()
             .map(|(key, values)| parse_bykey_value_pair(key, values))
             .inspect(|res| {
