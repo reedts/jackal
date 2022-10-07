@@ -17,6 +17,7 @@ use crate::config::Config;
 use crate::provider::ical::EventBuilder;
 
 type InsertAction = fn(&mut EventBuilder, &str) -> ActionResult;
+#[allow(unused_variables)]
 const INSERT_ACTIONS: &'static [(&'static str, InsertAction)] = &[
     ("description", |b, v| {
         b.set_description(v.to_owned());
@@ -48,15 +49,15 @@ const INSERT_ACTIONS: &'static [(&'static str, InsertAction)] = &[
 
 pub struct InsertParser<'a> {
     context: &'a mut Context,
-    config: &'a Config,
+    _config: &'a Config,
     builder: EventBuilder,
 }
 
 impl<'a> InsertParser<'a> {
-    pub fn new(context: &'a mut Context, config: &'a Config, builder: EventBuilder) -> Self {
+    pub fn _new(context: &'a mut Context, config: &'a Config, builder: EventBuilder) -> Self {
         InsertParser {
             context,
-            config,
+            _config: config,
             builder,
         }
     }
@@ -73,7 +74,7 @@ impl<'a> InsertParser<'a> {
     }
 
     fn parse_line(&mut self, line: &str) -> Result<(), Error<String>> {
-        let (rest, found_key_values) = many1(Self::parse_key_value)(line)
+        let (_rest, _found_key_values) = many1(Self::parse_key_value)(line)
             .or_else(|_| Err(ParseError::from_error_kind(line.into(), ErrorKind::Many1)))?;
 
         Ok(())
@@ -95,7 +96,7 @@ impl Behavior for InsertParser<'_> {
                     if let Err(e) = res {
                         self.context.last_error_message = Some(format!("{}", e));
                     } else {
-                        let event = self.builder.finish();
+                        let _event = self.builder.finish();
                         // actually write & save event
                     }
 

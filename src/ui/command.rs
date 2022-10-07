@@ -14,7 +14,7 @@ use crate::config::Config;
 
 pub struct CommandParser<'a> {
     context: &'a mut Context,
-    config: &'a Config,
+    _config: &'a Config,
 }
 
 pub fn match_action<'a, 's, T: ?Sized, Act: 's>(
@@ -37,7 +37,10 @@ where
 
 impl<'a> CommandParser<'a> {
     pub fn new(context: &'a mut Context, config: &'a Config) -> Self {
-        CommandParser { context, config }
+        CommandParser {
+            context,
+            _config: config,
+        }
     }
 
     pub fn run_command(&mut self, cmd: &str) -> Result<(), Error<String>> {
@@ -62,7 +65,7 @@ impl<'a> CommandParser<'a> {
         let res = all_consuming(separated_pair(match_action(COMMANDS), space1, rest))(cmd);
 
         if let Ok((_, ((_, act), arg))) = res {
-            if let Action::Arg(a) = act {
+            if let Action::_Arg(a) = act {
                 return a(self.context, arg.to_owned());
             } else {
                 return Err(ParseError::from_error_kind(cmd.into(), ErrorKind::Tag));
@@ -73,7 +76,7 @@ impl<'a> CommandParser<'a> {
             .or_else(|_| Err(ParseError::from_error_kind(cmd.into(), ErrorKind::Tag)))?;
 
         match act {
-            Action::NoArg(a) => a(self.context),
+            Action::_NoArg(a) => a(self.context),
             Action::Repeatable(a) => a(self.context, 1),
             _ => Err(ParseError::from_error_kind(cmd.into(), ErrorKind::Tag)),
         }
@@ -112,8 +115,8 @@ impl Behavior for CommandParser<'_> {
 pub type ActionResult = Result<(), Error<String>>;
 
 pub enum Action {
-    Arg(fn(&mut Context, String) -> ActionResult),
-    NoArg(fn(&mut Context) -> ActionResult),
+    _Arg(fn(&mut Context, String) -> ActionResult),
+    _NoArg(fn(&mut Context) -> ActionResult),
     Repeatable(fn(&mut Context, u32) -> ActionResult),
 }
 

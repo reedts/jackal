@@ -48,7 +48,7 @@ pub struct EventBuilder {
 }
 
 impl EventBuilder {
-    pub fn new(path: &Path, start: DateTime<Tz>) -> Self {
+    pub fn _new(path: &Path, start: DateTime<Tz>) -> Self {
         EventBuilder {
             path: path.to_owned(),
             start,
@@ -66,37 +66,37 @@ impl EventBuilder {
         });
     }
 
-    pub fn with_description(mut self, summary: String) -> Self {
+    pub fn _with_description(mut self, summary: String) -> Self {
         self.set_description(summary);
         self
     }
 
-    pub fn set_start(&mut self, start: DateTime<Tz>) {
+    pub fn _set_start(&mut self, start: DateTime<Tz>) {
         self.start = start;
     }
 
-    pub fn with_start(mut self, start: DateTime<Tz>) -> Self {
-        self.set_start(start);
+    pub fn _with_start(mut self, start: DateTime<Tz>) -> Self {
+        self._set_start(start);
         self
     }
 
-    pub fn set_end(&mut self, end: DateTime<Tz>) {
+    pub fn _set_end(&mut self, end: DateTime<Tz>) {
         self.duration = None;
         self.end = Some(end);
     }
 
-    pub fn with_end(mut self, end: DateTime<Tz>) -> Self {
-        self.set_end(end);
+    pub fn _with_end(mut self, end: DateTime<Tz>) -> Self {
+        self._set_end(end);
         self
     }
 
-    pub fn set_duration(&mut self, duration: IcalDuration) {
+    pub fn _set_duration(&mut self, duration: IcalDuration) {
         self.end = None;
         self.duration = Some(duration);
     }
 
-    pub fn with_duration(mut self, duration: IcalDuration) -> Self {
-        self.set_duration(duration);
+    pub fn _with_duration(mut self, duration: IcalDuration) -> Self {
+        self._set_duration(duration);
         self
     }
 
@@ -108,7 +108,7 @@ impl EventBuilder {
         });
     }
 
-    pub fn with_location(mut self, location: String) -> Self {
+    pub fn _with_location(mut self, location: String) -> Self {
         self.set_location(location);
         self
     }

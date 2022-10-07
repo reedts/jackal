@@ -290,7 +290,6 @@ impl FromStr for IcalDateTime {
 impl<Tz: TimeZone> From<DateTime<Tz>> for IcalDateTime {
     fn from(dt: DateTime<Tz>) -> Self {
         let fixed_offset = dt.offset().fix();
-        let n_dt = dt.with_timezone(&fixed_offset);
 
         if fixed_offset.utc_minus_local() == 0 {
             IcalDateTime::Utc(dt.with_timezone(&Utc {}))
@@ -311,7 +310,7 @@ impl Default for IcalDateTime {
 }
 
 impl IcalDateTime {
-    pub fn is_date(&self) -> bool {
+    pub fn _is_date(&self) -> bool {
         use IcalDateTime::*;
         match *self {
             Date(_) => true,
@@ -337,7 +336,7 @@ impl IcalDateTime {
         }
     }
 
-    pub fn with_tz(self, tz: &chrono_tz::Tz) -> Self {
+    pub fn _with_tz(self, tz: &chrono_tz::Tz) -> Self {
         match self {
             IcalDateTime::Date(dt) => {
                 IcalDateTime::Local(tz.from_utc_datetime(&dt.and_hms(0, 0, 0)))
@@ -348,7 +347,7 @@ impl IcalDateTime {
         }
     }
 
-    pub fn and_duration(self, duration: chrono::Duration) -> Self {
+    pub fn _and_duration(self, duration: chrono::Duration) -> Self {
         match self {
             IcalDateTime::Date(dt) => IcalDateTime::Date(dt + duration),
             IcalDateTime::Floating(dt) => IcalDateTime::Floating(dt + duration),
@@ -360,7 +359,7 @@ impl IcalDateTime {
 
 #[derive(Clone)]
 pub struct Event {
-    path: PathBuf,
+    _path: PathBuf,
     occurrence: Occurrence<Tz>,
     ical: IcalCalendar,
     tz: Tz,
@@ -414,7 +413,7 @@ impl Event {
         let tz = occurrence.timezone();
 
         Ok(Event {
-            path: if path.is_file() {
+            _path: if path.is_file() {
                 path.to_owned()
             } else {
                 path.join(&uid.to_string()).with_extension(ICAL_FILE_EXT)
@@ -575,7 +574,7 @@ impl Event {
         // TODO: Check for exdate
 
         Ok(Event {
-            path: path.into(),
+            _path: path.into(),
             occurrence,
             ical,
             tz,
@@ -657,7 +656,7 @@ impl Eventlike for Event {
         &self.occurrence
     }
 
-    fn set_occurrence(&mut self, occurrence: Occurrence<Tz>) {
+    fn set_occurrence(&mut self, _occurrence: Occurrence<Tz>) {
         // TODO: implement
         unimplemented!()
     }
@@ -698,32 +697,32 @@ impl From<Event> for IcalCalendar {
 
 pub struct Calendar {
     path: PathBuf,
-    identifier: String,
+    _identifier: String,
     friendly_name: String,
     tz: Tz,
     events: BTreeMap<DateTime<Tz>, Vec<Rc<Event>>>,
 }
 
 impl Calendar {
-    pub fn new(path: &Path) -> Self {
+    pub fn _new(path: &Path) -> Self {
         let identifier = uuid::Uuid::new_v4().hyphenated();
         let friendly_name = identifier.clone();
 
         Self {
             path: path.to_owned(),
-            identifier: identifier.to_string(),
+            _identifier: identifier.to_string(),
             friendly_name: friendly_name.to_string(),
             tz: Tz::UTC,
             events: BTreeMap::new(),
         }
     }
 
-    pub fn new_with_name(path: &Path, name: String) -> Self {
+    pub fn _new_with_name(path: &Path, name: String) -> Self {
         let identifier = uuid::Uuid::new_v4().hyphenated();
 
         Self {
             path: path.to_owned(),
-            identifier: identifier.to_string(),
+            _identifier: identifier.to_string(),
             friendly_name: name,
             tz: Tz::UTC,
             events: BTreeMap::new(),
@@ -778,7 +777,7 @@ impl Calendar {
 
         Ok(Calendar {
             path: path.to_owned(),
-            identifier: path.file_stem().unwrap().to_string_lossy().to_string(),
+            _identifier: path.file_stem().unwrap().to_string_lossy().to_string(),
             friendly_name: String::default(),
             tz,
             events,
@@ -808,7 +807,7 @@ impl Calendarlike for Calendar {
         &self.tz
     }
 
-    fn set_tz(&mut self, tz: &Tz) {
+    fn set_tz(&mut self, _tz: &Tz) {
         unimplemented!();
     }
 

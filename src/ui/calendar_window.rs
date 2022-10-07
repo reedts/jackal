@@ -190,7 +190,7 @@ impl MonthIndex {
         MonthIndex { index, year }
     }
 
-    pub fn next(&self) -> Self {
+    pub fn _next(&self) -> Self {
         let next_month = self.index.succ();
 
         MonthIndex {
@@ -203,7 +203,7 @@ impl MonthIndex {
         }
     }
 
-    pub fn prev(&self) -> Self {
+    pub fn _prev(&self) -> Self {
         let prev_month = self.index.succ();
 
         MonthIndex {

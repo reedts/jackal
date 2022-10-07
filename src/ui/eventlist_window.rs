@@ -63,7 +63,7 @@ impl Widget for EventWindow<'_> {
         }
     }
 
-    fn draw(&self, mut window: unsegen::base::Window, hints: RenderingHints) {
+    fn draw(&self, mut window: unsegen::base::Window, _hints: RenderingHints) {
         let mut events = self
             .context
             .agenda()

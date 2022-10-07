@@ -89,12 +89,12 @@ impl Config {
         Ok(config)
     }
 
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn _save(&self) -> Result<(), Box<dyn std::error::Error>> {
         fs::write(&self.path, toml::to_string(&self)?)?;
         Ok(())
     }
 
-    pub fn collection_config_for(&self, id: &str) -> Option<&CollectionSpec> {
+    pub fn _collection_config_for(&self, id: &str) -> Option<&CollectionSpec> {
         self.collections.iter().find(|c| &c.name == id)
     }
 }

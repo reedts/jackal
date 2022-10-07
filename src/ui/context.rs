@@ -1,5 +1,4 @@
 use chrono::prelude::*;
-use num_traits::FromPrimitive;
 use std::collections::BTreeMap;
 
 use crate::agenda::Agenda;
@@ -72,30 +71,6 @@ impl Context {
             now: Local::now(),
         }
     }
-    pub fn with_today(mut self) -> Self {
-        self.select_today();
-        self
-    }
-
-    pub fn select_today(&mut self) {
-        self.cursor = Local::now();
-    }
-
-    pub fn selected_day(&self) -> u32 {
-        self.cursor.day()
-    }
-
-    pub fn selected_month(&self) -> Month {
-        Month::from_u32(self.cursor.month()).unwrap()
-    }
-
-    pub fn selected_year(&self) -> i32 {
-        self.cursor.year()
-    }
-
-    pub fn theme(&self) -> &Theme {
-        &self.theme
-    }
 
     pub fn input_sink(&self, mode: Mode) -> &PromptLine {
         self.input_sinks.get(&mode).unwrap()
@@ -122,17 +97,5 @@ impl Context {
 
     pub fn update(&mut self) {
         self.now = Local::now();
-    }
-
-    pub fn current_day(&self) -> u32 {
-        self.now().day()
-    }
-
-    pub fn current_month(&self) -> Month {
-        Month::from_u32(self.now().month()).unwrap()
-    }
-
-    pub fn current_year(&self) -> i32 {
-        self.now().year()
     }
 }

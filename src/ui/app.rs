@@ -78,7 +78,7 @@ impl<'a> App<'a> {
                         } else {
                             match self.context.mode {
                                 Mode::Normal => {
-                                    let leftover = input
+                                    let _leftover = input
                                         .chain((Key::Char('q'), || run = false))
                                         .chain((Key::Char(':'), || {
                                             self.context.mode = Mode::Command
@@ -132,7 +132,7 @@ impl<'a> App<'a> {
             // Draw
             let root = term.create_root_window();
 
-            let layout = self.as_widget().draw(root, RenderingHints::new());
+            let _ = self.as_widget().draw(root, RenderingHints::new());
 
             term.present();
         }

@@ -16,7 +16,7 @@ use crate::config::CalendarSpec;
 
 pub type Result<T> = std::result::Result<T, self::Error>;
 
-pub fn days_of_month(month: &Month, year: i32) -> u32 {
+pub fn _days_of_month(month: &Month, year: i32) -> u32 {
     if month.number_from_month() == 12 {
         NaiveDate::from_ymd(year + 1, 1, 1)
     } else {
@@ -30,7 +30,7 @@ pub fn days_of_month(month: &Month, year: i32) -> u32 {
     .num_days() as u32
 }
 
-pub fn days_of_year(year: i32) -> u32 {
+pub fn _days_of_year(year: i32) -> u32 {
     NaiveDate::from_ymd(year, 1, 1)
         .signed_duration_since(NaiveDate::from_ymd(year + 1, 1, 1))
         .num_days() as u32
@@ -221,7 +221,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
                 rrule_iter: None,
                 tz: self.timezone(),
             },
-            Recurring(ts, rrule) => OccurrenceIter {
+            Recurring(_, rrule) => OccurrenceIter {
                 start: None,
                 rrule_iter: Some(rrule.into_iter()),
                 tz: self.timezone(),
@@ -263,12 +263,12 @@ impl Default for EventFilter {
 }
 
 impl EventFilter {
-    pub fn from_datetime(mut self, date: Bound<NaiveDateTime>) -> Self {
+    pub fn _from_datetime(mut self, date: Bound<NaiveDateTime>) -> Self {
         self.begin = date;
         self
     }
 
-    pub fn to_datetime(mut self, date: Bound<NaiveDateTime>) -> Self {
+    pub fn _to_datetime(mut self, date: Bound<NaiveDateTime>) -> Self {
         self.end = date;
         self
     }
@@ -317,7 +317,7 @@ pub trait Collectionlike {
     fn new_calendar(&mut self);
 }
 
-pub fn load_collection(provider: &str, path: &Path) -> Result<impl Collectionlike> {
+pub fn _load_collection(provider: &str, path: &Path) -> Result<impl Collectionlike> {
     match provider {
         "ical" => ical::Collection::from_dir(path),
         _ => Err(Error::new(ErrorKind::CalendarParse, "No collection found")),
