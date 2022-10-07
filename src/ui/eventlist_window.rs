@@ -39,7 +39,7 @@ impl Display for Entry<'_> {
                 };
                 write!(f, "{}: {}", time, event.summary())
             }
-            Self::Time(dt) => write!(f, " -> {}", dt.time().format("%H:%M")),
+            Self::Time(dt) => f.pad(&format!("[{}]", dt.time().format("%H:%M"))),
             Self::Cursor(dt) => write!(f, " * {}", dt.time().format("%H:%M")),
         }
     }
@@ -79,6 +79,8 @@ impl Widget for EventWindow<'_> {
 
         events.sort_unstable_by_key(|entry| entry.datetime());
 
+        let width = window.get_width().raw_value() as usize;
+
         let mut cursor = Cursor::new(&mut window);
 
         // Only count the real events (no cursor/clock)
@@ -101,6 +103,14 @@ impl Widget for EventWindow<'_> {
                     cursor.set_style_modifier(saved_style);
                     idx += 1;
                 }
+                time @ Entry::Time(_) => {
+                    let save_style = cursor.get_style_modifier();
+
+                    cursor.apply_style_modifier(StyleModifier::new().fg_color(Color::LightRed));
+                    writeln!(&mut cursor, "{:─^width$}", time).unwrap();
+                    cursor.set_style_modifier(save_style);
+                }
+
                 entry => writeln!(&mut cursor, "{}", entry).unwrap(),
             }
         }
