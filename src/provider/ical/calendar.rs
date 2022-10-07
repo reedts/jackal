@@ -756,22 +756,25 @@ impl Calendar {
             })
             .filter_map(Result::ok);
 
-        for event in event_file_iter {
-            let event_rc = Rc::new(event);
-
-            event_rc
-                .occurrence()
-                .iter()
-                .take(30)
-                .for_each(|dt| events.entry(dt).or_default().push(Rc::clone(&event_rc)));
-        }
-
         // TODO: use `BTreeMap::first_entry` once it's stable: https://github.com/rust-lang/rust/issues/62924
         let tz = if let Some((_, event)) = events.iter().next() {
             *(event.first().unwrap().tz())
         } else {
             Tz::UTC
         };
+
+        let now = tz.from_utc_datetime(&Utc::now().naive_utc());
+
+        for event in event_file_iter {
+            let event_rc = Rc::new(event);
+
+            event_rc
+                .occurrence()
+                .iter()
+                .skip_while(|dt| dt < &(now - Duration::days(356)))
+                .take_while(|dt| dt <= &(now + Duration::days(356)))
+                .for_each(|dt| events.entry(dt).or_default().push(Rc::clone(&event_rc)));
+        }
 
         Ok(Calendar {
             path: path.to_owned(),
