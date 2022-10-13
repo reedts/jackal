@@ -1,36 +1,19 @@
-use chrono::{Date, DateTime, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use chrono_tz::Tz;
 use log;
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    character::complete::{char, digit1, one_of},
-    combinator::{all_consuming, map_res, opt},
-    sequence::{preceded, terminated, tuple},
-    IResult,
-};
-use rrule::RRule;
 use std::collections::BTreeMap;
-use std::convert::{From, TryFrom};
+use std::convert::{AsRef, From};
 use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
-use std::str::FromStr;
 
-use ::ical::parser::ical::IcalParser;
-use ::ical::parser::ical::{component::IcalCalendar, component::IcalEvent};
-use ::ical::parser::Component;
-use ::ical::property::Property;
-
-use uuid;
-
-use crate::config::CalendarSpec;
-use crate::provider::*;
+use crate::config::CalendarConfig;
+use crate::provider;
+use crate::provider::{CalendarMut, Eventlike, NewEvent, Occurrence, TimeSpan};
 
 use super::{
-    Error, ErrorKind, PropertyList, Result, ICAL_FILE_EXT, ISO8601_2004_LOCAL_FORMAT,
-    ISO8601_2004_LOCAL_FORMAT_DATE,
+    weekday_to_ical, Error, ErrorKind, PropertyList, Result, ICAL_FILE_EXT,
+    ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE,
 };
 
 #[derive(Default, Clone, PartialEq, PartialOrd, Eq, Ord)]
@@ -359,7 +342,7 @@ impl IcalDateTime {
 
 #[derive(Clone)]
 pub struct Event {
-    _path: PathBuf,
+    path: PathBuf,
     occurrence: Occurrence<Tz>,
     ical: IcalCalendar,
     tz: Tz,
@@ -395,6 +378,181 @@ impl Event {
             },
         ];
 
+        if let Tz::UTC = occurrence.timezone() {
+            ()
+        } else {
+            // push timezone information
+            let mut tz_spec = IcalTimeZone::new();
+            tz_spec.add_property(Property {
+                name: "TZID".to_owned(),
+                params: None,
+                value: Some(occurrence.begin().offset().tz_id().to_string()),
+            });
+
+            tz_spec.add_property(Property {
+                name: "TZNAME".to_owned(),
+                params: None,
+                value: Some(occurrence.begin().offset().abbreviation().to_string()),
+            });
+
+            let tz_info = tz::TimeZone::from_posix_tz(occurrence.begin().offset().tz_id())?;
+
+            if let Some(rule) = tz_info.as_ref().extra_rule() {
+                match rule {
+                    TransitionRule::Alternate(alt_time) => {
+                        let std_offset_min = alt_time.std().ut_offset() * 60;
+                        let dst_offset_min = alt_time.dst().ut_offset() * 60;
+                        let dst_start_day = alt_time.dst_start();
+                        let dst_end_day = alt_time.dst_end();
+
+                        // Transition for standard to dst timezone
+                        let mut std_to_dst = IcalTimeZoneTransition::new();
+                        std_to_dst.add_property(Property {
+                            name: "TZNAME".to_string(),
+                            params: None,
+                            value: Some(alt_time.std().time_zone_designation().to_string()),
+                        });
+                        std_to_dst.add_property(Property {
+                            name: "TZOFFSETFROM".to_string(),
+                            params: None,
+                            value: Some(format!("{:+05}", std_offset_min)),
+                        });
+                        std_to_dst.add_property(Property {
+                            name: "TZOFFSETTO".to_string(),
+                            params: None,
+                            value: Some(format!("{:+05}", dst_offset_min)),
+                        });
+                        // FIXME: this does not conform to RFC5545 and should be fixed
+                        // once we know how to correctly get DST start(/end)
+                        //
+                        // HERE BE DRAGONS!!!!
+                        let dtstart = match dst_start_day {
+                            RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month(
+                                1970,
+                                mwd.month().into(),
+                                Weekday::from_u8(mwd.week_day()).unwrap(),
+                                mwd.week(),
+                            ),
+                            RuleDay::Julian0WithLeap(days) => {
+                                NaiveDate::from_yo(1970, (days.get() + 1) as u32)
+                            }
+                            RuleDay::Julian1WithoutLeap(days) => {
+                                NaiveDate::from_yo(1970, days.get() as u32)
+                            }
+                        }
+                        .and_hms(2, 0, 0);
+
+                        let num_days_of_month = days_of_month(
+                            &Month::from_u32(dtstart.month()).unwrap(),
+                            dtstart.year(),
+                        );
+                        let day_occurrences_before = dtstart.day() % 7;
+                        let day_occurrences_after = (num_days_of_month - dtstart.day()) % 7;
+
+                        let offset: i32 = if day_occurrences_after == 0 {
+                            -1
+                        } else {
+                            day_occurrences_before as i32 + 1
+                        };
+
+                        std_to_dst.add_property(Property {
+                            name: "DTSTART".to_string(),
+                            params: None,
+                            value: Some(dtstart.format(ISO8601_2004_LOCAL_FORMAT).to_string()),
+                        });
+
+                        // We generate this RRULE by hand for now
+                        std_to_dst.add_property(Property {
+                            name: "RRULE".to_string(),
+                            params: None,
+                            value: Some(format!(
+                                "FREQ=YEARLY;BYMONTH={};BYDAY={:+1}{}",
+                                dtstart.month(),
+                                offset,
+                                weekday_to_ical(dtstart.weekday())
+                            )),
+                        });
+
+                        tz_spec.transitions.push(std_to_dst);
+
+                        // Transition for dst timezone back to standard
+                        let mut dst_to_std = IcalTimeZoneTransition::new();
+                        dst_to_std.add_property(Property {
+                            name: "TZNAME".to_string(),
+                            params: None,
+                            value: Some(alt_time.std().time_zone_designation().to_string()),
+                        });
+                        dst_to_std.add_property(Property {
+                            name: "TZOFFSETFROM".to_string(),
+                            params: None,
+                            value: Some(format!("{:+05}", dst_offset_min)),
+                        });
+                        dst_to_std.add_property(Property {
+                            name: "TZOFFSETTO".to_string(),
+                            params: None,
+                            value: Some(format!("{:+05}", std_offset_min)),
+                        });
+
+                        // FIXME: this does not conform to RFC5545 and should be fixed
+                        // once we know how to correctly get DST start(/end)
+                        //
+                        // HERE BE DRAGONS!!!!
+                        let dtstart = match dst_end_day {
+                            RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month(
+                                1970,
+                                mwd.month().into(),
+                                Weekday::from_u8(mwd.week_day()).unwrap(),
+                                mwd.week(),
+                            ),
+                            RuleDay::Julian0WithLeap(days) => {
+                                NaiveDate::from_yo(1970, (days.get() + 1) as u32)
+                            }
+                            RuleDay::Julian1WithoutLeap(days) => {
+                                NaiveDate::from_yo(1970, days.get() as u32)
+                            }
+                        }
+                        .and_hms(3, 0, 0);
+
+                        let num_days_of_month = days_of_month(
+                            &Month::from_u32(dtstart.month()).unwrap(),
+                            dtstart.year(),
+                        );
+                        let day_occurrences_before = dtstart.day() % 7;
+                        let day_occurrences_after = (num_days_of_month - dtstart.day()) % 7;
+
+                        let offset: i32 = if day_occurrences_after == 0 {
+                            -1
+                        } else {
+                            day_occurrences_before as i32 + 1
+                        };
+
+                        dst_to_std.add_property(Property {
+                            name: "DTSTART".to_string(),
+                            params: None,
+                            value: Some(dtstart.format(ISO8601_2004_LOCAL_FORMAT).to_string()),
+                        });
+
+                        // We generate this RRULE by hand for now
+                        dst_to_std.add_property(Property {
+                            name: "RRULE".to_string(),
+                            params: None,
+                            value: Some(format!(
+                                "FREQ=YEARLY;BYMONTH={};BYDAY={:+1}{}",
+                                dtstart.month(),
+                                offset,
+                                weekday_to_ical(dtstart.weekday())
+                            )),
+                        });
+
+                        tz_spec.transitions.push(dst_to_std);
+                    }
+                    _ => (),
+                }
+            }
+
+            ical_calendar.timezones.push(tz_spec);
+        }
+
         let mut ical_event = IcalEvent::new();
         ical_event.properties = vec![
             Property {
@@ -413,7 +571,7 @@ impl Event {
         let tz = occurrence.timezone();
 
         Ok(Event {
-            _path: if path.is_file() {
+            path: if path.is_file() {
                 path.to_owned()
             } else {
                 path.join(&uid.to_string()).with_extension(ICAL_FILE_EXT)
@@ -571,10 +729,11 @@ impl Event {
             }
         }
 
+        // TODO: VTIMEZONE
         // TODO: Check for exdate
 
         Ok(Event {
-            _path: path.into(),
+            path: path.into(),
             occurrence,
             ical,
             tz,
@@ -616,6 +775,10 @@ impl Event {
                 value: Some(summary.to_owned()),
             });
         }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     pub fn ical_event(&self) -> &IcalEvent {
@@ -854,97 +1017,167 @@ impl Calendarlike for Calendar {
                 .flat_map(|(e, v)| v.iter().map(move |ev| (e, ev.as_ref() as &dyn Eventlike))),
         )
     }
+}
 
-    fn new_event(&mut self) {
+impl EventExt for Calendar {
+    fn add_event(&mut self, new_event: NewEvent<Tz>) -> Result<()> {
+        let mut occurrence = if let Some(end) = new_event.end {
+            Occurrence::Onetime(TimeSpan::from_start_and_end(new_event.begin, end))
+        } else if let Some(duration) = new_event.duration {
+            Occurrence::Onetime(TimeSpan::from_start_and_duration(new_event.begin, duration))
+        } else {
+            Occurrence::Onetime(TimeSpan::from_start(new_event.begin))
+        };
+
+        if let Some(rrule) = new_event.rrule {
+            occurrence = occurrence.recurring(
+                rrule.build(
+                    new_event
+                        .begin
+                        .with_timezone(&rrule::Tz::Tz(new_event.begin.timezone())),
+                )?,
+            );
+        }
+
+        let mut event = Rc::new(Event::new(&self.path, occurrence)?);
+
+        if let Some(title) = new_event.title {
+            Rc::get_mut(&mut event).unwrap().set_title(title.as_ref());
+        }
+
+        if let Some(description) = new_event.description {
+            Rc::get_mut(&mut event)
+                .unwrap()
+                .set_summary(description.as_ref());
+        }
+
+        // TODO: serde
+        // let mut file = fs::File::create(event.path())?;
+        // write!(&mut file, "{}", event.ical);
+        log::info!("{:?}", event.ical);
+
+        let now = self.tz.from_utc_datetime(&Utc::now().naive_utc());
+
+        event
+            .occurrence()
+            .iter()
+            .skip_while(|dt| dt < &(now - Duration::days(356)))
+            .take_while(|dt| dt <= &(now + Duration::days(356)))
+            .for_each(|dt| self.events.entry(dt).or_default().push(Rc::clone(&event)));
+
+        Ok(())
+    }
+}
+
+impl ExtCalendar for Calendar {}
+
+pub type Calendar = provider::Calendar<Event>;
+
+pub fn from_dir(path: &Path, config: &CalendarConfig) -> Result<Calendar> {
+    let mut events = BTreeMap::<DateTime<Tz>, Vec<Rc<Event>>>::new();
+
+    if !path.is_dir() {
+        return Err(Error::new(
+            ErrorKind::CalendarParse,
+            &format!("'{}' is not a directory", path.display()),
+        ));
+    }
+
+    let event_file_iter = fs::read_dir(&path)?
+        .map(|dir| {
+            dir.map_or_else(
+                |_| -> Result<_> { Err(Error::from(ErrorKind::CalendarParse)) },
+                |file: fs::DirEntry| -> Result<Event> { Event::from_file(file.path().as_path()) },
+            )
+        })
+        .inspect(|res| {
+            if let Err(err) = res {
+                log::warn!("{}", err)
+            }
+        })
+        .filter_map(Result::ok);
+
+    // TODO: use `BTreeMap::first_entry` once it's stable: https://github.com/rust-lang/rust/issues/62924
+    let tz = if let Some((_, event)) = events.iter().next() {
+        *(event.first().unwrap().tz())
+    } else {
+        Tz::UTC
+    };
+
+    let now = tz.from_utc_datetime(&Utc::now().naive_utc());
+
+    for event in event_file_iter {
+        let event_rc = Rc::new(event);
+
+        event_rc
+            .occurrence()
+            .iter()
+            .skip_while(|dt| dt < &(now - Duration::days(356)))
+            .take_while(|dt| dt <= &(now + Duration::days(356)))
+            .for_each(|dt| events.entry(dt).or_default().push(Rc::clone(&event_rc)));
+    }
+
+    Ok(Calendar {
+        path: path.to_owned(),
+        _identifier: config.id.clone(),
+        friendly_name: config.name.clone(),
+        tz,
+        events,
+    })
+}
+
+impl CalendarMut for Calendar {
+    fn add_event(&mut self, new_event: NewEvent<Tz>) -> Result<()> {
+        let mut occurrence = if let Some(end) = new_event.end {
+            Occurrence::Onetime(TimeSpan::from_start_and_end(new_event.begin, end))
+        } else if let Some(duration) = new_event.duration {
+            Occurrence::Onetime(TimeSpan::from_start_and_duration(new_event.begin, duration))
+        } else {
+            Occurrence::Onetime(TimeSpan::from_start(new_event.begin))
+        };
+
+        if let Some(rrule) = new_event.rrule {
+            occurrence = occurrence.recurring(
+                rrule.build(
+                    new_event
+                        .begin
+                        .with_timezone(&rrule::Tz::Tz(new_event.begin.timezone())),
+                )?,
+            );
+        }
+
+        let mut event = Rc::new(Event::new(&self.path, occurrence)?);
+
+        if let Some(title) = new_event.title {
+            Rc::get_mut(&mut event).unwrap().set_title(title.as_ref());
+        }
+
+        if let Some(description) = new_event.description {
+            Rc::get_mut(&mut event)
+                .unwrap()
+                .set_summary(description.as_ref());
+        }
+
+        // TODO: serde
+        // let mut file = fs::File::create(event.path())?;
+        // write!(&mut file, "{}", event.ical);
+        log::info!("{:?}", event.as_ical());
+
+        let now = self.tz.from_utc_datetime(&Utc::now().naive_utc());
+
+        event
+            .occurrence()
+            .iter()
+            .skip_while(|dt| dt < &(now - Duration::days(356)))
+            .take_while(|dt| dt <= &(now + Duration::days(356)))
+            .for_each(|dt| self.events.entry(dt).or_default().push(Rc::clone(&event)));
+
+        Ok(())
+    }
+
+    fn events_mut<'a>(
+        &'a mut self,
+    ) -> provider::EventIter<'a, <Self as provider::Calendarlike>::Event> {
         unimplemented!()
-    }
-}
-
-pub struct Collection {
-    path: PathBuf,
-    friendly_name: String,
-    calendars: Vec<Calendar>,
-}
-
-impl Collection {
-    pub fn from_dir(path: &Path) -> Result<Self> {
-        if !path.is_dir() {
-            return Err(Error::new(
-                ErrorKind::CalendarParse,
-                &format!("'{}' is not a directory", path.display()),
-            ));
-        }
-
-        let calendars: Vec<Calendar> = fs::read_dir(&path)?
-            .map(|dir| {
-                dir.map_or_else(
-                    |_| -> Result<_> { Err(Error::from(io::ErrorKind::InvalidData)) },
-                    |file: fs::DirEntry| -> Result<Calendar> {
-                        Calendar::from_dir(file.path().as_path())
-                    },
-                )
-            })
-            .inspect(|res| {
-                if let Err(err) = res {
-                    log::warn!("{}", err)
-                }
-            })
-            .filter_map(Result::ok)
-            .collect();
-
-        Ok(Collection {
-            path: path.to_owned(),
-            friendly_name: path.file_stem().unwrap().to_string_lossy().to_string(),
-            calendars,
-        })
-    }
-
-    pub fn calendars_from_dir(path: &Path, calendar_specs: &[CalendarSpec]) -> Result<Self> {
-        if !path.is_dir() {
-            return Err(Error::new(
-                ErrorKind::CalendarParse,
-                &format!("'{}' is not a directory", path.display()),
-            ));
-        }
-
-        if calendar_specs.is_empty() {
-            return Self::from_dir(path);
-        }
-
-        let calendars: Vec<Calendar> = calendar_specs
-            .into_iter()
-            .filter_map(|spec| match Calendar::from_dir(&path.join(&spec.id)) {
-                Ok(calendar) => Some(calendar.with_name(spec.name.clone())),
-                Err(_) => None,
-            })
-            .collect();
-
-        Ok(Collection {
-            path: path.to_owned(),
-            friendly_name: path.file_stem().unwrap().to_string_lossy().to_string(),
-            calendars,
-        })
-    }
-}
-
-impl Collectionlike for Collection {
-    fn name(&self) -> &str {
-        &self.friendly_name
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn calendar_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Calendarlike + 'a)> + 'a> {
-        Box::new(self.calendars.iter().map(|c| c as &dyn Calendarlike))
-    }
-
-    fn event_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a> {
-        Box::new(self.calendars.iter().flat_map(|c| c.event_iter()))
-    }
-
-    fn new_calendar(&mut self) {
-        unimplemented!();
     }
 }

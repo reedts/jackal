@@ -1,252 +1,22 @@
-use chrono::{Date, DateTime, Duration, Month, NaiveDate, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Duration, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
-use rrule::{RRuleSet, RRuleSetIter};
-use std::convert::From;
+use rrule::RRule;
 use std::default::Default;
 use std::ops::{Bound, RangeBounds};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+pub mod calendar;
+pub mod datetime;
 pub mod error;
+
 pub mod ical;
 
+pub use calendar::*;
+pub use datetime::*;
 pub use error::*;
 
-use crate::config::CalendarSpec;
-
 pub type Result<T> = std::result::Result<T, self::Error>;
-
-pub fn _days_of_month(month: &Month, year: i32) -> u32 {
-    if month.number_from_month() == 12 {
-        NaiveDate::from_ymd(year + 1, 1, 1)
-    } else {
-        NaiveDate::from_ymd(year, month.number_from_month() as u32 + 1, 1)
-    }
-    .signed_duration_since(NaiveDate::from_ymd(
-        year,
-        month.number_from_month() as u32,
-        1,
-    ))
-    .num_days() as u32
-}
-
-pub fn _days_of_year(year: i32) -> u32 {
-    NaiveDate::from_ymd(year, 1, 1)
-        .signed_duration_since(NaiveDate::from_ymd(year + 1, 1, 1))
-        .num_days() as u32
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub enum TimeSpan<Tz: TimeZone> {
-    Allday(Date<Tz>, Option<Date<Tz>>),
-    TimePoints(DateTime<Tz>, DateTime<Tz>),
-    Duration(DateTime<Tz>, Duration),
-    Instant(DateTime<Tz>),
-}
-
-impl<Tz: TimeZone> TimeSpan<Tz> {
-    pub fn from_start_and_end(begin: DateTime<Tz>, end: DateTime<Tz>) -> Self {
-        TimeSpan::TimePoints(begin, end)
-    }
-
-    pub fn from_start_and_duration(begin: DateTime<Tz>, end: Duration) -> Self {
-        TimeSpan::Duration(begin, end)
-    }
-
-    pub fn from_start(begin: DateTime<Tz>) -> Self {
-        TimeSpan::Instant(begin)
-    }
-
-    pub fn allday(date: Date<Tz>) -> Self {
-        TimeSpan::Allday(date, None)
-    }
-
-    pub fn allday_until(begin: Date<Tz>, end: Date<Tz>) -> Self {
-        TimeSpan::Allday(begin, Some(end))
-    }
-
-    pub fn is_allday(&self) -> bool {
-        matches!(self, TimeSpan::Allday(_, _))
-    }
-
-    pub fn is_instant(&self) -> bool {
-        matches!(self, TimeSpan::Instant(_))
-    }
-
-    pub fn begin(&self) -> DateTime<Tz> {
-        match &self {
-            TimeSpan::Allday(begin, _) => begin.and_hms(0, 0, 0),
-            TimeSpan::TimePoints(begin, _) => begin.clone(),
-            TimeSpan::Duration(begin, _) => begin.clone(),
-            TimeSpan::Instant(begin) => begin.clone(),
-        }
-    }
-
-    pub fn end(&self) -> DateTime<Tz> {
-        match &self {
-            TimeSpan::Allday(begin, end) => end.as_ref().unwrap_or(&begin).and_hms(23, 59, 59),
-            TimeSpan::TimePoints(_, end) => end.clone(),
-            TimeSpan::Duration(begin, dur) => begin.clone() + dur.clone(),
-            TimeSpan::Instant(end) => end.clone(),
-        }
-    }
-
-    pub fn duration(&self) -> Duration {
-        match &self {
-            TimeSpan::Allday(begin, end) => end
-                .as_ref()
-                .map_or(Duration::hours(24), |e| e.clone() - begin.clone()),
-            TimeSpan::TimePoints(start, end) => end.clone() - start.clone(),
-            TimeSpan::Duration(_, dur) => dur.clone(),
-            TimeSpan::Instant(_) => chrono::Duration::seconds(0),
-        }
-    }
-
-    pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> TimeSpan<Tz2> {
-        match self {
-            TimeSpan::Allday(begin, end) => {
-                TimeSpan::<Tz2>::Allday(begin.with_timezone(tz), end.map(|e| e.with_timezone(tz)))
-            }
-            TimeSpan::TimePoints(begin, end) => {
-                TimeSpan::<Tz2>::TimePoints(begin.with_timezone(tz), end.with_timezone(tz))
-            }
-            TimeSpan::Duration(begin, dur) => {
-                TimeSpan::<Tz2>::Duration(begin.with_timezone(tz), dur)
-            }
-            TimeSpan::Instant(begin) => TimeSpan::<Tz2>::Instant(begin.with_timezone(tz)),
-        }
-    }
-}
-
-impl<Tz: TimeZone> From<TimeSpan<Tz>> for Duration {
-    fn from(timespan: TimeSpan<Tz>) -> Self {
-        timespan.duration()
-    }
-}
-
-#[derive(Clone)]
-pub enum Occurrence<Tz: TimeZone> {
-    Onetime(TimeSpan<Tz>),
-    Recurring(TimeSpan<Tz>, RRuleSet),
-}
-
-impl<Tz: TimeZone> Occurrence<Tz> {
-    pub fn is_allday(&self) -> bool {
-        use Occurrence::*;
-        match self {
-            Onetime(ts) => ts.is_allday(),
-            Recurring(ts, _) => ts.is_allday(),
-        }
-    }
-
-    pub fn is_onetime(&self) -> bool {
-        use Occurrence::*;
-        matches!(self, Onetime(_))
-    }
-
-    pub fn is_recurring(&self) -> bool {
-        use Occurrence::*;
-        matches!(self, Recurring(_, _))
-    }
-
-    pub fn as_date(&self) -> NaiveDate {
-        use Occurrence::*;
-        match self {
-            Onetime(ts) => ts.begin().date_naive(),
-            Recurring(ts, _) => ts.begin().date_naive(),
-        }
-    }
-
-    pub fn as_datetime(&self) -> DateTime<Tz> {
-        use Occurrence::*;
-        match self {
-            Onetime(ts) => ts.begin(),
-            Recurring(ts, _) => ts.begin(),
-        }
-    }
-
-    pub fn begin(&self) -> DateTime<Tz> {
-        use Occurrence::*;
-        match self {
-            Onetime(ts) => ts.begin(),
-            Recurring(ts, _) => ts.begin(),
-        }
-    }
-
-    pub fn end(&self) -> DateTime<Tz> {
-        use Occurrence::*;
-        match self {
-            Onetime(ts) => ts.end(),
-            Recurring(ts, _) => ts.end(),
-        }
-    }
-
-    pub fn duration(&self) -> Duration {
-        use Occurrence::*;
-        match self {
-            Onetime(ts) => ts.duration(),
-            Recurring(ts, _) => ts.duration(),
-        }
-    }
-
-    pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> Occurrence<Tz2> {
-        use Occurrence::*;
-        match self {
-            Onetime(ts) => Occurrence::<Tz2>::Onetime(ts.with_tz(tz)),
-            Recurring(ts, rrule) => Occurrence::<Tz2>::Recurring(ts.with_tz(tz), rrule),
-        }
-    }
-
-    pub fn recurring(self, rule: RRuleSet) -> Self {
-        use Occurrence::*;
-        match self {
-            Onetime(ts) => Occurrence::Recurring(ts, rule),
-            Recurring(ts, _) => Occurrence::Recurring(ts, rule),
-        }
-    }
-
-    pub fn timezone(&self) -> Tz {
-        use Occurrence::*;
-        match self {
-            Onetime(ts) => ts.begin().timezone(),
-            Recurring(ts, _) => ts.begin().timezone(),
-        }
-    }
-
-    pub fn iter<'a>(&'a self) -> OccurrenceIter<'a, Tz> {
-        use Occurrence::*;
-        match self {
-            Onetime(ts) => OccurrenceIter {
-                start: Some(ts.begin()),
-                rrule_iter: None,
-                tz: self.timezone(),
-            },
-            Recurring(_, rrule) => OccurrenceIter {
-                start: None,
-                rrule_iter: Some(rrule.into_iter()),
-                tz: self.timezone(),
-            },
-        }
-    }
-}
-
-pub struct OccurrenceIter<'a, Tz: TimeZone> {
-    start: Option<DateTime<Tz>>,
-    rrule_iter: Option<RRuleSetIter<'a>>,
-    tz: Tz,
-}
-
-impl<Tz: TimeZone> Iterator for OccurrenceIter<'_, Tz> {
-    type Item = DateTime<Tz>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(it) = &mut self.rrule_iter {
-            it.next().map(|dt| dt.with_timezone(&self.tz))
-        } else {
-            self.start.take()
-        }
-    }
-}
 
 pub struct EventFilter {
     pub begin: Bound<NaiveDateTime>,
@@ -281,6 +51,56 @@ impl EventFilter {
     }
 }
 
+pub struct NewEvent<Tz: TimeZone> {
+    pub begin: DateTime<Tz>,
+    pub tz: Tz,
+    pub end: Option<DateTime<Tz>>,
+    pub duration: Option<Duration>,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub rrule: Option<RRule<rrule::Unvalidated>>,
+}
+
+impl<Tz: TimeZone> NewEvent<Tz> {
+    pub fn new(begin: DateTime<Tz>) -> NewEvent<Tz> {
+        let tz = begin.timezone();
+        NewEvent {
+            begin,
+            tz,
+            end: None,
+            duration: None,
+            title: None,
+            description: None,
+            rrule: None,
+        }
+    }
+    pub fn set_title(&mut self, title: &str) {
+        self.title = Some(title.to_string());
+    }
+
+    pub fn set_description(&mut self, description: &str) {
+        self.description = Some(description.to_string());
+    }
+
+    pub fn set_begin(&mut self, begin: NaiveDateTime) {
+        self.begin = self.tz.from_local_datetime(&begin).earliest().unwrap();
+    }
+
+    pub fn _set_end(&mut self, end: NaiveDateTime) {
+        self.end = Some(self.tz.from_local_datetime(&end).earliest().unwrap());
+        self.duration = None;
+    }
+
+    pub fn _set_duration(&mut self, duration: Duration) {
+        self.duration = Some(duration);
+        self.end = None;
+    }
+
+    pub fn _set_repeat(&mut self, freq: rrule::Frequency, interval: u16) {
+        self.rrule = Some(RRule::new(freq).interval(interval));
+    }
+}
+
 pub trait Eventlike {
     fn title(&self) -> &str;
     fn set_title(&mut self, title: &str);
@@ -297,7 +117,19 @@ pub trait Eventlike {
     fn duration(&self) -> Duration;
 }
 
+pub struct EventIter<'a, E: Eventlike> {
+    inner: Box<dyn Iterator<Item = &'a E> + 'a>,
+}
+
+impl<'a, E: Eventlike> Iterator for EventIter<'a, E> {
+    type Item = &'a E;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+}
+
 pub trait Calendarlike {
+    type Event: Eventlike;
     fn name(&self) -> &str;
     fn path(&self) -> &Path;
     fn tz(&self) -> &Tz;
@@ -310,28 +142,65 @@ pub trait Calendarlike {
     fn new_event(&mut self);
 }
 
-pub trait Collectionlike {
-    fn name(&self) -> &str;
-    fn path(&self) -> &Path;
-    fn calendar_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Calendarlike + 'a)> + 'a>;
-    fn event_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a>;
-    fn new_calendar(&mut self);
+pub trait CalendarMut: Calendarlike {
+    fn events_mut<'a>(&'a mut self) -> EventIter<'a, <Self as Calendarlike>::Event>;
+    fn add_event(&mut self, event: NewEvent<Tz>) -> Result<()>;
 }
 
-pub fn _load_collection(provider: &str, path: &Path) -> Result<impl Collectionlike> {
-    match provider {
-        "ical" => ical::Collection::from_dir(path),
-        _ => Err(Error::new(ErrorKind::CalendarParse, "No collection found")),
+pub struct CalendarIter<'a, C: Calendarlike> {
+    inner: std::slice::Iter<'a, C>,
+}
+
+impl<'a, C: Calendarlike> Iterator for CalendarIter<'a, C> {
+    type Item = <std::slice::Iter<'a, C> as Iterator>::Item;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
     }
 }
 
-pub fn load_collection_with_calendars(
-    provider: &str,
-    path: &Path,
-    calendar_specs: &[CalendarSpec],
-) -> Result<impl Collectionlike> {
-    match provider {
-        "ical" => ical::Collection::calendars_from_dir(path, calendar_specs),
-        _ => Err(Error::new(ErrorKind::CalendarParse, "No collection found")),
+pub struct CalendarIterMut<'a, C: CalendarMut> {
+    inner: std::slice::IterMut<'a, C>,
+}
+
+impl<'a, C: CalendarMut> Iterator for CalendarIterMut<'a, C> {
+    type Item = <std::slice::IterMut<'a, C> as Iterator>::Item;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+}
+
+pub struct Collection<C: Calendarlike + CalendarMut> {
+    _name: String,
+    _path: PathBuf,
+    calendars: Vec<C>,
+}
+
+impl<C: Calendarlike + CalendarMut> Collection<C> {
+    pub fn _name(&self) -> &str {
+        &self._name
+    }
+
+    pub fn _path(&self) -> &Path {
+        &self._path
+    }
+
+    pub fn calendars<'a>(&'a self) -> CalendarIter<'a, C> {
+        CalendarIter {
+            inner: self.calendars.iter(),
+        }
+    }
+
+    pub fn calendars_mut<'a>(&'a mut self) -> CalendarIterMut<'a, C> {
+        CalendarIterMut {
+            inner: self.calendars.iter_mut(),
+        }
+    }
+
+    pub fn _events<'a>(&'a self) -> EventIter<'a, C::Event> {
+        unimplemented!()
+    }
+
+    pub fn _new_calendar(&mut self) {
+        unimplemented!()
     }
 }

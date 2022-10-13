@@ -34,17 +34,17 @@ fn find_configfile() -> io::Result<PathBuf> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CalendarSpec {
+pub struct CalendarConfig {
     pub id: String,
     pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CollectionSpec {
+pub struct CollectionConfig {
     pub name: String,
     pub provider: String,
     pub path: PathBuf,
-    pub calendars: Vec<CalendarSpec>,
+    pub calendars: Vec<CalendarConfig>,
 }
 
 fn default_tick_rate() -> Duration {
@@ -105,18 +105,13 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn load(path: &Path) -> Result<Config, Box<dyn std::error::Error>> {
+    pub fn read(path: &Path) -> Result<Config, Box<dyn std::error::Error>> {
         let mut config: Config = toml::from_str(&fs::read_to_string(path)?)?;
         config.path = path.to_owned();
         Ok(config)
     }
 
-    pub fn _save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        fs::write(&self.path, toml::to_string(&self)?)?;
-        Ok(())
-    }
-
-    pub fn _collection_config_for(&self, id: &str) -> Option<&CollectionSpec> {
+    pub fn _collection_config_for(&self, id: &str) -> Option<&CollectionConfig> {
         self.collections.iter().find(|c| &c.name == id)
     }
 }

@@ -83,6 +83,10 @@ impl Context {
         &self.agenda
     }
 
+    pub fn agenda_mut(&mut self) -> &mut Agenda {
+        &mut self.agenda
+    }
+
     pub fn now(&self) -> &DateTime<Local> {
         &self.now
     }

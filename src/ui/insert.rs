@@ -1,83 +1,123 @@
-use unsegen::input::*;
-
+use chrono::NaiveDateTime;
+use chrono_tz::Tz;
 use nom::{
     branch::alt,
     bytes::complete::take_until1,
-    character::complete::{char, space1},
+    character::complete::{alpha1, alphanumeric1, char, space0},
+    combinator::{all_consuming, rest},
     error::*,
     multi::many1,
-    sequence::{delimited, separated_pair, terminated},
+    sequence::{delimited, separated_pair},
     IResult,
 };
+use phf::phf_map;
+use unsegen::input::*;
 
 use super::command::ActionResult;
 use super::context::Context;
-use super::match_action;
 use crate::config::Config;
-use crate::provider::ical::EventBuilder;
+use crate::provider::NewEvent;
 
-type InsertAction = fn(&mut EventBuilder, &str) -> ActionResult;
-#[allow(unused_variables)]
-const INSERT_ACTIONS: &'static [(&'static str, InsertAction)] = &[
-    ("description", |b, v| {
-        b.set_description(v.to_owned());
+type InsertAction = fn(&mut NewEvent<Tz>, &str) -> ActionResult;
+
+const DATETIME_FORMAT: &'static str = "%Y-%m-%dT%H:%M";
+
+const INSERT_ACTIONS: phf::Map<&'static str, InsertAction> = phf_map! {
+    "title" => |b, v| {
+        b.set_title(v);
         Ok(())
-    }),
-    ("begin", |b, v| {
-        // let start = IcalDateTime::from_str(v)
-        //     .or_else(|_| Err(ParseError::from_error_kind(v.into(), ErrorKind::Tag)))?;
-        // b.set_start(start);
+    },
+    "description" => |b, v| {
+        b.set_description(v);
         Ok(())
-    }),
-    ("duration", |b, v| {
+    },
+    "begin" => |b, v| {
+        let dt = NaiveDateTime::parse_from_str(v, DATETIME_FORMAT).or_else(|_| Err(nom::error::ParseError::from_error_kind(v.to_string(), nom::error::ErrorKind::Tag)))?;
+        b.set_begin(dt);
+        Ok(())
+    },
+    "duration" => |_b, _v| {
         // let duration = Duration::from_str(v)
         //     .or_else(|_| Err(ParseError::from_error_kind(v.into(), ErrorKind::Tag)))?;
         // b.set_duration(duration);
         Ok(())
-    }),
-    ("end", |b, v| {
-        // let end = IcalDateTime::from_str(v)
-        //     .or_else(|_| Err(ParseError::from_error_kind(v.into(), ErrorKind::Tag)))?;
-        // b.set_end(end);
+    },
+    "end" => |b, v| {
+        let dt = NaiveDateTime::parse_from_str(v, DATETIME_FORMAT).or_else(|_| Err(nom::error::ParseError::from_error_kind(v.to_string(), nom::error::ErrorKind::Tag)))?;
+        b.set_begin(dt);
         Ok(())
-    }),
-    ("location", |b, v| {
-        b.set_location(v.to_owned());
-        Ok(())
-    }),
-];
+    },
+};
 
 pub struct InsertParser<'a> {
     context: &'a mut Context,
     _config: &'a Config,
-    builder: EventBuilder,
+    new_event: Option<NewEvent<Tz>>,
 }
 
 impl<'a> InsertParser<'a> {
-    pub fn _new(context: &'a mut Context, config: &'a Config, builder: EventBuilder) -> Self {
+    pub fn new(context: &'a mut Context, config: &'a Config, new_event: NewEvent<Tz>) -> Self {
         InsertParser {
             context,
             _config: config,
-            builder,
+            new_event: Some(new_event),
         }
     }
 
     fn parse_key_value(key_value: &str) -> IResult<&str, ((&str, &InsertAction), &str)> {
-        separated_pair(
-            match_action(INSERT_ACTIONS),
+        let (rest, (key, value)) = separated_pair(
+            alpha1,
             char(':'),
             alt((
-                terminated(take_until1(" "), space1),
-                delimited(char('"'), take_until1("\""), char('"')),
+                take_until1(" "),
+                delimited(char('"'), alphanumeric1, char('"')),
+                rest,
             )),
-        )(key_value)
+        )(key_value)?;
+
+        let action = INSERT_ACTIONS.get(key);
+
+        if let Some(action) = action {
+            Ok((rest, ((key, action), value)))
+        } else {
+            Err(nom::Err::Error(nom::error::Error::from_error_kind(
+                key,
+                nom::error::ErrorKind::Tag,
+            )))
+        }
     }
 
     fn parse_line(&mut self, line: &str) -> Result<(), Error<String>> {
-        let (_rest, _found_key_values) = many1(Self::parse_key_value)(line)
+        let (rest, found_key_values) = many1(Self::parse_key_value)(line)
             .or_else(|_| Err(ParseError::from_error_kind(line.into(), ErrorKind::Many1)))?;
 
-        Ok(())
+        for ((_, action), input) in found_key_values.into_iter() {
+            action(self.new_event.as_mut().unwrap(), input)?;
+        }
+
+        let (_, name): (&str, &str) = all_consuming(delimited(space0, alphanumeric1, space0))(rest)
+            .or_else(|_: nom::Err<nom::error::Error<&str>>| {
+                Err(ParseError::from_error_kind(
+                    rest.to_string(),
+                    ErrorKind::Tag,
+                ))
+            })?;
+
+        if let Some(calendar) = self.context.agenda_mut().calendar_by_name_mut(name) {
+            calendar
+                .add_event(self.new_event.take().unwrap())
+                .or_else(|_| {
+                    Err(ParseError::from_error_kind(
+                        name.to_string(),
+                        ErrorKind::Verify,
+                    ))
+                })
+        } else {
+            Err(ParseError::from_error_kind(
+                name.to_string(),
+                ErrorKind::Tag,
+            ))
+        }
     }
 }
 
@@ -95,8 +135,8 @@ impl Behavior for InsertParser<'_> {
                     let res = self.parse_line(&line);
                     if let Err(e) = res {
                         self.context.last_error_message = Some(format!("{}", e));
+                        log::error!("{}", e);
                     } else {
-                        let _event = self.builder.finish();
                         // actually write & save event
                     }
 

@@ -4,6 +4,7 @@ use std::convert::From;
 use std::error;
 use std::fmt;
 use std::io;
+use tz::error::TzError;
 
 #[derive(Debug)]
 pub struct Error {
@@ -60,6 +61,18 @@ impl From<chrono::ParseError> for Error {
             ErrorKind::TimeParse,
             format!("Could not parse timestamp: {}", parse_error).as_str(),
         )
+    }
+}
+
+impl From<TzError> for Error {
+    fn from(tz_error: TzError) -> Self {
+        match tz_error {
+            TzError::IoError(err) => {
+                let message = &err.to_string();
+                Error::new(ErrorKind::IOError(err), message.as_ref())
+            }
+            e @ _ => Error::new(ErrorKind::DateParse, e.to_string().as_ref()),
+        }
     }
 }
 

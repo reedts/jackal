@@ -1,14 +1,19 @@
 pub mod calendar;
-use calendar::IcalDuration;
-pub use calendar::{Calendar, Collection, Event};
+pub mod datetime;
+pub mod event;
 
-use super::{Error, ErrorKind, Occurrence, Result, TimeSpan};
+pub use calendar::Calendar;
+pub use event::Event;
 
-use chrono::{DateTime, Month, NaiveDate, Utc};
-use chrono_tz::Tz;
-use ical::parser::{ical::component::IcalEvent, Component};
+use std::fs;
+use std::io;
+use std::path::Path;
+
+use super::{Error, ErrorKind, Result};
+use crate::config::CollectionConfig;
+use crate::provider;
+
 use ical::property::Property;
-use std::path::{Path, PathBuf};
 
 type PropertyList = Vec<Property>;
 
@@ -20,120 +25,65 @@ const ISO8601_2004_LOCAL_FORMAT_DATE: &'static str = "%Y%m%d";
 
 const ICAL_FILE_EXT: &'static str = ".ics";
 
-pub fn days_of_month(month: &Month, year: i32) -> u64 {
-    if month.number_from_month() == 12 {
-        NaiveDate::from_ymd(year + 1, 1, 1)
-    } else {
-        NaiveDate::from_ymd(year, month.number_from_month() as u32 + 1, 1)
-    }
-    .signed_duration_since(NaiveDate::from_ymd(
-        year,
-        month.number_from_month() as u32,
-        1,
-    ))
-    .num_days() as u64
-}
+pub type Collection = provider::Collection<Calendar>;
 
-fn generate_timestamp() -> String {
-    let tstamp = Utc::now();
-    format!("{}Z", tstamp.format(ISO8601_2004_LOCAL_FORMAT))
-}
-
-pub struct EventBuilder {
-    path: PathBuf,
-    start: DateTime<Tz>,
-    end: Option<DateTime<Tz>>,
-    duration: Option<IcalDuration>,
-    ical: IcalEvent,
-}
-
-impl EventBuilder {
-    pub fn _new(path: &Path, start: DateTime<Tz>) -> Self {
-        EventBuilder {
-            path: path.to_owned(),
-            start,
-            end: None,
-            duration: None,
-            ical: IcalEvent::default(),
-        }
+pub fn from_dir(path: &Path, config: &CollectionConfig) -> Result<Collection> {
+    if !path.is_dir() {
+        return Err(Error::new(
+            ErrorKind::CalendarParse,
+            &format!("'{}' is not a directory", path.display()),
+        ));
     }
 
-    pub fn set_description(&mut self, summary: String) {
-        self.ical.add_property(Property {
-            name: "SUMMARY".to_owned(),
-            params: None,
-            value: Some(summary),
-        });
-    }
-
-    pub fn _with_description(mut self, summary: String) -> Self {
-        self.set_description(summary);
-        self
-    }
-
-    pub fn _set_start(&mut self, start: DateTime<Tz>) {
-        self.start = start;
-    }
-
-    pub fn _with_start(mut self, start: DateTime<Tz>) -> Self {
-        self._set_start(start);
-        self
-    }
-
-    pub fn _set_end(&mut self, end: DateTime<Tz>) {
-        self.duration = None;
-        self.end = Some(end);
-    }
-
-    pub fn _with_end(mut self, end: DateTime<Tz>) -> Self {
-        self._set_end(end);
-        self
-    }
-
-    pub fn _set_duration(&mut self, duration: IcalDuration) {
-        self.end = None;
-        self.duration = Some(duration);
-    }
-
-    pub fn _with_duration(mut self, duration: IcalDuration) -> Self {
-        self._set_duration(duration);
-        self
-    }
-
-    pub fn set_location(&mut self, location: String) {
-        self.ical.add_property(Property {
-            name: "LOCATION".to_owned(),
-            params: None,
-            value: Some(location),
-        });
-    }
-
-    pub fn _with_location(mut self, location: String) -> Self {
-        self.set_location(location);
-        self
-    }
-
-    pub fn finish(self) -> Result<Event> {
-        let event = if let Some(dtspec) = self.end {
-            Event::new_with_ical_properties(
-                &self.path,
-                Occurrence::Onetime(TimeSpan::TimePoints(self.start, dtspec)),
-                self.ical.properties,
+    // TODO: Fix ordering of configs/calendar dirs
+    let calendars: Vec<Calendar> = fs::read_dir(&path)?
+        .zip(&config.calendars)
+        .map(|(dir, config)| {
+            dir.map_or_else(
+                |_| -> Result<_> { Err(Error::from(io::ErrorKind::InvalidData)) },
+                |file: fs::DirEntry| -> Result<Calendar> {
+                    calendar::from_dir(file.path().as_path(), &config)
+                },
             )
-        } else if let Some(durspec) = self.duration {
-            Event::new_with_ical_properties(
-                &self.path,
-                Occurrence::Onetime(TimeSpan::Duration(self.start, durspec.into())),
-                self.ical.properties,
-            )
-        } else {
-            Event::new_with_ical_properties(
-                &self.path,
-                Occurrence::Onetime(TimeSpan::from_start(self.start)),
-                self.ical.properties,
-            )
-        };
+        })
+        .inspect(|res| {
+            if let Err(err) = res {
+                log::warn!("{}", err)
+            }
+        })
+        .filter_map(Result::ok)
+        .collect();
 
-        event
-    }
+    Ok(Collection {
+        _path: path.to_owned(),
+        _name: config.name.to_string(),
+        calendars,
+    })
 }
+
+// pub fn calendars_from_dir(path: &Path, calendar_specs: &[CalendarSpec]) -> Result<Collection> {
+//     if !path.is_dir() {
+//         return Err(Error::new(
+//             ErrorKind::CalendarParse,
+//             &format!("'{}' is not a directory", path.display()),
+//         ));
+//     }
+
+//     if calendar_specs.is_empty() {
+//         return Self::from_dir(path);
+//     }
+
+//     let calendars: Vec<Calendar> = calendar_specs
+//         .into_iter()
+//         .filter_map(|spec| match Calendar::from_dir(&path.join(&spec.id)) {
+//             Ok(calendar) => Some(calendar.with_name(spec.name.clone())),
+//             Err(_) => None,
+//         })
+//         .collect();
+
+//     Ok(Collection {
+//         path: path.to_owned(),
+//         friendly_name: path.file_stem().unwrap().to_string_lossy().to_string(),
+//         calendars,
+//     })
+// }

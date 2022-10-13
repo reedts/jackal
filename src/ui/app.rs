@@ -1,6 +1,7 @@
 use crate::agenda::Agenda;
 use crate::config::Config;
 use crate::events::{Dispatcher, Event};
+use crate::provider::NewEvent;
 
 use super::{CalendarWindow, Context, EventWindow, EventWindowBehaviour, Mode};
 
@@ -11,6 +12,7 @@ use unsegen::input::{
 use unsegen::widget::*;
 
 use super::command::CommandParser;
+use super::insert::InsertParser;
 
 pub struct App<'a> {
     config: &'a Config,
@@ -54,11 +56,14 @@ impl<'a> App<'a> {
         layout
     }
 
-    pub fn run(
-        &mut self,
+    pub fn run<'r>(
+        &'r mut self,
         dispatcher: Dispatcher,
         mut term: Terminal,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error>>
+    where
+        'a: 'r,
+    {
         let mut run = true;
 
         while run {
@@ -105,7 +110,32 @@ impl<'a> App<'a> {
                                         )
                                         .finish();
                                 }
-                                Mode::Insert => {}
+                                mode @ Mode::Insert => {
+                                    let begin = self
+                                        .context
+                                        .cursor()
+                                        .with_timezone(&chrono_tz::Europe::Berlin);
+
+                                    input
+                                        .chain(
+                                            EditBehavior::new(self.context.input_sink_mut(mode))
+                                                .delete_forwards_on(Key::Delete)
+                                                .delete_backwards_on(Key::Backspace)
+                                                .left_on(Key::Left)
+                                                .right_on(Key::Right),
+                                        )
+                                        .chain(
+                                            ScrollBehavior::new(self.context.input_sink_mut(mode))
+                                                .backwards_on(Key::Up)
+                                                .forwards_on(Key::Down),
+                                        )
+                                        .chain(InsertParser::new(
+                                            &mut self.context,
+                                            &self.config,
+                                            NewEvent::new(begin),
+                                        ))
+                                        .finish();
+                                }
                                 mode @ Mode::Command => {
                                     input
                                         .chain(

@@ -4,23 +4,28 @@ use log;
 use num_traits::FromPrimitive;
 
 use crate::config::Config;
-use crate::provider::*;
+use crate::provider::datetime::days_of_month;
+use crate::provider::ical;
+use crate::provider::{CalendarMut, Calendarlike, EventFilter, Eventlike, Result};
 
 pub struct Agenda {
-    collections: Vec<Box<dyn Collectionlike>>,
+    ical_collections: Vec<ical::Collection>,
 }
 
 impl Agenda {
     pub fn from_config(config: &Config) -> Result<Self> {
-        let collections: Vec<Box<dyn Collectionlike>> = config
+        let ical_collections: Vec<ical::Collection> = config
             .collections
             .iter()
-            .map(|collection_spec| {
-                load_collection_with_calendars(
-                    &collection_spec.provider,
-                    &collection_spec.path,
-                    collection_spec.calendars.as_slice(),
-                )
+            .filter_map(|collection_spec| {
+                if collection_spec.provider == "ical" {
+                    Some(ical::from_dir(
+                        collection_spec.path.as_path(),
+                        collection_spec,
+                    ))
+                } else {
+                    None
+                }
             })
             .inspect(|c| {
                 if let Err(e) = c {
@@ -28,10 +33,9 @@ impl Agenda {
                 }
             })
             .filter_map(Result::ok)
-            .map(|calendar| -> Box<dyn Collectionlike> { Box::new(calendar) })
             .collect();
 
-        Ok(Agenda { collections })
+        Ok(Agenda { ical_collections })
     }
 
     /// Note, even though events are sorted within one calendar, they are not sorted in the
@@ -50,13 +54,13 @@ impl Agenda {
             })
     }
 
-    pub fn _events_of_month<'a>(
-        &'a self,
+    pub fn _events_of_month(
+        &self,
         month: Month,
         year: i32,
     ) -> impl Iterator<Item = (&DateTime<Tz>, &'a dyn Eventlike)> + 'a {
         let begin = NaiveDate::from_ymd(year, month.number_from_month() as u32, 1).and_hms(0, 0, 0);
-        let end = begin + Duration::days(_days_of_month(&month, year) as i64);
+        let end = begin + Duration::days(days_of_month(&month, year) as i64);
 
         self.events_in(begin..=end)
     }
@@ -78,7 +82,14 @@ impl Agenda {
         let begin = date.and_hms(0, 0, 0);
         let end = begin + Duration::days(1);
 
-        self.events_in(begin..=end)
+        self.ical_collections
+            .iter()
+            .flat_map(|collection| collection.calendars())
+            .flat_map(move |calendar| {
+                calendar
+                    .filter_events(EventFilter::default().datetime_range(begin..=end))
+                    .map(|ev| ev as &dyn Eventlike)
+            })
     }
 
     pub fn _events_of_current_day<'a>(
