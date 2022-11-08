@@ -9,7 +9,7 @@ use toml;
 const DEFAULT_RECURRENCE_LOOKAHEAD: u32 = 356;
 const CONFIG_PATH_ENV_VAR: &str = "JACKAL_CONFIG_FILE";
 
-pub(crate) fn find_configfile() -> io::Result<PathBuf> {
+fn find_configfile() -> io::Result<PathBuf> {
     if let Ok(path) = env::var(CONFIG_PATH_ENV_VAR) {
         return Ok(PathBuf::from(path));
     }
@@ -52,6 +52,18 @@ fn default_tick_rate() -> Duration {
 
 fn default_recurrence_lookahead() -> u32 {
     DEFAULT_RECURRENCE_LOOKAHEAD
+}
+
+pub fn load_suitable_config(
+    configfile: Option<&Path>,
+) -> Result<Config, Box<dyn std::error::Error>> {
+    Ok(if let Some(path) = configfile {
+        Config::load(&path)?
+    } else if let Ok(path) = find_configfile() {
+        Config::load(&path)?
+    } else {
+        Config::default()
+    })
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
