@@ -23,6 +23,7 @@ dirs = "4.0.0"
 uuid = { version = "1.0.0", features = ["v4"] }
 rrule = "0.10.0"
 notify-rust = "4.5"
+linkify = "0.9"
 
 [dev-dependencies]
 rusty-hook = "0.11.2"

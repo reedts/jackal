@@ -1,8 +1,9 @@
 extern crate jackal as lib;
 
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
+use chrono_tz::Tz;
 use flexi_logger::{Duplicate, FileSpec, Logger};
-use lib::{agenda::Agenda, events::Dispatcher};
+use lib::{agenda::Agenda, events::Dispatcher, provider::Eventlike};
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -24,6 +25,102 @@ pub struct Args {
 
     #[structopt(long = "log-file", help = "path to log file", parse(from_os_str))]
     pub log_file: Option<PathBuf>,
+}
+
+fn open_url(url: &str) {
+    let open_prog = "xdg-open";
+    let _join_handle = std::process::Command::new(open_prog)
+        .arg(url)
+        .spawn()
+        .unwrap();
+}
+
+fn notify(
+    title: String,
+    body: String,
+    begin: DateTime<Tz>,
+    end: DateTime<Tz>,
+    url: Option<String>,
+) {
+    let mut dismissed = false;
+
+    while !dismissed {
+        let now = Utc::now().naive_utc();
+
+        let mut n = notify_rust::Notification::new();
+
+        n.action("dismiss", "Dismiss");
+        if url.is_some() {
+            n.action("open_url", "Open URL");
+        }
+
+        let timeout;
+        let summary;
+        if now < begin.naive_utc() {
+            timeout = begin.naive_utc() - now;
+            summary = format!("Upcoming event '{}'", title);
+            n.action("snooze", "Snooze");
+        } else if now < end.naive_utc() {
+            timeout = end.naive_utc() - now;
+            summary = format!("Current event '{}'", title);
+        } else {
+            return;
+        }
+
+        n.summary(&summary)
+            .body(&body)
+            .timeout(notify_rust::Timeout::Milliseconds(
+                timeout.num_milliseconds() as u32,
+            ))
+            .hint(notify_rust::Hint::Resident(true));
+
+        n.show().unwrap().wait_for_action(|action| match action {
+            "dismiss" => dismissed = true,
+            "snooze" => {
+                let now = Utc::now().naive_utc();
+                let to_sleep = begin.naive_utc() - now;
+                log::info!("Sleeping {} until begin notification time", to_sleep,);
+                std::thread::sleep(to_sleep.to_std().unwrap_or(std::time::Duration::ZERO));
+            }
+            "open_url" => open_url(url.as_ref().unwrap()),
+            "__closed" => dismissed = true,
+            _ => {}
+        });
+    }
+}
+
+fn spawn_notify(begin: DateTime<Tz>, event: &dyn Eventlike) {
+    use linkify::{LinkFinder, LinkKind};
+
+    let end = begin + event.duration();
+    let with_dates = begin.date() != end.date();
+    let time_str = if with_dates {
+        format!("{}-{}", begin.naive_local(), end.naive_local())
+    } else {
+        format!(
+            "{}-{}",
+            begin.naive_local().time(),
+            end.naive_local().time()
+        )
+    };
+    let mut body = time_str;
+    if let Some(description) = event.description() {
+        body += "\n";
+        body += description;
+    }
+    let title = event.title().to_owned();
+
+    // TODO: We probably want to look for urls in other fields like location or URL, too.
+    let url = event.description().and_then(|description| {
+        let mut finder = LinkFinder::new();
+        let mut links = finder.kinds(&[LinkKind::Url]).links(description);
+        links.next().map(|l| l.as_str().to_owned())
+    });
+
+    let _ = std::thread::Builder::new()
+        .name("jackal-notify-notification".to_owned())
+        .spawn(move || notify(title, body, begin, end, url))
+        .unwrap();
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -72,31 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Chrono duration may be negative, in which case we do not want to sleep
             std::thread::sleep(to_sleep.to_std().unwrap_or(std::time::Duration::ZERO));
 
-            let end = *begin + event.duration();
-            let summary = format!("Upcoming event '{}'", event.title());
-            let with_dates = begin.date() != end.date();
-            let time_str = if with_dates {
-                format!("{}-{}", begin.naive_local(), end.naive_local())
-            } else {
-                format!(
-                    "{}-{}",
-                    begin.naive_local().time(),
-                    end.naive_local().time()
-                )
-            };
-            let body = format!("{}\n{}", time_str, event.summary());
-
-            let now = Utc::now().naive_utc();
-            let timeout = end.naive_utc() - now;
-            notify_rust::Notification::new()
-                .summary(&summary)
-                .body(&body)
-                .timeout(notify_rust::Timeout::Milliseconds(
-                    timeout.num_milliseconds() as u32,
-                ))
-                .show()
-                .unwrap();
-            log::info!("After notification");
+            spawn_notify(*begin, event);
         }
 
         let now = Utc::now().naive_utc();

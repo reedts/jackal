@@ -648,6 +648,10 @@ impl Eventlike for Event {
         self.title()
     }
 
+    fn description(&self) -> Option<&str> {
+        self.get_property_value("DESCRIPTION")
+    }
+
     fn set_summary(&mut self, summary: &str) {
         self.set_title(summary);
     }
