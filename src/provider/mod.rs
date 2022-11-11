@@ -305,7 +305,7 @@ pub trait Calendarlike {
     fn filter_events<'a>(
         &'a self,
         filter: EventFilter,
-    ) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a>;
+    ) -> Box<dyn Iterator<Item = (&DateTime<Tz>, &(dyn Eventlike + 'a))> + 'a>;
     fn new_event(&mut self);
 }
 
