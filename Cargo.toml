@@ -25,6 +25,7 @@ notify-rust = "4.5"
 linkify = "0.9"
 phf = { version = "0.11.1", features = ["macros"] }
 tz-rs = "0.6.14"
+base64 = "0.13.1"
 
 # Use fork for serde support
 [dependencies.ical]

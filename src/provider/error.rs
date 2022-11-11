@@ -23,6 +23,7 @@ pub enum ErrorKind {
     DurationParse,
     RecurRuleParse,
     ParseError,
+    SerializeError,
     IOError(io::Error),
 }
 
@@ -133,6 +134,7 @@ impl ErrorKind {
             ErrorKind::DurationParse => "invalid duration format".to_owned(),
             ErrorKind::RecurRuleParse => "invalid reccurrence format".to_owned(),
             ErrorKind::ParseError => "invalid format".to_owned(),
+            ErrorKind::SerializeError => "invalid format".to_owned(),
             ErrorKind::IOError(err) => err.to_string(),
         }
     }
