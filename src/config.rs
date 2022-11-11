@@ -7,6 +7,7 @@ use std::time::Duration;
 use toml;
 
 const DEFAULT_RECURRENCE_LOOKAHEAD: u32 = 356;
+const DEFAULT_NOTIFICATION_HEADSUP_MINUTES: u32 = 10;
 const CONFIG_PATH_ENV_VAR: &str = "JACKAL_CONFIG_FILE";
 
 fn find_configfile() -> io::Result<PathBuf> {
@@ -54,6 +55,10 @@ fn default_recurrence_lookahead() -> u32 {
     DEFAULT_RECURRENCE_LOOKAHEAD
 }
 
+fn default_notification_headsup_minutes() -> u32 {
+    DEFAULT_NOTIFICATION_HEADSUP_MINUTES
+}
+
 pub fn load_suitable_config(
     configfile: Option<&Path>,
 ) -> Result<Config, Box<dyn std::error::Error>> {
@@ -76,6 +81,10 @@ pub struct Config {
     // TODO: Implement as chrono::Duration with serde
     #[serde(default = "default_recurrence_lookahead")]
     pub recurrence_lookahead: u32,
+
+    #[serde(default = "default_notification_headsup_minutes")]
+    pub notification_headsup_minutes: u32,
+
     pub collections: Vec<CollectionSpec>,
 }
 
@@ -88,7 +97,8 @@ impl Default for Config {
                 PathBuf::from("jackal.toml")
             },
             tick_rate: Duration::from_secs(60),
-            recurrence_lookahead: 356,
+            recurrence_lookahead: default_recurrence_lookahead(),
+            notification_headsup_minutes: default_notification_headsup_minutes(),
             collections: Vec::new(),
         }
     }
