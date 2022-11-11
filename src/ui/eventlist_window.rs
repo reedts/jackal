@@ -8,7 +8,7 @@ use crate::provider::Eventlike;
 use crate::ui::Context;
 
 enum Entry<'a> {
-    Event(&'a dyn Eventlike),
+    Event(DateTime<Local>, &'a dyn Eventlike),
     Time(DateTime<Local>),
     Cursor(DateTime<Local>),
 }
@@ -16,8 +16,7 @@ enum Entry<'a> {
 impl Entry<'_> {
     pub fn datetime(&self) -> DateTime<Local> {
         match self {
-            &Entry::Event(evt) => evt.occurrence().clone().with_tz(&Local {}).begin(),
-            &Entry::Cursor(dt) | &Entry::Time(dt) => dt,
+            &Entry::Event(dt, _) | &Entry::Cursor(dt) | &Entry::Time(dt) => dt,
         }
     }
 }
@@ -25,7 +24,7 @@ impl Entry<'_> {
 impl Display for Entry<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            Self::Event(event) => {
+            Self::Event(_, event) => {
                 let occur = event.occurrence();
 
                 let time = if occur.is_allday() {
@@ -68,7 +67,7 @@ impl Widget for EventWindow<'_> {
             .context
             .agenda()
             .events_of_day(&self.context.cursor().date_naive())
-            .map(|ev| Entry::Event(ev))
+            .map(|(dt, ev)| Entry::Event(dt.with_timezone(&Local), ev))
             .chain([Entry::Cursor(self.context.cursor().clone())])
             .collect::<Vec<Entry>>();
 
@@ -87,7 +86,7 @@ impl Widget for EventWindow<'_> {
         let mut idx: usize = 0;
         for ev in events {
             match ev {
-                ev @ Entry::Event(_) => {
+                ev @ Entry::Event(..) => {
                     let saved_style = cursor.get_style_modifier();
 
                     if idx == self.context.eventlist_index {
