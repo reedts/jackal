@@ -1,17 +1,12 @@
-mod agenda;
-mod config;
-mod events;
-mod provider;
-mod ui;
+extern crate jackal as lib;
 
-use agenda::Agenda;
-use config::Config;
-use events::Dispatcher;
 use flexi_logger::{Duplicate, FileSpec, Logger};
+use lib::agenda::Agenda;
+use lib::events::Dispatcher;
+use lib::ui::app::App;
 use std::io::stdout;
 use std::path::PathBuf;
 use structopt::StructOpt;
-use ui::app::App;
 use unsegen::base::Terminal;
 
 #[derive(Debug, StructOpt)]
@@ -54,13 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     logger.start()?;
 
-    let config = if let Some(path) = args.configfile {
-        Config::load(&path)?
-    } else if let Ok(path) = config::find_configfile() {
-        Config::load(&path)?
-    } else {
-        Config::default()
-    };
+    let config = lib::config::load_suitable_config(args.configfile.as_deref())?;
 
     let dispatcher = Dispatcher::from_config(&config);
     // Setup unsegen terminal

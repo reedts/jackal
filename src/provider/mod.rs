@@ -286,6 +286,7 @@ pub trait Eventlike {
     fn set_title(&mut self, title: &str);
     fn uuid(&self) -> Uuid;
     fn summary(&self) -> &str;
+    fn description(&self) -> Option<&str>;
     fn set_summary(&mut self, summary: &str);
     fn occurrence(&self) -> &Occurrence<Tz>;
     fn set_occurrence(&mut self, occurrence: Occurrence<Tz>);
