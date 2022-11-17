@@ -25,7 +25,7 @@ impl Display for Entry<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             Self::Event(_, event) => {
-                let occur = event.occurrence();
+                let occur = event.occurrence_rule();
 
                 let time = if occur.is_allday() {
                     "Allday".to_owned()

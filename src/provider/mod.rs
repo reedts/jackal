@@ -4,7 +4,6 @@ use rrule::RRule;
 use std::default::Default;
 use std::ops::{Bound, RangeBounds};
 use std::path::{Path, PathBuf};
-use uuid::Uuid;
 
 pub mod calendar;
 pub mod datetime;
@@ -104,12 +103,12 @@ impl<Tz: TimeZone> NewEvent<Tz> {
 pub trait Eventlike {
     fn title(&self) -> &str;
     fn set_title(&mut self, title: &str);
-    fn uuid(&self) -> Uuid;
+    fn uid(&self) -> &str;
     fn summary(&self) -> &str;
-    fn description(&self) -> Option<&str>;
     fn set_summary(&mut self, summary: &str);
-    fn occurrence(&self) -> &OccurrenceRule<Tz>;
-    fn set_occurrence(&mut self, occurrence: OccurrenceRule<Tz>);
+    fn description(&self) -> Option<&str>;
+    fn occurrence_rule(&self) -> &OccurrenceRule<Tz>;
+    fn set_occurrence_rule(&mut self, occurrence: OccurrenceRule<Tz>);
     fn tz(&self) -> &Tz;
     fn set_tz(&mut self, tz: &Tz);
     fn begin(&self) -> DateTime<Tz>;

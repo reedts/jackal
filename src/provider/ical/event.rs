@@ -487,8 +487,8 @@ impl Eventlike for Event {
         };
     }
 
-    fn uuid(&self) -> Uuid {
-        uuid::Uuid::parse_str(self.get_property_value("UID").unwrap()).unwrap()
+    fn uid(&self) -> &str {
+        self.get_property_value("UID").unwrap()
     }
 
     fn summary(&self) -> &str {
@@ -499,11 +499,15 @@ impl Eventlike for Event {
         self.set_title(summary);
     }
 
-    fn occurrence(&self) -> &OccurrenceRule<Tz> {
+    fn description(&self) -> Option<&str> {
+        self.get_property_value("DESCRIPTION")
+    }
+
+    fn occurrence_rule(&self) -> &OccurrenceRule<Tz> {
         &self.occurrence
     }
 
-    fn set_occurrence(&mut self, _occurrence: OccurrenceRule<Tz>) {
+    fn set_occurrence_rule(&mut self, _occurrence: OccurrenceRule<Tz>) {
         // TODO: implement
         unimplemented!()
     }
