@@ -6,7 +6,7 @@ use num_traits::FromPrimitive;
 use crate::config::Config;
 use crate::provider::datetime::days_of_month;
 use crate::provider::ical;
-use crate::provider::{CalendarMut, Calendarlike, EventFilter, Eventlike, Result};
+use crate::provider::{MutCalendarlike, Calendarlike, EventFilter, Eventlike, Result};
 
 pub struct Agenda {
     ical_collections: Vec<ical::Collection>,

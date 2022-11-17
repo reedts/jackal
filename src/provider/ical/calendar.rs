@@ -1,355 +1,51 @@
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{Date, DateTime, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday};
 use chrono_tz::Tz;
+use ical::parser::ical::component::*;
+use ical::parser::ical::IcalParser;
+use ical::property::Property;
 use log;
+use nom::branch::alt;
+use nom::bytes::complete::tag;
+use nom::character::complete::{char, digit1, one_of};
+use nom::combinator::{all_consuming, map_res, opt};
+use nom::sequence::{preceded, terminated, tuple};
+use nom::{Err, IResult};
+use rrule::RRule;
 use std::collections::BTreeMap;
-use std::convert::{AsRef, From};
+use std::convert::{AsRef, From, TryFrom};
 use std::fs;
-use std::path::Path;
+use std::io;
+use std::ops::Bound;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::str::FromStr;
+use tz::timezone::{RuleDay, TransitionRule};
+use uuid::Uuid;
 
 use crate::config::CalendarConfig;
 use crate::provider;
-use crate::provider::{CalendarMut, Eventlike, NewEvent, Occurrence, TimeSpan};
-
-use super::{
-    weekday_to_ical, Error, ErrorKind, PropertyList, Result, ICAL_FILE_EXT,
-    ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE,
+use crate::provider::datetime::days_of_month;
+use crate::provider::{
+    Calendarlike, Eventlike, MutCalendarlike, NewEvent, OccurrenceRule, TimeSpan,
 };
 
-#[derive(Default, Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub struct IcalDuration {
-    sign: i8,
-    years: i64,
-    months: i64,
-    weeks: i64,
-    days: i64,
-    hours: i64,
-    minutes: i64,
-    seconds: i64,
-}
+use super::datetime::{generate_timestamp, weekday_to_ical};
+use super::{
+    Error, ErrorKind, PropertyList, Result, ICAL_FILE_EXT, ISO8601_2004_LOCAL_FORMAT,
+    ISO8601_2004_LOCAL_FORMAT_DATE,
+};
 
-impl IcalDuration {
-    fn parse_sign(input: &str) -> IResult<&str, Option<char>> {
-        opt(one_of("+-"))(input)
-    }
-
-    fn parse_integer_value(input: &str) -> std::result::Result<i64, std::num::ParseIntError> {
-        i64::from_str_radix(input, 10)
-    }
-
-    fn value_with_designator(designator: &str) -> impl Fn(&str) -> IResult<&str, i64> + '_ {
-        move |input| {
-            terminated(
-                map_res(digit1, |s: &str| Self::parse_integer_value(s)),
-                tag(designator),
-            )(input)
-        }
-    }
-
-    fn parse_week_format(input: &str) -> IResult<&str, Self> {
-        let (input, weeks) = (Self::value_with_designator("W")(input))?;
-
-        Ok((
-            input,
-            Self {
-                sign: 1,
-                years: 0,
-                months: 0,
-                weeks,
-                days: 0,
-                hours: 0,
-                minutes: 0,
-                seconds: 0,
-            },
-        ))
-    }
-
-    fn parse_datetime_format(input: &str) -> IResult<&str, Self> {
-        let (input, (years, months, days)) = tuple((
-            opt(Self::value_with_designator("Y")),
-            opt(Self::value_with_designator("M")),
-            opt(Self::value_with_designator("D")),
-        ))(input)?;
-
-        let (input, time) = opt(preceded(
-            char('T'),
-            tuple((
-                opt(Self::value_with_designator("H")),
-                opt(Self::value_with_designator("M")),
-                opt(Self::value_with_designator("S")),
-            )),
-        ))(input)?;
-
-        let (hours, minutes, seconds) = time.unwrap_or_default();
-
-        if years.is_none()
-            && months.is_none()
-            && days.is_none()
-            && hours.is_none()
-            && minutes.is_none()
-            && seconds.is_none()
-        {
-            Err(nom::Err::Error(nom::error::ParseError::from_error_kind(
-                input,
-                nom::error::ErrorKind::Verify,
-            )))
-        } else {
-            Ok((
-                input,
-                Self {
-                    sign: 1,
-                    years: years.unwrap_or_default(),
-                    months: months.unwrap_or_default(),
-                    weeks: 0,
-                    days: days.unwrap_or_default(),
-                    hours: hours.unwrap_or_default(),
-                    minutes: minutes.unwrap_or_default(),
-                    seconds: seconds.unwrap_or_default(),
-                },
-            ))
-        }
-    }
-
-    fn as_chrono_duration(&self) -> chrono::Duration {
-        chrono::Duration::seconds(
-            self.sign as i64
-                * ((self.years * 12 * 30 * 24 * 60 * 60)
-                    + (self.months * 30 * 24 * 60 * 60)
-                    + (self.weeks * 7 * 24 * 60 * 60)
-                    + (self.hours * 60 * 60)
-                    + (self.minutes * 60)
-                    + (self.seconds)),
-        )
-    }
-}
-
-impl FromStr for IcalDuration {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self> {
-        let (rest, sign) = Self::parse_sign(s)
-            .or_else(|err| {
-                return Err(Self::Err::new(
-                    ErrorKind::DurationParse,
-                    &format!("{}", err),
-                ));
-            })
-            .unwrap();
-
-        let (_, mut duration) = (all_consuming(preceded(
-            char('P'),
-            alt((Self::parse_week_format, Self::parse_datetime_format)),
-        ))(rest))
-        .or_else(|err| {
-            return Err(Self::Err::new(
-                ErrorKind::DurationParse,
-                &format!("{}", err),
-            ));
-        })
-        .unwrap();
-
-        duration.sign = if let Some(sign) = sign {
-            if sign == '-' {
-                -1
-            } else {
-                1
-            }
-        } else {
-            1
-        };
-
-        Ok(duration)
-    }
-}
-
-impl TryFrom<&Property> for IcalDuration {
-    type Error = Error;
-
-    fn try_from(value: &Property) -> Result<Self> {
-        let val = value
-            .value
-            .as_ref()
-            .ok_or(Error::new(ErrorKind::EventParse, "Empty duration property"))?;
-
-        val.parse::<Self>()
-    }
-}
-
-impl From<IcalDuration> for Duration {
-    fn from(dur: IcalDuration) -> Self {
-        dur.as_chrono_duration()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IcalDateTime {
-    Date(NaiveDate),
-    Floating(NaiveDateTime),
-    Utc(DateTime<Utc>),
-    Local(DateTime<chrono_tz::Tz>),
-}
-
-impl TryFrom<&Property> for IcalDateTime {
-    type Error = Error;
-
-    fn try_from(value: &Property) -> Result<Self> {
-        let val = value
-            .value
-            .as_ref()
-            .ok_or(Self::Error::from(ErrorKind::DateParse).with_msg("Missing datetime value"))?;
-
-        let has_options = value.params.is_some();
-        let mut tz: Option<Tz> = None;
-
-        if has_options {
-            // check if value is date
-            if let Some(_) = &value
-                .params
-                .as_ref()
-                .unwrap()
-                .iter()
-                .find(|o| o.0 == "VALUE" && o.1[0] == "DATE")
-            {
-                return Ok(Self::Date(NaiveDate::parse_from_str(
-                    val,
-                    ISO8601_2004_LOCAL_FORMAT_DATE,
-                )?));
-            }
-
-            // check for TZID in options
-            if let Some(option) = &value
-                .params
-                .as_ref()
-                .unwrap()
-                .iter()
-                .find(|o| o.0 == "TZID")
-            {
-                tz = Some(
-                    option.1[0]
-                        .parse::<chrono_tz::Tz>()
-                        .map_err(|err: String| Error::new(ErrorKind::DateParse, err.as_str()))?,
-                )
-            };
-        }
-
-        if let Ok(dt) = NaiveDateTime::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT) {
-            if let Some(tz) = tz {
-                Ok(Self::Local(tz.from_local_datetime(&dt).earliest().unwrap()))
-            } else {
-                if val.ends_with("Z") {
-                    Ok(Self::Utc(DateTime::<Utc>::from_utc(dt, Utc)))
-                } else {
-                    Ok(Self::Floating(dt))
-                }
-            }
-        } else {
-            let date = NaiveDate::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT_DATE)?;
-            Ok(Self::Date(date))
-        }
-    }
-}
-
-impl FromStr for IcalDateTime {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self> {
-        if let Ok(dt) =
-            NaiveDateTime::parse_from_str(s, &format!("{}z", ISO8601_2004_LOCAL_FORMAT_DATE))
-        {
-            return Ok(IcalDateTime::Utc(Utc {}.from_utc_datetime(&dt)));
-        }
-
-        if let Ok(dt) = NaiveDate::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT_DATE) {
-            return Ok(IcalDateTime::Date(dt));
-        }
-
-        Err(Error::new(
-            ErrorKind::TimeParse,
-            &format!("Could not extract datetime from '{}'", s),
-        ))
-    }
-}
-
-impl<Tz: TimeZone> From<DateTime<Tz>> for IcalDateTime {
-    fn from(dt: DateTime<Tz>) -> Self {
-        let fixed_offset = dt.offset().fix();
-
-        if fixed_offset.utc_minus_local() == 0 {
-            IcalDateTime::Utc(dt.with_timezone(&Utc {}))
-        } else {
-            // FIXME: There is currently no possibility to recreate a
-            // chrono_tz::Tz from a chrono::DateTime<FixedOffset>
-            // We use a UTC datetime and rely on the ical::Event to properly
-            // catch this case
-            IcalDateTime::Utc(dt.with_timezone(&Utc {}))
-        }
-    }
-}
-
-impl Default for IcalDateTime {
-    fn default() -> Self {
-        IcalDateTime::Floating(NaiveDateTime::from_timestamp(0, 0))
-    }
-}
-
-impl IcalDateTime {
-    pub fn _is_date(&self) -> bool {
-        use IcalDateTime::*;
-        match *self {
-            Date(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
-        match *self {
-            IcalDateTime::Date(dt) => tz.from_utc_date(&dt).and_hms(0, 0, 0),
-            IcalDateTime::Floating(dt) => tz.from_utc_datetime(&dt),
-            IcalDateTime::Utc(dt) => dt.with_timezone(&tz),
-            IcalDateTime::Local(dt) => dt.with_timezone(&tz),
-        }
-    }
-
-    pub fn as_date<Tz: TimeZone>(&self, tz: &Tz) -> Date<Tz> {
-        match *self {
-            IcalDateTime::Date(dt) => tz.from_utc_date(&dt),
-            IcalDateTime::Floating(dt) => tz.from_utc_date(&dt.date()),
-            IcalDateTime::Utc(dt) => dt.with_timezone(tz).date(),
-            IcalDateTime::Local(dt) => dt.with_timezone(tz).date(),
-        }
-    }
-
-    pub fn _with_tz(self, tz: &chrono_tz::Tz) -> Self {
-        match self {
-            IcalDateTime::Date(dt) => {
-                IcalDateTime::Local(tz.from_utc_datetime(&dt.and_hms(0, 0, 0)))
-            }
-            IcalDateTime::Floating(dt) => IcalDateTime::Local(tz.from_utc_datetime(&dt)),
-            IcalDateTime::Utc(dt) => IcalDateTime::Local(dt.with_timezone(&tz)),
-            IcalDateTime::Local(dt) => IcalDateTime::Local(dt.with_timezone(&tz)),
-        }
-    }
-
-    pub fn _and_duration(self, duration: chrono::Duration) -> Self {
-        match self {
-            IcalDateTime::Date(dt) => IcalDateTime::Date(dt + duration),
-            IcalDateTime::Floating(dt) => IcalDateTime::Floating(dt + duration),
-            IcalDateTime::Utc(dt) => IcalDateTime::Utc(dt + duration),
-            IcalDateTime::Local(dt) => IcalDateTime::Local(dt + duration),
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct Event {
     path: PathBuf,
-    occurrence: Occurrence<Tz>,
+    occurrence: OccurrenceRule<Tz>,
     ical: IcalCalendar,
     tz: Tz,
 }
 
 impl Event {
-    pub fn new(path: &Path, occurrence: Occurrence<Tz>) -> Result<Self> {
+    pub fn new(path: &Path, occurrence: OccurrenceRule<Tz>) -> Result<Self> {
         if path.is_file() && path.exists() {
             return Err(Error::new(
                 ErrorKind::EventParse,
@@ -563,7 +259,7 @@ impl Event {
             Property {
                 name: "DTSTAMP".to_owned(),
                 params: None,
-                value: Some(super::generate_timestamp()),
+                value: Some(generate_timestamp()),
             },
         ];
         ical_calendar.events.push(ical_event);
@@ -584,7 +280,7 @@ impl Event {
 
     pub fn new_with_ical_properties(
         path: &Path,
-        occurrence: Occurrence<Tz>,
+        occurrence: OccurrenceRule<Tz>,
         properties: PropertyList,
     ) -> Result<Self> {
         let mut event = Self::new(path, occurrence)?;
@@ -678,7 +374,7 @@ impl Event {
             match &dtend_spec {
                 IcalDateTime::Date(date) => {
                     if let IcalDateTime::Date(bdate) = dtstart_spec {
-                        Occurrence::Onetime(TimeSpan::allday_until(
+                        OccurrenceRule::Onetime(TimeSpan::allday_until(
                             tz.from_utc_date(&bdate),
                             tz.from_utc_date(&date),
                         ))
@@ -689,14 +385,14 @@ impl Event {
                         ));
                     }
                 }
-                dt @ _ => Occurrence::Onetime(TimeSpan::from_start_and_end(
+                dt @ _ => OccurrenceRule::Onetime(TimeSpan::from_start_and_end(
                     dtstart_spec.as_datetime(&tz),
                     dt.as_datetime(&tz),
                 )),
             }
         } else if let Some(duration) = duration {
             let dur_spec = IcalDuration::try_from(duration)?;
-            Occurrence::Onetime(TimeSpan::from_start_and_duration(
+            OccurrenceRule::Onetime(TimeSpan::from_start_and_duration(
                 dtstart_spec.as_datetime(&tz),
                 dur_spec.into(),
             ))
@@ -707,9 +403,9 @@ impl Event {
             //  ... a datetime spec, the event has to have the dtstart also as dtend
             match dtstart_spec {
                 date @ IcalDateTime::Date(_) => {
-                    Occurrence::Onetime(TimeSpan::allday(date.as_date(&tz)))
+                    OccurrenceRule::Onetime(TimeSpan::allday(date.as_date(&tz)))
                 }
-                dt => Occurrence::Onetime(TimeSpan::from_start(dt.as_datetime(&tz))),
+                dt => OccurrenceRule::Onetime(TimeSpan::from_start(dt.as_datetime(&tz))),
             }
         };
 
@@ -819,11 +515,11 @@ impl Eventlike for Event {
         self.set_title(summary);
     }
 
-    fn occurrence(&self) -> &Occurrence<Tz> {
+    fn occurrence(&self) -> &OccurrenceRule<Tz> {
         &self.occurrence
     }
 
-    fn set_occurrence(&mut self, _occurrence: Occurrence<Tz>) {
+    fn set_occurrence(&mut self, _occurrence: OccurrenceRule<Tz>) {
         // TODO: implement
         unimplemented!()
     }
@@ -861,215 +557,6 @@ impl From<Event> for IcalCalendar {
         event.ical
     }
 }
-
-pub struct Calendar {
-    path: PathBuf,
-    _identifier: String,
-    friendly_name: String,
-    tz: Tz,
-    events: BTreeMap<DateTime<Tz>, Vec<Rc<Event>>>,
-}
-
-impl Calendar {
-    pub fn _new(path: &Path) -> Self {
-        let identifier = uuid::Uuid::new_v4().hyphenated();
-        let friendly_name = identifier.clone();
-
-        Self {
-            path: path.to_owned(),
-            _identifier: identifier.to_string(),
-            friendly_name: friendly_name.to_string(),
-            tz: Tz::UTC,
-            events: BTreeMap::new(),
-        }
-    }
-
-    pub fn _new_with_name(path: &Path, name: String) -> Self {
-        let identifier = uuid::Uuid::new_v4().hyphenated();
-
-        Self {
-            path: path.to_owned(),
-            _identifier: identifier.to_string(),
-            friendly_name: name,
-            tz: Tz::UTC,
-            events: BTreeMap::new(),
-        }
-    }
-
-    pub fn from_dir(path: &Path) -> Result<Self> {
-        let mut events = BTreeMap::<DateTime<Tz>, Vec<Rc<Event>>>::new();
-
-        if !path.is_dir() {
-            return Err(Error::new(
-                ErrorKind::CalendarParse,
-                &format!("'{}' is not a directory", path.display()),
-            ));
-        }
-
-        let event_file_iter = fs::read_dir(&path)?
-            .map(|dir| {
-                dir.map_or_else(
-                    |_| -> Result<_> { Err(Error::from(ErrorKind::CalendarParse)) },
-                    |file: fs::DirEntry| -> Result<Event> {
-                        Event::from_file(file.path().as_path())
-                    },
-                )
-            })
-            .inspect(|res| {
-                if let Err(err) = res {
-                    log::warn!("{}", err)
-                }
-            })
-            .filter_map(Result::ok);
-
-        // TODO: use `BTreeMap::first_entry` once it's stable: https://github.com/rust-lang/rust/issues/62924
-        let tz = if let Some((_, event)) = events.iter().next() {
-            *(event.first().unwrap().tz())
-        } else {
-            Tz::UTC
-        };
-
-        let now = tz.from_utc_datetime(&Utc::now().naive_utc());
-
-        for event in event_file_iter {
-            let event_rc = Rc::new(event);
-
-            event_rc
-                .occurrence()
-                .iter()
-                .skip_while(|dt| dt < &(now - Duration::days(356)))
-                .take_while(|dt| dt <= &(now + Duration::days(356)))
-                .for_each(|dt| events.entry(dt).or_default().push(Rc::clone(&event_rc)));
-        }
-
-        Ok(Calendar {
-            path: path.to_owned(),
-            _identifier: path.file_stem().unwrap().to_string_lossy().to_string(),
-            friendly_name: String::default(),
-            tz,
-            events,
-        })
-    }
-
-    pub fn with_name(mut self, name: String) -> Self {
-        self.set_name(name);
-        self
-    }
-
-    pub fn set_name(&mut self, name: String) {
-        self.friendly_name = name;
-    }
-}
-
-impl Calendarlike for Calendar {
-    fn name(&self) -> &str {
-        &self.friendly_name
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn tz(&self) -> &Tz {
-        &self.tz
-    }
-
-    fn set_tz(&mut self, _tz: &Tz) {
-        unimplemented!();
-    }
-
-    fn event_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a> {
-        Box::new(
-            self.events
-                .iter()
-                .flat_map(|(_, v)| v.iter())
-                .map(|ev| (ev.as_ref() as &dyn Eventlike)),
-        )
-    }
-
-    fn filter_events<'a>(
-        &'a self,
-        filter: EventFilter,
-    ) -> Box<dyn Iterator<Item = (&DateTime<Tz>, &(dyn Eventlike + 'a))> + 'a> {
-        // TODO: Change once https://github.com/rust-lang/rust/issues/86026 is stable
-        let real_begin = match filter.begin {
-            Bound::Included(dt) => {
-                Bound::Included(self.tz().from_local_datetime(&dt).earliest().unwrap())
-            }
-            Bound::Excluded(dt) => {
-                Bound::Excluded(self.tz().from_local_datetime(&dt).earliest().unwrap())
-            }
-            _ => Bound::Unbounded,
-        };
-        let real_end = match filter.end {
-            Bound::Included(dt) => {
-                Bound::Included(self.tz().from_local_datetime(&dt).earliest().unwrap())
-            }
-            Bound::Excluded(dt) => {
-                Bound::Excluded(self.tz().from_local_datetime(&dt).earliest().unwrap())
-            }
-            _ => Bound::Unbounded,
-        };
-
-        Box::new(
-            self.events
-                .range((real_begin, real_end))
-                .flat_map(|(e, v)| v.iter().map(move |ev| (e, ev.as_ref() as &dyn Eventlike))),
-        )
-    }
-}
-
-impl EventExt for Calendar {
-    fn add_event(&mut self, new_event: NewEvent<Tz>) -> Result<()> {
-        let mut occurrence = if let Some(end) = new_event.end {
-            Occurrence::Onetime(TimeSpan::from_start_and_end(new_event.begin, end))
-        } else if let Some(duration) = new_event.duration {
-            Occurrence::Onetime(TimeSpan::from_start_and_duration(new_event.begin, duration))
-        } else {
-            Occurrence::Onetime(TimeSpan::from_start(new_event.begin))
-        };
-
-        if let Some(rrule) = new_event.rrule {
-            occurrence = occurrence.recurring(
-                rrule.build(
-                    new_event
-                        .begin
-                        .with_timezone(&rrule::Tz::Tz(new_event.begin.timezone())),
-                )?,
-            );
-        }
-
-        let mut event = Rc::new(Event::new(&self.path, occurrence)?);
-
-        if let Some(title) = new_event.title {
-            Rc::get_mut(&mut event).unwrap().set_title(title.as_ref());
-        }
-
-        if let Some(description) = new_event.description {
-            Rc::get_mut(&mut event)
-                .unwrap()
-                .set_summary(description.as_ref());
-        }
-
-        // TODO: serde
-        // let mut file = fs::File::create(event.path())?;
-        // write!(&mut file, "{}", event.ical);
-        log::info!("{:?}", event.ical);
-
-        let now = self.tz.from_utc_datetime(&Utc::now().naive_utc());
-
-        event
-            .occurrence()
-            .iter()
-            .skip_while(|dt| dt < &(now - Duration::days(356)))
-            .take_while(|dt| dt <= &(now + Duration::days(356)))
-            .for_each(|dt| self.events.entry(dt).or_default().push(Rc::clone(&event)));
-
-        Ok(())
-    }
-}
-
-impl ExtCalendar for Calendar {}
 
 pub type Calendar = provider::Calendar<Event>;
 
@@ -1126,14 +613,14 @@ pub fn from_dir(path: &Path, config: &CalendarConfig) -> Result<Calendar> {
     })
 }
 
-impl CalendarMut for Calendar {
+impl MutCalendarlike for Calendar {
     fn add_event(&mut self, new_event: NewEvent<Tz>) -> Result<()> {
         let mut occurrence = if let Some(end) = new_event.end {
-            Occurrence::Onetime(TimeSpan::from_start_and_end(new_event.begin, end))
+            OccurrenceRule::Onetime(TimeSpan::from_start_and_end(new_event.begin, end))
         } else if let Some(duration) = new_event.duration {
-            Occurrence::Onetime(TimeSpan::from_start_and_duration(new_event.begin, duration))
+            OccurrenceRule::Onetime(TimeSpan::from_start_and_duration(new_event.begin, duration))
         } else {
-            Occurrence::Onetime(TimeSpan::from_start(new_event.begin))
+            OccurrenceRule::Onetime(TimeSpan::from_start(new_event.begin))
         };
 
         if let Some(rrule) = new_event.rrule {
@@ -1173,11 +660,5 @@ impl CalendarMut for Calendar {
             .for_each(|dt| self.events.entry(dt).or_default().push(Rc::clone(&event)));
 
         Ok(())
-    }
-
-    fn events_mut<'a>(
-        &'a mut self,
-    ) -> provider::EventIter<'a, <Self as provider::Calendarlike>::Event> {
-        unimplemented!()
     }
 }

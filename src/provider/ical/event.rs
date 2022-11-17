@@ -18,18 +18,18 @@ use ical::property::Property;
 use super::datetime::*;
 use super::{PropertyList, ICAL_FILE_EXT, ISO8601_2004_LOCAL_FORMAT};
 
-use crate::provider::{days_of_month, Error, ErrorKind, Eventlike, Occurrence, Result, TimeSpan};
+use crate::provider::{days_of_month, Error, ErrorKind, Eventlike, OccurrenceRule, Result, TimeSpan};
 
 #[derive(Clone)]
 pub struct Event {
     path: PathBuf,
-    occurrence: Occurrence<Tz>,
+    occurrence: OccurrenceRule<Tz>,
     ical: IcalCalendar,
     tz: Tz,
 }
 
 impl Event {
-    pub fn new(path: &Path, occurrence: Occurrence<Tz>) -> Result<Self> {
+    pub fn new(path: &Path, occurrence: OccurrenceRule<Tz>) -> Result<Self> {
         if path.is_file() && path.exists() {
             return Err(Error::new(
                 ErrorKind::EventParse,
@@ -264,7 +264,7 @@ impl Event {
 
     pub fn new_with_ical_properties(
         path: &Path,
-        occurrence: Occurrence<Tz>,
+        occurrence: OccurrenceRule<Tz>,
         properties: PropertyList,
     ) -> Result<Self> {
         let mut event = Self::new(path, occurrence)?;
@@ -358,7 +358,7 @@ impl Event {
             match &dtend_spec {
                 IcalDateTime::Date(date) => {
                     if let IcalDateTime::Date(bdate) = dtstart_spec {
-                        Occurrence::Onetime(TimeSpan::allday_until(
+                        OccurrenceRule::Onetime(TimeSpan::allday_until(
                             tz.from_utc_date(&bdate),
                             tz.from_utc_date(&date),
                         ))
@@ -369,14 +369,14 @@ impl Event {
                         ));
                     }
                 }
-                dt @ _ => Occurrence::Onetime(TimeSpan::from_start_and_end(
+                dt @ _ => OccurrenceRule::Onetime(TimeSpan::from_start_and_end(
                     dtstart_spec.as_datetime(&tz),
                     dt.as_datetime(&tz),
                 )),
             }
         } else if let Some(duration) = duration {
             let dur_spec = IcalDuration::try_from(duration)?;
-            Occurrence::Onetime(TimeSpan::from_start_and_duration(
+            OccurrenceRule::Onetime(TimeSpan::from_start_and_duration(
                 dtstart_spec.as_datetime(&tz),
                 dur_spec.into(),
             ))
@@ -387,9 +387,9 @@ impl Event {
             //  ... a datetime spec, the event has to have the dtstart also as dtend
             match dtstart_spec {
                 date @ IcalDateTime::Date(_) => {
-                    Occurrence::Onetime(TimeSpan::allday(date.as_date(&tz)))
+                    OccurrenceRule::Onetime(TimeSpan::allday(date.as_date(&tz)))
                 }
-                dt => Occurrence::Onetime(TimeSpan::from_start(dt.as_datetime(&tz))),
+                dt => OccurrenceRule::Onetime(TimeSpan::from_start(dt.as_datetime(&tz))),
             }
         };
 
@@ -499,11 +499,11 @@ impl Eventlike for Event {
         self.set_title(summary);
     }
 
-    fn occurrence(&self) -> &Occurrence<Tz> {
+    fn occurrence(&self) -> &OccurrenceRule<Tz> {
         &self.occurrence
     }
 
-    fn set_occurrence(&mut self, _occurrence: Occurrence<Tz>) {
+    fn set_occurrence(&mut self, _occurrence: OccurrenceRule<Tz>) {
         // TODO: implement
         unimplemented!()
     }

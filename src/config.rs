@@ -85,7 +85,7 @@ pub struct Config {
     #[serde(default = "default_notification_headsup_minutes")]
     pub notification_headsup_minutes: u32,
 
-    pub collections: Vec<CollectionSpec>,
+    pub collections: Vec<CollectionConfig>,
 }
 
 impl Default for Config {

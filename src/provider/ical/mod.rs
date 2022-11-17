@@ -26,9 +26,7 @@ const ISO8601_2004_LOCAL_FORMAT_DATE: &'static str = "%Y%m%d";
 
 const ICAL_FILE_EXT: &'static str = ".ics";
 
-pub type Collection = provider::Collection<Calendar>;
-
-pub fn from_dir(path: &Path, config: &CollectionConfig) -> Result<Collection> {
+pub fn from_dir(path: &Path, config: &CollectionConfig) -> Vec<Calendar> {
     if !path.is_dir() {
         return Err(Error::new(
             ErrorKind::CalendarParse,
@@ -55,11 +53,7 @@ pub fn from_dir(path: &Path, config: &CollectionConfig) -> Result<Collection> {
         .filter_map(Result::ok)
         .collect();
 
-    Ok(Collection {
-        _path: path.to_owned(),
-        _name: config.name.to_string(),
-        calendars,
-    })
+    calendars
 }
 
 // pub fn calendars_from_dir(path: &Path, calendar_specs: &[CalendarSpec]) -> Result<Collection> {

@@ -108,8 +108,8 @@ pub trait Eventlike {
     fn summary(&self) -> &str;
     fn description(&self) -> Option<&str>;
     fn set_summary(&mut self, summary: &str);
-    fn occurrence(&self) -> &Occurrence<Tz>;
-    fn set_occurrence(&mut self, occurrence: Occurrence<Tz>);
+    fn occurrence(&self) -> &OccurrenceRule<Tz>;
+    fn set_occurrence(&mut self, occurrence: OccurrenceRule<Tz>);
     fn tz(&self) -> &Tz;
     fn set_tz(&mut self, tz: &Tz);
     fn begin(&self) -> DateTime<Tz>;
@@ -117,90 +117,12 @@ pub trait Eventlike {
     fn duration(&self) -> Duration;
 }
 
-pub struct EventIter<'a, E: Eventlike> {
-    inner: Box<dyn Iterator<Item = &'a E> + 'a>,
-}
-
-impl<'a, E: Eventlike> Iterator for EventIter<'a, E> {
-    type Item = &'a E;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-    }
-}
-
 pub trait Calendarlike {
-    type Event: Eventlike;
     fn name(&self) -> &str;
     fn path(&self) -> &Path;
     fn tz(&self) -> &Tz;
-    fn set_tz(&mut self, tz: &Tz);
-    fn event_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &(dyn Eventlike + 'a)> + 'a>;
-    fn filter_events<'a>(
-        &'a self,
-        filter: EventFilter,
-    ) -> Box<dyn Iterator<Item = (&DateTime<Tz>, &(dyn Eventlike + 'a))> + 'a>;
-    fn new_event(&mut self);
 }
 
-pub trait CalendarMut: Calendarlike {
-    fn events_mut<'a>(&'a mut self) -> EventIter<'a, <Self as Calendarlike>::Event>;
+pub trait MutCalendarlike: Calendarlike {
     fn add_event(&mut self, event: NewEvent<Tz>) -> Result<()>;
-}
-
-pub struct CalendarIter<'a, C: Calendarlike> {
-    inner: std::slice::Iter<'a, C>,
-}
-
-impl<'a, C: Calendarlike> Iterator for CalendarIter<'a, C> {
-    type Item = <std::slice::Iter<'a, C> as Iterator>::Item;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-    }
-}
-
-pub struct CalendarIterMut<'a, C: CalendarMut> {
-    inner: std::slice::IterMut<'a, C>,
-}
-
-impl<'a, C: CalendarMut> Iterator for CalendarIterMut<'a, C> {
-    type Item = <std::slice::IterMut<'a, C> as Iterator>::Item;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-    }
-}
-
-pub struct Collection<C: Calendarlike + CalendarMut> {
-    _name: String,
-    _path: PathBuf,
-    calendars: Vec<C>,
-}
-
-impl<C: Calendarlike + CalendarMut> Collection<C> {
-    pub fn _name(&self) -> &str {
-        &self._name
-    }
-
-    pub fn _path(&self) -> &Path {
-        &self._path
-    }
-
-    pub fn calendars<'a>(&'a self) -> CalendarIter<'a, C> {
-        CalendarIter {
-            inner: self.calendars.iter(),
-        }
-    }
-
-    pub fn calendars_mut<'a>(&'a mut self) -> CalendarIterMut<'a, C> {
-        CalendarIterMut {
-            inner: self.calendars.iter_mut(),
-        }
-    }
-
-    pub fn _events<'a>(&'a self) -> EventIter<'a, C::Event> {
-        unimplemented!()
-    }
-
-    pub fn _new_calendar(&mut self) {
-        unimplemented!()
-    }
 }

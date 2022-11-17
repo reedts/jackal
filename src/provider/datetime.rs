@@ -110,14 +110,14 @@ impl<Tz: TimeZone> From<TimeSpan<Tz>> for Duration {
 }
 
 #[derive(Clone)]
-pub enum Occurrence<Tz: TimeZone> {
+pub enum OccurrenceRule<Tz: TimeZone> {
     Onetime(TimeSpan<Tz>),
     Recurring(TimeSpan<Tz>, RRuleSet),
 }
 
-impl<Tz: TimeZone> Occurrence<Tz> {
+impl<Tz: TimeZone> OccurrenceRule<Tz> {
     pub fn is_allday(&self) -> bool {
-        use Occurrence::*;
+        use OccurrenceRule::*;
         match self {
             Onetime(ts) => ts.is_allday(),
             Recurring(ts, _) => ts.is_allday(),
@@ -125,17 +125,17 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     }
 
     pub fn is_onetime(&self) -> bool {
-        use Occurrence::*;
+        use OccurrenceRule::*;
         matches!(self, Onetime(_))
     }
 
     pub fn is_recurring(&self) -> bool {
-        use Occurrence::*;
+        use OccurrenceRule::*;
         matches!(self, Recurring(_, _))
     }
 
     pub fn as_date(&self) -> NaiveDate {
-        use Occurrence::*;
+        use OccurrenceRule::*;
         match self {
             Onetime(ts) => ts.begin().date_naive(),
             Recurring(ts, _) => ts.begin().date_naive(),
@@ -143,7 +143,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     }
 
     pub fn as_datetime(&self) -> DateTime<Tz> {
-        use Occurrence::*;
+        use OccurrenceRule::*;
         match self {
             Onetime(ts) => ts.begin(),
             Recurring(ts, _) => ts.begin(),
@@ -151,7 +151,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     }
 
     pub fn begin(&self) -> DateTime<Tz> {
-        use Occurrence::*;
+        use OccurrenceRule::*;
         match self {
             Onetime(ts) => ts.begin(),
             Recurring(ts, _) => ts.begin(),
@@ -159,7 +159,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     }
 
     pub fn end(&self) -> DateTime<Tz> {
-        use Occurrence::*;
+        use OccurrenceRule::*;
         match self {
             Onetime(ts) => ts.end(),
             Recurring(ts, _) => ts.end(),
@@ -167,31 +167,31 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     }
 
     pub fn duration(&self) -> Duration {
-        use Occurrence::*;
+        use OccurrenceRule::*;
         match self {
             Onetime(ts) => ts.duration(),
             Recurring(ts, _) => ts.duration(),
         }
     }
 
-    pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> Occurrence<Tz2> {
-        use Occurrence::*;
+    pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> OccurrenceRule<Tz2> {
+        use OccurrenceRule::*;
         match self {
-            Onetime(ts) => Occurrence::<Tz2>::Onetime(ts.with_tz(tz)),
-            Recurring(ts, rrule) => Occurrence::<Tz2>::Recurring(ts.with_tz(tz), rrule),
+            Onetime(ts) => OccurrenceRule::<Tz2>::Onetime(ts.with_tz(tz)),
+            Recurring(ts, rrule) => OccurrenceRule::<Tz2>::Recurring(ts.with_tz(tz), rrule),
         }
     }
 
     pub fn recurring(self, rule: RRuleSet) -> Self {
-        use Occurrence::*;
+        use OccurrenceRule::*;
         match self {
-            Onetime(ts) => Occurrence::Recurring(ts, rule),
-            Recurring(ts, _) => Occurrence::Recurring(ts, rule),
+            Onetime(ts) => OccurrenceRule::Recurring(ts, rule),
+            Recurring(ts, _) => OccurrenceRule::Recurring(ts, rule),
         }
     }
 
     pub fn timezone(&self) -> Tz {
-        use Occurrence::*;
+        use OccurrenceRule::*;
         match self {
             Onetime(ts) => ts.begin().timezone(),
             Recurring(ts, _) => ts.begin().timezone(),
@@ -199,7 +199,7 @@ impl<Tz: TimeZone> Occurrence<Tz> {
     }
 
     pub fn iter<'a>(&'a self) -> OccurrenceIter<'a, Tz> {
-        use Occurrence::*;
+        use OccurrenceRule::*;
         match self {
             Onetime(ts) => OccurrenceIter {
                 start: Some(ts.begin()),
