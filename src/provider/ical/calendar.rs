@@ -80,7 +80,7 @@ impl MutCalendarlike for Calendar {
         };
 
         if let Some(rrule) = new_event.rrule {
-            occurrence = occurrence.recurring(
+            occurrence = occurrence.with_recurring(
                 rrule.build(
                     new_event
                         .begin

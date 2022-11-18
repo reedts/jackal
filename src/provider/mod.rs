@@ -1,9 +1,10 @@
-use chrono::{DateTime, Duration, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use rrule::RRule;
 use std::default::Default;
 use std::ops::{Bound, RangeBounds};
 use std::path::{Path, PathBuf};
+use store_interval_tree::IntervalTreeIterator;
 
 pub mod calendar;
 pub mod datetime;
@@ -102,26 +103,48 @@ impl<Tz: TimeZone> NewEvent<Tz> {
 
 pub trait Eventlike {
     fn title(&self) -> &str;
-    fn set_title(&mut self, title: &str);
     fn uid(&self) -> &str;
     fn summary(&self) -> &str;
-    fn set_summary(&mut self, summary: &str);
     fn description(&self) -> Option<&str>;
     fn occurrence_rule(&self) -> &OccurrenceRule<Tz>;
-    fn set_occurrence_rule(&mut self, occurrence: OccurrenceRule<Tz>);
     fn tz(&self) -> &Tz;
-    fn set_tz(&mut self, tz: &Tz);
-    fn begin(&self) -> DateTime<Tz>;
-    fn end(&self) -> DateTime<Tz>;
     fn duration(&self) -> Duration;
+}
+
+pub struct Occurrence<'a> {
+    span: TimeSpan<Utc>,
+    event: &'a dyn Eventlike,
+}
+
+impl Occurrence<'_> {
+    pub fn begin(&self) -> DateTime<Utc> {
+        self.span.begin()
+    }
+
+    pub fn end(&self) -> DateTime<Utc> {
+        self.span.end()
+    }
+
+    pub fn event(&self) -> &dyn Eventlike {
+        self.event
+    }
 }
 
 pub trait Calendarlike {
     fn name(&self) -> &str;
     fn path(&self) -> &Path;
     fn tz(&self) -> &Tz;
+    fn events_in<'a>(
+        &'a self,
+        begin: Bound<DateTime<Utc>>,
+        end: Bound<DateTime<Utc>>,
+    ) -> Vec<Occurrence<'a>>;
 }
 
 pub trait MutCalendarlike: Calendarlike {
     fn add_event(&mut self, event: NewEvent<Tz>) -> Result<()>;
+}
+
+enum ProviderCalendar {
+    Ical(self::ical::Calendar),
 }

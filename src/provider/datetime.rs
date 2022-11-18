@@ -1,5 +1,5 @@
 use chrono::{Date, DateTime, Duration, Month, NaiveDate, TimeZone};
-use rrule::{RRuleSet, RRuleSetIter};
+use rrule::{RRule, RRuleSet, RRuleSetIter};
 
 pub fn days_of_month(month: &Month, year: i32) -> u32 {
     if month.number_from_month() == 12 {
@@ -134,35 +134,29 @@ impl<Tz: TimeZone> OccurrenceRule<Tz> {
         matches!(self, Recurring(_, _))
     }
 
-    pub fn as_date(&self) -> NaiveDate {
+    pub fn first(&self) -> TimeSpan<Tz> {
         use OccurrenceRule::*;
         match self {
-            Onetime(ts) => ts.begin().date_naive(),
-            Recurring(ts, _) => ts.begin().date_naive(),
+            Onetime(ts) => ts.clone(),
+            Recurring(ts, _) => ts.clone(),
         }
     }
 
-    pub fn as_datetime(&self) -> DateTime<Tz> {
+    pub fn last(&self) -> Option<TimeSpan<Tz>> {
         use OccurrenceRule::*;
         match self {
-            Onetime(ts) => ts.begin(),
-            Recurring(ts, _) => ts.begin(),
-        }
-    }
-
-    pub fn begin(&self) -> DateTime<Tz> {
-        use OccurrenceRule::*;
-        match self {
-            Onetime(ts) => ts.begin(),
-            Recurring(ts, _) => ts.begin(),
-        }
-    }
-
-    pub fn end(&self) -> DateTime<Tz> {
-        use OccurrenceRule::*;
-        match self {
-            Onetime(ts) => ts.end(),
-            Recurring(ts, _) => ts.end(),
+            Onetime(ts) => Some(ts.clone()),
+            Recurring(ts, rrule) => {
+                // check if any of the rules is infinite
+                if rrule.get_rrule().iter().all(|r| r.get_count().is_some()) {
+                    rrule
+                        .into_iter()
+                        .last()
+                        .map(|dt| TimeSpan::from_start_and_duration(ts.begin(), ts.duration()))
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -182,7 +176,7 @@ impl<Tz: TimeZone> OccurrenceRule<Tz> {
         }
     }
 
-    pub fn recurring(self, rule: RRuleSet) -> Self {
+    pub fn with_recurring(self, rule: RRuleSet) -> Self {
         use OccurrenceRule::*;
         match self {
             Onetime(ts) => OccurrenceRule::Recurring(ts, rule),
@@ -202,12 +196,12 @@ impl<Tz: TimeZone> OccurrenceRule<Tz> {
         use OccurrenceRule::*;
         match self {
             Onetime(ts) => OccurrenceIter {
-                start: Some(ts.begin()),
+                start: Some(ts.clone()),
                 rrule_iter: None,
                 tz: self.timezone(),
             },
-            Recurring(_, rrule) => OccurrenceIter {
-                start: None,
+            Recurring(ts, rrule) => OccurrenceIter {
+                start: Some(ts.clone()),
                 rrule_iter: Some(rrule.into_iter()),
                 tz: self.timezone(),
             },
@@ -216,17 +210,22 @@ impl<Tz: TimeZone> OccurrenceRule<Tz> {
 }
 
 pub struct OccurrenceIter<'a, Tz: TimeZone> {
-    start: Option<DateTime<Tz>>,
+    start: Option<TimeSpan<Tz>>,
     rrule_iter: Option<RRuleSetIter<'a>>,
     tz: Tz,
 }
 
 impl<Tz: TimeZone> Iterator for OccurrenceIter<'_, Tz> {
-    type Item = DateTime<Tz>;
+    type Item = TimeSpan<Tz>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(it) = &mut self.rrule_iter {
-            it.next().map(|dt| dt.with_timezone(&self.tz))
+            it.next().map(|dt| {
+                TimeSpan::from_start_and_duration(
+                    dt.with_timezone(&self.tz),
+                    self.start.unwrap().duration(),
+                )
+            })
         } else {
             self.start.take()
         }

@@ -66,16 +66,16 @@ impl Event {
             tz_spec.add_property(Property {
                 name: "TZID".to_owned(),
                 params: None,
-                value: Some(occurrence.begin().offset().tz_id().to_string()),
+                value: Some(occurrence.first().offset().tz_id().to_string()),
             });
 
             tz_spec.add_property(Property {
                 name: "TZNAME".to_owned(),
                 params: None,
-                value: Some(occurrence.begin().offset().abbreviation().to_string()),
+                value: Some(occurrence.first().offset().abbreviation().to_string()),
             });
 
-            let tz_info = tz::TimeZone::from_posix_tz(occurrence.begin().offset().tz_id())?;
+            let tz_info = tz::TimeZone::from_posix_tz(occurrence.first().offset().tz_id())?;
 
             if let Some(rule) = tz_info.as_ref().extra_rule() {
                 match rule {
@@ -402,10 +402,10 @@ impl Event {
                 .unwrap()
                 .parse::<RRule<rrule::Unvalidated>>()
             {
-                let start = occurrence.begin();
+                let start = occurrence.first();
                 let tz = occurrence.timezone();
                 occurrence =
-                    occurrence.recurring(ruleset.build(start.with_timezone(&rrule::Tz::Tz(tz)))?);
+                    occurrence.with_recurring(ruleset.build(start.with_timezone(&rrule::Tz::Tz(tz)))?);
             }
         }
 
@@ -522,11 +522,11 @@ impl Eventlike for Event {
     }
 
     fn begin(&self) -> DateTime<Tz> {
-        self.occurrence.begin()
+        self.occurrence.first()
     }
 
     fn end(&self) -> DateTime<Tz> {
-        self.occurrence.end()
+        self.occurrence.last()
     }
 
     fn duration(&self) -> Duration {

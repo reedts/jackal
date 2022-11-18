@@ -32,8 +32,8 @@ impl Display for Entry<'_> {
                 } else {
                     format!(
                         "{} - {}",
-                        occur.begin().time().format("%H:%M"),
-                        occur.end().time().format("%H:%M")
+                        occur.first().time().format("%H:%M"),
+                        occur.last().time().format("%H:%M")
                     )
                 };
                 write!(f, "{}: {}", time, event.summary())
