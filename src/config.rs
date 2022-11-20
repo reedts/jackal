@@ -51,10 +51,6 @@ fn default_tick_rate() -> Duration {
     Duration::from_secs(60)
 }
 
-fn default_recurrence_lookahead() -> u32 {
-    DEFAULT_RECURRENCE_LOOKAHEAD
-}
-
 fn default_notification_headsup_minutes() -> u32 {
     DEFAULT_NOTIFICATION_HEADSUP_MINUTES
 }
@@ -63,9 +59,9 @@ pub fn load_suitable_config(
     configfile: Option<&Path>,
 ) -> Result<Config, Box<dyn std::error::Error>> {
     Ok(if let Some(path) = configfile {
-        Config::load(&path)?
+        Config::read(&path)?
     } else if let Ok(path) = find_configfile() {
-        Config::load(&path)?
+        Config::read(&path)?
     } else {
         Config::default()
     })
@@ -77,10 +73,6 @@ pub struct Config {
     path: PathBuf,
     #[serde(skip, default = "default_tick_rate")]
     pub tick_rate: Duration,
-    // Us days.
-    // TODO: Implement as chrono::Duration with serde
-    #[serde(default = "default_recurrence_lookahead")]
-    pub recurrence_lookahead: u32,
 
     #[serde(default = "default_notification_headsup_minutes")]
     pub notification_headsup_minutes: u32,
@@ -97,7 +89,6 @@ impl Default for Config {
                 PathBuf::from("jackal.toml")
             },
             tick_rate: Duration::from_secs(60),
-            recurrence_lookahead: default_recurrence_lookahead(),
             notification_headsup_minutes: default_notification_headsup_minutes(),
             collections: Vec::new(),
         }
@@ -109,9 +100,5 @@ impl Config {
         let mut config: Config = toml::from_str(&fs::read_to_string(path)?)?;
         config.path = path.to_owned();
         Ok(config)
-    }
-
-    pub fn _collection_config_for(&self, id: &str) -> Option<&CollectionConfig> {
-        self.collections.iter().find(|c| &c.name == id)
     }
 }

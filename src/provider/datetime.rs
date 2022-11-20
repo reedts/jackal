@@ -1,5 +1,6 @@
 use chrono::{Date, DateTime, Duration, Month, NaiveDate, TimeZone};
 use rrule::{RRule, RRuleSet, RRuleSetIter};
+use std::ops::Bound;
 
 pub fn days_of_month(month: &Month, year: i32) -> u32 {
     if month.number_from_month() == 12 {
@@ -207,6 +208,14 @@ impl<Tz: TimeZone> OccurrenceRule<Tz> {
             },
         }
     }
+
+    pub fn as_range<'a>(&'a self) -> (Bound<DateTime<Tz>>, Bound<DateTime<Tz>>) {
+        (
+            Bound::Included(self.first().begin()),
+            self.last()
+                .map_or(Bound::Unbounded, |ts| Bound::Included(ts.end())),
+        )
+    }
 }
 
 pub struct OccurrenceIter<'a, Tz: TimeZone> {
@@ -223,7 +232,7 @@ impl<Tz: TimeZone> Iterator for OccurrenceIter<'_, Tz> {
             it.next().map(|dt| {
                 TimeSpan::from_start_and_duration(
                     dt.with_timezone(&self.tz),
-                    self.start.unwrap().duration(),
+                    self.start.as_ref().unwrap().duration(),
                 )
             })
         } else {

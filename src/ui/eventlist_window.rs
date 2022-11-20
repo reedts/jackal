@@ -4,11 +4,11 @@ use unsegen::base::*;
 use unsegen::input::Scrollable;
 use unsegen::widget::*;
 
-use crate::provider::Eventlike;
+use crate::provider::{Eventlike, Occurrence};
 use crate::ui::Context;
 
 enum Entry<'a> {
-    Event(DateTime<Local>, &'a dyn Eventlike),
+    Event(Occurrence<'a>),
     Time(DateTime<Local>),
     Cursor(DateTime<Local>),
 }
@@ -16,24 +16,24 @@ enum Entry<'a> {
 impl Entry<'_> {
     pub fn datetime(&self) -> DateTime<Local> {
         match self {
-            &Entry::Event(dt, _) | &Entry::Cursor(dt) | &Entry::Time(dt) => dt,
+            Entry::Event(Occurrence { span, .. }) => span.clone().with_tz(&Local {}).begin(),
+            Entry::Cursor(dt) | Entry::Time(dt) => dt.clone(),
         }
     }
 }
 
 impl Display for Entry<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            Self::Event(_, event) => {
-                let occur = event.occurrence_rule();
-
-                let time = if occur.is_allday() {
+        match self {
+            Self::Event(Occurrence { span, event }) => {
+                let local_span = span.clone().with_tz(&Local {});
+                let time = if span.is_allday() {
                     "Allday".to_owned()
                 } else {
                     format!(
                         "{} - {}",
-                        occur.first().time().format("%H:%M"),
-                        occur.last().time().format("%H:%M")
+                        local_span.begin().time().format("%H:%M"),
+                        local_span.end().time().format("%H:%M")
                     )
                 };
                 write!(f, "{}: {}", time, event.summary())
@@ -67,7 +67,7 @@ impl Widget for EventWindow<'_> {
             .context
             .agenda()
             .events_of_day(&self.context.cursor().date_naive())
-            .map(|(dt, ev)| Entry::Event(dt.with_timezone(&Local), ev))
+            .map(Entry::Event)
             .chain([Entry::Cursor(self.context.cursor().clone())])
             .collect::<Vec<Entry>>();
 

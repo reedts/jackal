@@ -66,16 +66,16 @@ impl Event {
             tz_spec.add_property(Property {
                 name: "TZID".to_owned(),
                 params: None,
-                value: Some(occurrence.first().offset().tz_id().to_string()),
+                value: Some(occurrence.first().begin().offset().tz_id().to_string()),
             });
 
             tz_spec.add_property(Property {
                 name: "TZNAME".to_owned(),
                 params: None,
-                value: Some(occurrence.first().offset().abbreviation().to_string()),
+                value: Some(occurrence.first().begin().offset().abbreviation().to_string()),
             });
 
-            let tz_info = tz::TimeZone::from_posix_tz(occurrence.first().offset().tz_id())?;
+            let tz_info = tz::TimeZone::from_posix_tz(occurrence.first().begin().offset().tz_id())?;
 
             if let Some(rule) = tz_info.as_ref().extra_rule() {
                 match rule {
@@ -402,7 +402,7 @@ impl Event {
                 .unwrap()
                 .parse::<RRule<rrule::Unvalidated>>()
             {
-                let start = occurrence.first();
+                let start = occurrence.first().begin();
                 let tz = occurrence.timezone();
                 occurrence =
                     occurrence.with_recurring(ruleset.build(start.with_timezone(&rrule::Tz::Tz(tz)))?);
@@ -456,6 +456,18 @@ impl Event {
             });
         }
     }
+    
+    pub fn set_title(&mut self, title: &str) {
+        if let Some(property) = self.get_property_mut("SUMMARY") {
+            property.value = Some(title.to_owned());
+        } else {
+            self.ical.events[0].add_property(Property {
+                name: "SUMMARY".to_owned(),
+                params: None,
+                value: Some(title.to_owned()),
+            });
+        };
+    }
 
     pub fn path(&self) -> &Path {
         &self.path
@@ -475,17 +487,6 @@ impl Eventlike for Event {
         self.get_property_value("SUMMARY").unwrap()
     }
 
-    fn set_title(&mut self, title: &str) {
-        if let Some(property) = self.get_property_mut("SUMMARY") {
-            property.value = Some(title.to_owned());
-        } else {
-            self.ical.events[0].add_property(Property {
-                name: "SUMMARY".to_owned(),
-                params: None,
-                value: Some(title.to_owned()),
-            });
-        };
-    }
 
     fn uid(&self) -> &str {
         self.get_property_value("UID").unwrap()
@@ -493,10 +494,6 @@ impl Eventlike for Event {
 
     fn summary(&self) -> &str {
         self.title()
-    }
-
-    fn set_summary(&mut self, summary: &str) {
-        self.set_title(summary);
     }
 
     fn description(&self) -> Option<&str> {
@@ -507,26 +504,8 @@ impl Eventlike for Event {
         &self.occurrence
     }
 
-    fn set_occurrence_rule(&mut self, _occurrence: OccurrenceRule<Tz>) {
-        // TODO: implement
-        unimplemented!()
-    }
-
     fn tz(&self) -> &Tz {
         &self.tz
-    }
-
-    fn set_tz(&mut self, tz: &Tz) {
-        self.tz = *tz;
-        self.occurrence = self.occurrence.clone().with_tz(tz);
-    }
-
-    fn begin(&self) -> DateTime<Tz> {
-        self.occurrence.first()
-    }
-
-    fn end(&self) -> DateTime<Tz> {
-        self.occurrence.last()
     }
 
     fn duration(&self) -> Duration {

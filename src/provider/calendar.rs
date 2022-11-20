@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use store_interval_tree::{Interval, IntervalTree};
 use uuid;
 
-use super::{Calendarlike, Eventlike, Occurrence, OccurrenceRule};
+use super::{Calendarlike, EventFilter, Eventlike, Occurrence, OccurrenceRule};
 
 pub struct Calendar<Event: Eventlike> {
     pub(super) path: PathBuf,
@@ -69,16 +69,16 @@ impl<Event: Eventlike> Calendarlike for Calendar<Event> {
         begin: Bound<DateTime<Utc>>,
         end: Bound<DateTime<Utc>>,
     ) -> Vec<Occurrence<'a>> {
-        let begin_dt = match begin {
-            Bound::Unbounded => Utc.with_ymd_and_hms(1970, 0, 0, 0, 0, 0).unwrap(),
-            Bound::Included(dt) => dt,
-            Bound::Excluded(dt) => dt + Duration::seconds(1),
+        let begin_dt = match &begin {
+            Bound::Unbounded => DateTime::<Utc>::MIN_UTC,
+            Bound::Included(dt) => dt.clone(),
+            Bound::Excluded(dt) => dt.clone() + Duration::seconds(1),
         };
 
         let end_dt = match begin {
-            Bound::Unbounded => Utc.with_ymd_and_hms(1970, 0, 0, 0, 0, 0).unwrap(),
-            Bound::Included(dt) => dt,
-            Bound::Excluded(dt) => dt - Duration::seconds(1),
+            Bound::Unbounded => DateTime::<Utc>::MAX_UTC,
+            Bound::Included(dt) => dt.clone(),
+            Bound::Excluded(dt) => dt.clone() - Duration::seconds(1),
         };
         self.events
             .query(&Interval::new(begin, end))
@@ -89,11 +89,30 @@ impl<Event: Eventlike> Calendarlike for Calendar<Event> {
                     .iter()
                     .skip_while(|ts| ts.begin().with_timezone(&Utc) <= begin_dt)
                     .take_while(|ts| ts.begin().with_timezone(&Utc) >= end_dt)
-                    .map(|ts| Occurrence {
+                    .map(move |ts| Occurrence {
                         span: ts.with_tz(&Utc),
-                        event: entry.value() as &dyn Eventlike,
+                        event: entry.value() as &'a dyn Eventlike,
                     })
             })
             .collect()
+    }
+
+    fn filter_events<'a>(&'a self, filter: EventFilter) -> Vec<Occurrence<'a>> {
+        match filter {
+            EventFilter::InRange(begin, end) => {
+                let begin_dt = match begin {
+                    Bound::Unbounded => Bound::Unbounded,
+                    Bound::Included(dt) => Bound::Included(Utc.from_utc_datetime(&dt)),
+                    Bound::Excluded(dt) => Bound::Excluded(Utc.from_utc_datetime(&dt)),
+                };
+
+                let end_dt = match end {
+                    Bound::Unbounded => Bound::Unbounded,
+                    Bound::Included(dt) => Bound::Included(Utc.from_utc_datetime(&dt)),
+                    Bound::Excluded(dt) => Bound::Excluded(Utc.from_utc_datetime(&dt)),
+                };
+                self.events_in(begin_dt, end_dt)
+            }
+        }
     }
 }

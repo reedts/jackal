@@ -1,6 +1,5 @@
 use base64;
 use serde::{ser, Serialize};
-use std::convert::TryInto;
 
 use crate::provider::{Error, Result};
 

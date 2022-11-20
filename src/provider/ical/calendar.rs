@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::rc::Rc;
+use store_interval_tree::{Interval, IntervalTree};
 
 use crate::config::CalendarConfig;
 use crate::provider;
@@ -49,15 +50,10 @@ pub fn from_dir(path: &Path, config: &CalendarConfig) -> Result<Calendar> {
 
     let now = tz.from_utc_datetime(&Utc::now().naive_utc());
 
+    let mut events = IntervalTree::new();
     for event in event_file_iter {
-        let event_rc = Rc::new(event);
-
-        event_rc
-            .occurrence_rule()
-            .iter()
-            .skip_while(|dt| dt < &(now - Duration::days(356)))
-            .take_while(|dt| dt <= &(now + Duration::days(356)))
-            .for_each(|dt| events.entry(dt).or_default().push(Rc::clone(&event_rc)));
+        let (first, last) = event.occurrence_rule().clone().with_tz(&Utc {}).as_range();
+        events.insert(Interval::new(first, last), event)
     }
 
     Ok(Calendar {
@@ -89,31 +85,23 @@ impl MutCalendarlike for Calendar {
             );
         }
 
-        let mut event = Rc::new(Event::new(&self.path, occurrence)?);
+        let mut event = Event::new(&self.path, occurrence)?;
 
         if let Some(title) = new_event.title {
-            Rc::get_mut(&mut event).unwrap().set_title(title.as_ref());
+            event.set_title(title.as_ref());
         }
 
         if let Some(description) = new_event.description {
-            Rc::get_mut(&mut event)
-                .unwrap()
-                .set_summary(description.as_ref());
+            event.set_summary(description.as_ref());
         }
 
         // TODO: serde
         // let mut file = fs::File::create(event.path())?;
         // write!(&mut file, "{}", event.ical);
         log::info!("{:?}", event.as_ical());
-
-        let now = self.tz.from_utc_datetime(&Utc::now().naive_utc());
-
-        event
-            .occurrence_rule()
-            .iter()
-            .skip_while(|dt| dt < &(now - Duration::days(356)))
-            .take_while(|dt| dt <= &(now + Duration::days(356)))
-            .for_each(|dt| self.events.entry(dt).or_default().push(Rc::clone(&event)));
+        
+        let (first, last) = event.occurrence_rule().clone().with_tz(&Utc {}).as_range();
+        self.events.insert(Interval::new(first, last), event);
 
         Ok(())
     }

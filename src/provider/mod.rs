@@ -18,36 +18,19 @@ pub use error::*;
 
 pub type Result<T> = std::result::Result<T, self::Error>;
 
-pub struct EventFilter {
-    pub begin: Bound<NaiveDateTime>,
-    pub end: Bound<NaiveDateTime>,
+pub enum EventFilter {
+    InRange(Bound<NaiveDateTime>, Bound<NaiveDateTime>),
 }
 
 impl Default for EventFilter {
     fn default() -> Self {
-        EventFilter {
-            begin: Bound::Unbounded,
-            end: Bound::Unbounded,
-        }
+        EventFilter::InRange(Bound::Unbounded, Bound::Unbounded)
     }
 }
 
 impl EventFilter {
-    pub fn _from_datetime(mut self, date: Bound<NaiveDateTime>) -> Self {
-        self.begin = date;
-        self
-    }
-
-    pub fn _to_datetime(mut self, date: Bound<NaiveDateTime>) -> Self {
-        self.end = date;
-        self
-    }
-
     pub fn datetime_range<R: RangeBounds<NaiveDateTime>>(mut self, range: R) -> Self {
-        self.begin = range.start_bound().cloned();
-        self.end = range.end_bound().cloned();
-
-        self
+        EventFilter::InRange(range.start_bound().cloned(), range.end_bound().cloned())
     }
 }
 
@@ -139,12 +122,27 @@ pub trait Calendarlike {
         begin: Bound<DateTime<Utc>>,
         end: Bound<DateTime<Utc>>,
     ) -> Vec<Occurrence<'a>>;
+    fn filter_events<'a>(&'a self, filter: EventFilter) -> Vec<Occurrence<'a>>;
 }
 
 pub trait MutCalendarlike: Calendarlike {
     fn add_event(&mut self, event: NewEvent<Tz>) -> Result<()>;
 }
 
-enum ProviderCalendar {
+pub enum ProviderCalendar {
     Ical(self::ical::Calendar),
+}
+
+impl ProviderCalendar {
+    pub fn name(&self) -> &str {
+        match self {
+            ProviderCalendar::Ical(c) => c.name(),
+        }
+    }
+
+    pub fn as_calendar(&self) -> &dyn Calendarlike {
+        match self {
+            ProviderCalendar::Ical(cal) => cal as &dyn Calendarlike,
+        }
+    }
 }

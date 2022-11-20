@@ -1,17 +1,17 @@
 pub mod calendar;
 pub mod datetime;
 pub mod event;
-pub mod ser;
+//pub mod ser;
 
 pub use calendar::Calendar;
 pub use event::Event;
 
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use super::{Error, ErrorKind, Result};
-use crate::config::CollectionConfig;
+use super::{Error, ErrorKind, ProviderCalendar, Result};
+use crate::config::CalendarConfig;
 use crate::provider;
 
 use ical::property::Property;
@@ -26,7 +26,7 @@ const ISO8601_2004_LOCAL_FORMAT_DATE: &'static str = "%Y%m%d";
 
 const ICAL_FILE_EXT: &'static str = ".ics";
 
-pub fn from_dir(path: &Path, config: &CollectionConfig) -> Vec<Calendar> {
+pub fn from_dir(path: &Path, config: &[CalendarConfig]) -> Result<Vec<ProviderCalendar>> {
     if !path.is_dir() {
         return Err(Error::new(
             ErrorKind::CalendarParse,
@@ -34,51 +34,17 @@ pub fn from_dir(path: &Path, config: &CollectionConfig) -> Vec<Calendar> {
         ));
     }
 
-    // TODO: Fix ordering of configs/calendar dirs
-    let calendars: Vec<Calendar> = fs::read_dir(&path)?
-        .zip(&config.calendars)
-        .map(|(dir, config)| {
-            dir.map_or_else(
-                |_| -> Result<_> { Err(Error::from(io::ErrorKind::InvalidData)) },
-                |file: fs::DirEntry| -> Result<Calendar> {
-                    calendar::from_dir(file.path().as_path(), &config)
-                },
-            )
-        })
+    let calendars = config
+        .iter()
+        .map(|c| calendar::from_dir(path.join(PathBuf::from(&c.id)).as_ref(), c))
         .inspect(|res| {
             if let Err(err) = res {
-                log::warn!("{}", err)
+                log::error!("Could not load calendar: {}", err)
             }
         })
         .filter_map(Result::ok)
+        .map(ProviderCalendar::Ical)
         .collect();
 
-    calendars
+    Ok(calendars)
 }
-
-// pub fn calendars_from_dir(path: &Path, calendar_specs: &[CalendarSpec]) -> Result<Collection> {
-//     if !path.is_dir() {
-//         return Err(Error::new(
-//             ErrorKind::CalendarParse,
-//             &format!("'{}' is not a directory", path.display()),
-//         ));
-//     }
-
-//     if calendar_specs.is_empty() {
-//         return Self::from_dir(path);
-//     }
-
-//     let calendars: Vec<Calendar> = calendar_specs
-//         .into_iter()
-//         .filter_map(|spec| match Calendar::from_dir(&path.join(&spec.id)) {
-//             Ok(calendar) => Some(calendar.with_name(spec.name.clone())),
-//             Err(_) => None,
-//         })
-//         .collect();
-
-//     Ok(Collection {
-//         path: path.to_owned(),
-//         friendly_name: path.file_stem().unwrap().to_string_lossy().to_string(),
-//         calendars,
-//     })
-// }
