@@ -99,7 +99,7 @@ impl MutCalendarlike for Calendar {
         // let mut file = fs::File::create(event.path())?;
         // write!(&mut file, "{}", event.ical);
         log::info!("{:?}", event.as_ical());
-        
+
         let (first, last) = event.occurrence_rule().clone().with_tz(&Utc {}).as_range();
         self.events.insert(Interval::new(first, last), event);
 

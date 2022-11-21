@@ -153,23 +153,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let end = begin + check_window;
 
         let mut next_events = calendar.events_in(begin..end).collect::<Vec<_>>();
-        next_events.sort_unstable_by_key(|(begin, _)| *begin);
+        next_events.sort_unstable_by_key(|occurrence| occurrence.begin());
 
-        for (begin, event) in next_events {
-            let begin_utc = begin.naive_utc();
+        for occurrence in next_events {
+            let begin_utc = occurrence.begin().naive_utc();
             let headsup_begin = begin_utc - headsup_time;
             let now = Utc::now().naive_utc();
             let to_sleep = headsup_begin - now;
             log::info!(
                 "Sleeping {} until headsup time of next event {}",
                 to_sleep,
-                event.summary()
+                occurrence.event().summary()
             );
 
             // Chrono duration may be negative, in which case we do not want to sleep
             std::thread::sleep(to_sleep.to_std().unwrap_or(std::time::Duration::ZERO));
 
-            spawn_notify(*begin, event);
+            // Probably the timezone conversion is not needed
+            spawn_notify(
+                occurrence.begin().with_timezone(occurrence.event().tz()),
+                occurrence.event(),
+            );
         }
 
         let now = Utc::now().naive_utc();

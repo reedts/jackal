@@ -18,7 +18,9 @@ use ical::property::Property;
 use super::datetime::*;
 use super::{PropertyList, ICAL_FILE_EXT, ISO8601_2004_LOCAL_FORMAT};
 
-use crate::provider::{days_of_month, Error, ErrorKind, Eventlike, OccurrenceRule, Result, TimeSpan};
+use crate::provider::{
+    days_of_month, Error, ErrorKind, Eventlike, OccurrenceRule, Result, TimeSpan,
+};
 
 #[derive(Clone)]
 pub struct Event {
@@ -72,7 +74,14 @@ impl Event {
             tz_spec.add_property(Property {
                 name: "TZNAME".to_owned(),
                 params: None,
-                value: Some(occurrence.first().begin().offset().abbreviation().to_string()),
+                value: Some(
+                    occurrence
+                        .first()
+                        .begin()
+                        .offset()
+                        .abbreviation()
+                        .to_string(),
+                ),
             });
 
             let tz_info = tz::TimeZone::from_posix_tz(occurrence.first().begin().offset().tz_id())?;
@@ -404,8 +413,8 @@ impl Event {
             {
                 let start = occurrence.first().begin();
                 let tz = occurrence.timezone();
-                occurrence =
-                    occurrence.with_recurring(ruleset.build(start.with_timezone(&rrule::Tz::Tz(tz)))?);
+                occurrence = occurrence
+                    .with_recurring(ruleset.build(start.with_timezone(&rrule::Tz::Tz(tz)))?);
             }
         }
 
@@ -456,7 +465,7 @@ impl Event {
             });
         }
     }
-    
+
     pub fn set_title(&mut self, title: &str) {
         if let Some(property) = self.get_property_mut("SUMMARY") {
             property.value = Some(title.to_owned());
@@ -486,7 +495,6 @@ impl Eventlike for Event {
     fn title(&self) -> &str {
         self.get_property_value("SUMMARY").unwrap()
     }
-
 
     fn uid(&self) -> &str {
         self.get_property_value("UID").unwrap()

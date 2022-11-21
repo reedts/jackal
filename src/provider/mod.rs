@@ -95,8 +95,8 @@ pub trait Eventlike {
 }
 
 pub struct Occurrence<'a> {
-    span: TimeSpan<Utc>,
-    event: &'a dyn Eventlike,
+    pub span: TimeSpan<Utc>,
+    pub event: &'a dyn Eventlike,
 }
 
 impl Occurrence<'_> {
