@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stdout = stdout();
     let term = Terminal::new(stdout.lock())?;
 
-    let calendar = Agenda::from_config(&config)?;
+    let calendar = Agenda::from_config(&config, dispatcher.event_sink())?;
 
     let mut app = App::new(&config, calendar);
 

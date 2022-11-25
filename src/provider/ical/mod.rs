@@ -21,9 +21,13 @@ const JACKAL_CALENDAR_VERSION: &'static str = "2.0";
 const ISO8601_2004_LOCAL_FORMAT: &'static str = "%Y%m%dT%H%M%S";
 const ISO8601_2004_LOCAL_FORMAT_DATE: &'static str = "%Y%m%d";
 
-const ICAL_FILE_EXT: &'static str = ".ics";
+const ICAL_FILE_EXT: &'static str = "ics";
 
-pub fn from_dir(path: &Path, config: &[CalendarConfig]) -> Result<Vec<ProviderCalendar>> {
+pub fn from_dir(
+    path: &Path,
+    config: &[CalendarConfig],
+    event_sink: &std::sync::mpsc::Sender<crate::events::Event>,
+) -> Result<Vec<ProviderCalendar>> {
     if !path.is_dir() {
         return Err(Error::new(
             ErrorKind::CalendarParse,
@@ -33,7 +37,7 @@ pub fn from_dir(path: &Path, config: &[CalendarConfig]) -> Result<Vec<ProviderCa
 
     let calendars = config
         .iter()
-        .map(|c| calendar::from_dir(path.join(PathBuf::from(&c.id)).as_ref(), c))
+        .map(|c| calendar::from_dir(path.join(PathBuf::from(&c.id)).as_ref(), c, event_sink))
         .inspect(|res| {
             if let Err(err) = res {
                 log::error!("Could not load calendar: {}", err)

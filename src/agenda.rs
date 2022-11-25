@@ -13,7 +13,10 @@ pub struct Agenda {
 }
 
 impl Agenda {
-    pub fn from_config(config: &Config) -> Result<Self> {
+    pub fn from_config(
+        config: &Config,
+        event_sink: &std::sync::mpsc::Sender<crate::events::Event>,
+    ) -> Result<Self> {
         let calendars: BTreeMap<String, ProviderCalendar> = config
             .collections
             .iter()
@@ -22,6 +25,7 @@ impl Agenda {
                     Some(ical::from_dir(
                         collection_spec.path.as_path(),
                         collection_spec.calendars.as_slice(),
+                        event_sink,
                     ))
                 } else {
                     None
@@ -102,5 +106,11 @@ impl Agenda {
         self.calendars.get_mut(name).and_then(|cal| match cal {
             ProviderCalendar::Ical(c) => Some(c as &mut dyn MutCalendarlike),
         })
+    }
+
+    pub fn process_external_modifications(&mut self) {
+        for (_, c) in &mut self.calendars {
+            c.process_external_modifications();
+        }
     }
 }

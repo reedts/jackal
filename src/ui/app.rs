@@ -71,6 +71,10 @@ impl<'a> App<'a> {
             if let Ok(event) = dispatcher.next() {
                 match event {
                     Event::Update => self.context.update(),
+                    Event::ExternalModification => {
+                        self.context.agenda_mut().process_external_modifications();
+                        self.context.update();
+                    }
                     Event::Input(input) => {
                         let num_events_of_current_day = self
                             .context

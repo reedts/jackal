@@ -487,6 +487,13 @@ impl Event {
     pub fn ical_event(&self) -> &IcalEvent {
         &self.ical.events[0]
     }
+
+    // Note: This is really a "best effort" approach here, since we 1. cannot really assume that
+    // paths contain the uuid and 2. cannot canonicalize, e.g., the path of a deleted file...
+    // We assume here, however, that both paths have been canonicalized.
+    pub fn matches(&self, path: &Path) -> bool {
+        self.path == path
+    }
 }
 
 impl Eventlike for Event {

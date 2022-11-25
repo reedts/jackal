@@ -1,10 +1,13 @@
 extern crate jackal as lib;
 
-use chrono::{DateTime, Duration, Utc};
-use chrono_tz::Tz;
+use chrono::{DateTime, Duration, Local, Utc};
 use flexi_logger::{Duplicate, FileSpec, Logger};
-use lib::{agenda::Agenda, events::Dispatcher, provider::Eventlike};
-use std::path::PathBuf;
+use lib::{agenda::Agenda, provider::Occurrence};
+use std::{
+    collections::HashSet,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -38,9 +41,10 @@ fn open_url(url: &str) {
 fn notify(
     title: String,
     body: String,
-    begin: DateTime<Tz>,
-    end: DateTime<Tz>,
+    begin: DateTime<Utc>,
+    end: DateTime<Utc>,
     url: Option<String>,
+    _guard: NotificationGuard,
 ) {
     let mut dismissed = false;
 
@@ -89,29 +93,70 @@ fn notify(
     }
 }
 
-fn spawn_notify(begin: DateTime<Tz>, event: &dyn Eventlike) {
-    use linkify::{LinkFinder, LinkKind};
+struct NotificationGuard {
+    map: Arc<Mutex<HashSet<String>>>,
+    uid: String,
+}
 
-    let end = begin + event.duration();
-    let with_dates = begin.date_naive() != end.date_naive();
-    let time_str = if with_dates {
-        format!("{}-{}", begin.naive_local(), end.naive_local())
+impl NotificationGuard {
+    fn new(uid: String, map: &Arc<Mutex<HashSet<String>>>) -> Option<Self> {
+        {
+            let mut r = map.lock().unwrap();
+            if r.contains(&uid) {
+                return None;
+            }
+            r.insert(uid.clone());
+        }
+
+        Some(NotificationGuard {
+            map: map.clone(),
+            uid,
+        })
+    }
+}
+
+impl Drop for NotificationGuard {
+    fn drop(&mut self) {
+        let mut r = self.map.lock().unwrap();
+        r.remove(&self.uid);
+    }
+}
+
+fn spawn_notify(occurence: Occurrence, running_notifications: &Arc<Mutex<HashSet<String>>>) {
+    use linkify::{LinkFinder, LinkKind};
+    let guard = if let Some(guard) =
+        NotificationGuard::new(occurence.event.uid().to_owned(), running_notifications)
+    {
+        guard
     } else {
-        format!(
-            "{}-{}",
-            begin.naive_local().time(),
-            end.naive_local().time()
-        )
+        log::info!(
+            "Not rescheduliing running notification for event {}",
+            occurence.event.title()
+        );
+        return;
+    };
+
+    let begin = occurence.span.begin();
+    let end = occurence.span.end();
+
+    let begin_display = begin.with_timezone(&Local);
+    let end_display = end.with_timezone(&Local);
+
+    let with_dates = begin_display.date_naive() != end_display.date_naive();
+    let time_str = if with_dates {
+        format!("{}-{}", begin_display, end_display)
+    } else {
+        format!("{}-{}", begin_display.time(), end_display.time())
     };
     let mut body = time_str;
-    if let Some(description) = event.description() {
+    if let Some(description) = occurence.event.description() {
         body += "\n";
         body += description;
     }
-    let title = event.title().to_owned();
+    let title = occurence.event.title().to_owned();
 
     // TODO: We probably want to look for urls in other fields like location or URL, too.
-    let url = event.description().and_then(|description| {
+    let url = occurence.event.description().and_then(|description| {
         let mut finder = LinkFinder::new();
         let mut links = finder.kinds(&[LinkKind::Url]).links(description);
         links.next().map(|l| l.as_str().to_owned())
@@ -119,8 +164,37 @@ fn spawn_notify(begin: DateTime<Tz>, event: &dyn Eventlike) {
 
     let _ = std::thread::Builder::new()
         .name("jackal-notify-notification".to_owned())
-        .spawn(move || notify(title, body, begin, end, url))
+        .spawn(move || notify(title, body, begin, end, url, guard))
         .unwrap();
+}
+
+enum ControlFlow {
+    Continue,
+    Restart,
+}
+
+fn wait(
+    events: &std::sync::mpsc::Receiver<lib::events::Event>,
+    until: DateTime<Utc>,
+    info: &str,
+) -> ControlFlow {
+    loop {
+        let now = Utc::now().naive_utc();
+        let to_sleep = until.naive_utc() - now;
+
+        log::info!("Sleeping {} {}", to_sleep, info);
+
+        match events.recv_timeout(to_sleep.to_std().unwrap_or(std::time::Duration::ZERO)) {
+            Ok(lib::events::Event::ExternalModification) => return ControlFlow::Restart,
+            Ok(lib::events::Event::Update | lib::events::Event::Input(_)) => {
+                panic!("No dispatcher was started so where do those come from?!")
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => return ControlFlow::Continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("Event senders are disconnected")
+            }
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -138,48 +212,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = lib::config::load_suitable_config(args.configfile.as_deref())?;
 
-    let _dispatcher = Dispatcher::from_config(&config);
-
-    let calendar = Agenda::from_config(&config)?;
-
+    let (tx, mod_rx) = std::sync::mpsc::channel();
     let headsup_time = Duration::minutes(config.notification_headsup_minutes.into());
     let check_window = Duration::days(1);
     assert!(
         check_window > headsup_time,
         "Check window is too small for headsup time"
     );
-    loop {
-        let begin = Utc::now().naive_utc();
-        let end = begin + check_window;
 
-        let mut next_events = calendar.events_in(begin..end).collect::<Vec<_>>();
-        next_events.sort_unstable_by_key(|occurrence| occurrence.begin());
+    let running_notifications = Arc::new(Mutex::new(HashSet::new()));
 
-        for occurrence in next_events {
-            let begin_utc = occurrence.begin().naive_utc();
-            let headsup_begin = begin_utc - headsup_time;
-            let now = Utc::now().naive_utc();
-            let to_sleep = headsup_begin - now;
-            log::info!(
-                "Sleeping {} until headsup time of next event {}",
-                to_sleep,
-                occurrence.event().summary()
-            );
+    let mut calendar = Agenda::from_config(&config, &tx)?;
+    'outer: loop {
+        calendar.process_external_modifications();
 
-            // Chrono duration may be negative, in which case we do not want to sleep
-            std::thread::sleep(to_sleep.to_std().unwrap_or(std::time::Duration::ZERO));
+        loop {
+            let begin = Utc::now();
+            let end = begin + check_window;
 
-            // Probably the timezone conversion is not needed
-            spawn_notify(
-                occurrence.begin().with_timezone(occurrence.event().tz()),
-                occurrence.event(),
-            );
+            let mut next_events = calendar
+                .events_in(begin.naive_utc()..end.naive_utc())
+                .collect::<Vec<_>>();
+            next_events.sort_unstable_by_key(|occurrence| occurrence.begin());
+
+            for occurrence in next_events {
+                let begin_utc = occurrence.begin();
+                let headsup_begin = begin_utc - headsup_time;
+
+                match wait(&mod_rx, headsup_begin, "until headsup time of next event") {
+                    ControlFlow::Restart => continue 'outer,
+                    ControlFlow::Continue => {}
+                }
+
+                spawn_notify(occurrence, &running_notifications);
+            }
+
+            let end = end - headsup_time;
+
+            match wait(&mod_rx, end, " until end of window. No more events!") {
+                ControlFlow::Restart => continue 'outer,
+                ControlFlow::Continue => {}
+            }
         }
-
-        let now = Utc::now().naive_utc();
-        let end = end - headsup_time;
-        let to_sleep = end - now;
-        eprintln!("No more events in batch. Sleeping for {}", to_sleep);
-        std::thread::sleep(to_sleep.to_std().unwrap_or(std::time::Duration::ZERO));
     }
 }

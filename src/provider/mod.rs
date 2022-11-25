@@ -126,6 +126,7 @@ pub trait Calendarlike {
 
 pub trait MutCalendarlike: Calendarlike {
     fn add_event(&mut self, event: NewEvent<Tz>) -> Result<()>;
+    fn process_external_modifications(&mut self);
 }
 
 pub enum ProviderCalendar {
@@ -142,6 +143,12 @@ impl ProviderCalendar {
     pub fn as_calendar(&self) -> &dyn Calendarlike {
         match self {
             ProviderCalendar::Ical(cal) => cal as &dyn Calendarlike,
+        }
+    }
+
+    pub fn process_external_modifications(&mut self) {
+        match self {
+            ProviderCalendar::Ical(i) => i.process_external_modifications(),
         }
     }
 }

@@ -1,19 +1,36 @@
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 use store_interval_tree::{Interval, IntervalTree};
 
 use crate::config::CalendarConfig;
-use crate::provider;
-use crate::provider::{Eventlike, MutCalendarlike, NewEvent, OccurrenceRule, TimeSpan};
+use crate::provider::ical::ICAL_FILE_EXT;
+use crate::provider::{self, CalendarCore, Eventlike};
+use crate::provider::{MutCalendarlike, NewEvent, OccurrenceRule, TimeSpan};
 
-use super::event::Event;
-use super::{Error, ErrorKind, Result};
+use super::{Error, ErrorKind, Event, Result};
 
-pub type Calendar = provider::Calendar<Event>;
+pub struct Calendar {
+    inner: provider::CalendarCore<Event>,
+    _modification_watcher: notify::RecommendedWatcher,
+    pending_modifications: mpsc::Receiver<ExternalModification>,
+}
 
-pub fn from_dir(path: &Path, config: &CalendarConfig) -> Result<Calendar> {
+impl std::ops::Deref for Calendar {
+    type Target = CalendarCore<Event>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+pub fn from_dir(
+    path: &Path,
+    config: &CalendarConfig,
+    event_sink: &std::sync::mpsc::Sender<crate::events::Event>,
+) -> Result<Calendar> {
     if !path.is_dir() {
         return Err(Error::new(
             ErrorKind::CalendarParse,
@@ -58,12 +75,19 @@ pub fn from_dir(path: &Path, config: &CalendarConfig) -> Result<Calendar> {
         }
     }
 
-    Ok(Calendar {
+    let inner = CalendarCore {
         path: path.to_owned(),
         _identifier: config.id.clone(),
         friendly_name: config.name.clone(),
         tz,
         events,
+    };
+    let (wachter, queue) = ical_watcher(path, event_sink.clone());
+    Ok(Calendar {
+        inner,
+        _modification_watcher: wachter,
+        pending_modifications: queue,
+        //event_sink: event_sink.clone(),
     })
 }
 
@@ -102,19 +126,118 @@ impl MutCalendarlike for Calendar {
         // write!(&mut file, "{}", event.ical);
         log::info!("{:?}", event.as_ical());
 
-        let (first, last) = event.occurrence_rule().clone().with_tz(&Utc {}).as_range();
-        let interval = Interval::new(first, last);
-        // check if interval is already in tree
-        if let Some(mut entry) = self
-            .events
-            .query_mut(&interval)
-            .find(|entry| entry.interval() == &interval)
-        {
-            entry.value().push(event)
-        } else {
-            self.events.insert(Interval::new(first, last), vec![event])
-        }
+        self.inner.insert(event);
 
         Ok(())
     }
+    fn process_external_modifications(&mut self) {
+        fn remove_for_path(_calendar: &mut CalendarCore<Event>, _path: PathBuf) {
+            log::warn!("External modification, but removal of events is not yet implemented.");
+            //let path = std::fs::canonicalize(&path).unwrap_or(path);
+            //events.retain(|_, e| {
+            //    e.retain(|e| !e.matches(&path));
+            //    !e.is_empty()
+            //});
+        }
+        fn add_for_path(calendar: &mut CalendarCore<Event>, path: PathBuf) {
+            let event = match Event::from_file(&path) {
+                Ok(e) => e,
+                Err(e) => {
+                    log::warn!("{}", e);
+                    return;
+                }
+            };
+            calendar.insert(event);
+        }
+        for m in self.pending_modifications.try_iter() {
+            match m {
+                ExternalModification::Create(path) => add_for_path(&mut self.inner, path),
+                ExternalModification::Remove(path) => remove_for_path(&mut self.inner, path),
+                ExternalModification::Modify(path) => {
+                    remove_for_path(&mut self.inner, path.clone());
+                    add_for_path(&mut self.inner, path);
+                }
+            }
+        }
+    }
+}
+
+enum ExternalModification {
+    Create(PathBuf),
+    Remove(PathBuf),
+    Modify(PathBuf),
+}
+
+#[must_use]
+fn ical_watcher(
+    path: &Path,
+    event_sink: mpsc::Sender<crate::events::Event>,
+) -> (
+    notify::RecommendedWatcher,
+    mpsc::Receiver<ExternalModification>,
+) {
+    use notify::{RecursiveMode, Watcher};
+
+    fn is_ical(path: &Path) -> bool {
+        if let Some(ext) = path.extension() {
+            ext == ICAL_FILE_EXT
+        } else {
+            false
+        }
+    }
+
+    fn relevant_modification(event: notify::Event) -> Option<ExternalModification> {
+        use notify::event::*;
+        match event.kind {
+            EventKind::Create(CreateKind::File) if is_ical(&event.paths[0]) => {
+                Some(ExternalModification::Create(event.paths[0].clone()))
+            }
+            EventKind::Remove(RemoveKind::File)
+            | EventKind::Modify(ModifyKind::Name(RenameMode::From))
+                if is_ical(&event.paths[0]) =>
+            {
+                Some(ExternalModification::Remove(event.paths[0].clone()))
+            }
+            EventKind::Modify(ModifyKind::Data(_))
+            | EventKind::Modify(ModifyKind::Name(RenameMode::To))
+                if is_ical(&event.paths[0]) =>
+            {
+                Some(ExternalModification::Modify(event.paths[0].clone()))
+            }
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+                // TODO: Maybe we want to return both events here.
+                // However, for the specific case of ical we don't really expect a rename (from
+                // ical to ical) because that would imply a changing of uuids!
+                if is_ical(&event.paths[0]) {
+                    Some(ExternalModification::Remove(event.paths[0].clone()))
+                } else if is_ical(&event.paths[1]) {
+                    // It may appear weird that we are emiting "modify" events when something is
+                    // renamed/moved to an .ics file. The reason for this is that we have no
+                    // information about whether the file existed before. Hence we take the safe
+                    // option of (possibly pointlessly) removing old files.
+                    Some(ExternalModification::Modify(event.paths[1].clone()))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    let (queue_writer, queue_reader) = mpsc::channel();
+
+    let mut watcher =
+        notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
+            Ok(event) => {
+                if let Some(m) = relevant_modification(event) {
+                    let _ = event_sink.send(crate::events::Event::ExternalModification);
+                    let _ = queue_writer.send(m);
+                }
+            }
+            Err(e) => log::error!("watch error: {:?}", e),
+        })
+        .unwrap();
+
+    watcher.watch(path, RecursiveMode::Recursive).unwrap();
+    (watcher, queue_reader)
 }
