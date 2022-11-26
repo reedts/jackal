@@ -75,7 +75,7 @@ impl<Event: Eventlike> Calendarlike for Calendar<Event> {
             Bound::Excluded(dt) => dt.clone() + Duration::seconds(1),
         };
 
-        let end_dt = match begin {
+        let end_dt = match &end {
             Bound::Unbounded => DateTime::<Utc>::MAX_UTC,
             Bound::Included(dt) => dt.clone(),
             Bound::Excluded(dt) => dt.clone() - Duration::seconds(1),
@@ -88,7 +88,7 @@ impl<Event: Eventlike> Calendarlike for Calendar<Event> {
                     .occurrence_rule()
                     .iter()
                     .skip_while(|ts| ts.begin().with_timezone(&Utc) <= begin_dt)
-                    .take_while(|ts| ts.begin().with_timezone(&Utc) >= end_dt)
+                    .take_while(|ts| ts.begin().with_timezone(&Utc) <= end_dt)
                     .map(move |ts| Occurrence {
                         span: ts.with_tz(&Utc),
                         event: entry.value() as &'a dyn Eventlike,
