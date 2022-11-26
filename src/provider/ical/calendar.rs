@@ -18,8 +18,6 @@ use super::{Error, ErrorKind, Result};
 pub type Calendar = provider::Calendar<Event>;
 
 pub fn from_dir(path: &Path, config: &CalendarConfig) -> Result<Calendar> {
-    let mut events = BTreeMap::<DateTime<Tz>, Vec<Rc<Event>>>::new();
-
     if !path.is_dir() {
         return Err(Error::new(
             ErrorKind::CalendarParse,
@@ -27,7 +25,7 @@ pub fn from_dir(path: &Path, config: &CalendarConfig) -> Result<Calendar> {
         ));
     }
 
-    let event_file_iter = fs::read_dir(&path)?
+    let mut event_file_iter = fs::read_dir(&path)?
         .map(|dir| {
             dir.map_or_else(
                 |_| -> Result<_> { Err(Error::from(ErrorKind::CalendarParse)) },
@@ -39,21 +37,31 @@ pub fn from_dir(path: &Path, config: &CalendarConfig) -> Result<Calendar> {
                 log::warn!("{}", err)
             }
         })
-        .filter_map(Result::ok);
+        .filter_map(Result::ok)
+        .peekable();
 
-    // TODO: use `BTreeMap::first_entry` once it's stable: https://github.com/rust-lang/rust/issues/62924
-    let tz = if let Some((_, event)) = events.iter().next() {
-        *(event.first().unwrap().tz())
+    let tz = if let Some(event) = event_file_iter.peek() {
+        *(event.tz())
     } else {
         Tz::UTC
     };
 
     let now = tz.from_utc_datetime(&Utc::now().naive_utc());
 
-    let mut events = IntervalTree::new();
+    let mut events = IntervalTree::<DateTime<Utc>, Vec<Event>>::new();
     for event in event_file_iter {
         let (first, last) = event.occurrence_rule().clone().with_tz(&Utc {}).as_range();
-        events.insert(Interval::new(first, last), event)
+        let interval = Interval::new(first, last);
+
+        // check if interval is already in tree
+        if let Some(mut entry) = events
+            .query_mut(&interval)
+            .find(|entry| entry.interval() == &interval)
+        {
+            entry.value().push(event)
+        } else {
+            events.insert(Interval::new(first, last), vec![event])
+        }
     }
 
     Ok(Calendar {
@@ -101,7 +109,17 @@ impl MutCalendarlike for Calendar {
         log::info!("{:?}", event.as_ical());
 
         let (first, last) = event.occurrence_rule().clone().with_tz(&Utc {}).as_range();
-        self.events.insert(Interval::new(first, last), event);
+        let interval = Interval::new(first, last);
+        // check if interval is already in tree
+        if let Some(mut entry) = self
+            .events
+            .query_mut(&interval)
+            .find(|entry| entry.interval() == &interval)
+        {
+            entry.value().push(event)
+        } else {
+            self.events.insert(Interval::new(first, last), vec![event])
+        }
 
         Ok(())
     }

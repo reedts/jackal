@@ -12,7 +12,7 @@ pub struct Calendar<Event: Eventlike> {
     pub(super) _identifier: String,
     pub(super) friendly_name: String,
     pub(super) tz: Tz,
-    pub(super) events: IntervalTree<DateTime<Utc>, Event>,
+    pub(super) events: IntervalTree<DateTime<Utc>, Vec<Event>>,
 }
 
 impl<Event: Eventlike> Calendar<Event> {
@@ -82,16 +82,16 @@ impl<Event: Eventlike> Calendarlike for Calendar<Event> {
         };
         self.events
             .query(&Interval::new(begin, end))
-            .flat_map(|entry| {
-                entry
-                    .value()
+            .flat_map(|entry| entry.value().iter())
+            .flat_map(|event| {
+                event
                     .occurrence_rule()
                     .iter()
                     .skip_while(|ts| ts.begin().with_timezone(&Utc) <= begin_dt)
                     .take_while(|ts| ts.begin().with_timezone(&Utc) <= end_dt)
                     .map(move |ts| Occurrence {
                         span: ts.with_tz(&Utc),
-                        event: entry.value() as &'a dyn Eventlike,
+                        event: event as &'a dyn Eventlike,
                     })
             })
             .collect()
