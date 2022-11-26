@@ -1506,8 +1506,9 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "store-interval-tree"
-version = "0.3.1"
-source = "git+https://github.com/reedts/store-interval-tree?branch=develop#3ec755fcfbf990b11421f450eb7e11a2fdbea732"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f40780f8452040f3dee73af3e68abe8ca7220bde70e210d7fede894391cc6902"
 dependencies = [
  "num",
 ]

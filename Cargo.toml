@@ -26,16 +26,13 @@ linkify = "0.9"
 phf = { version = "0.11.1", features = ["macros"] }
 tz-rs = "0.6.14"
 base64 = "0.13.1"
+store-interval-tree = "0.4.0"
 
 # Use fork for serde support
 [dependencies.ical]
 branch = "ical_serde"
 git = "https://github.com/daladim/ical-rs"
 features = ["ical", "serde"]
-
-[dependencies.store-interval-tree]
-branch = "develop"
-git = "https://github.com/reedts/store-interval-tree"
 
 [dev-dependencies]
 rusty-hook = "0.11.2"
