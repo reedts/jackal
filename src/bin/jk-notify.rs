@@ -130,7 +130,7 @@ fn spawn_notify(occurence: Occurrence, running_notifications: &Arc<Mutex<HashSet
         guard
     } else {
         log::info!(
-            "Not rescheduliing running notification for event {}",
+            "Not rescheduling running notification for event {}",
             occurence.event.title()
         );
         return;
