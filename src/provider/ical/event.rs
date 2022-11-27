@@ -15,7 +15,7 @@ use ical::parser::Component;
 use ical::property::Property;
 
 use super::datetime::*;
-use super::{PropertyList, ICAL_FILE_EXT, ISO8601_2004_LOCAL_FORMAT};
+use super::{PropertyList, ISO8601_2004_LOCAL_FORMAT};
 
 use crate::provider::{
     days_of_month, Error, ErrorKind, Eventlike, OccurrenceRule, Result, TimeSpan,
@@ -29,6 +29,10 @@ pub struct Event {
     tz: Tz,
 }
 
+pub fn uid_from_path(path: &Path) -> Option<String> {
+    Some(path.file_stem().unwrap().to_str()?.to_owned())
+}
+
 impl Event {
     pub fn new(path: &Path, occurrence: OccurrenceRule<Tz>) -> Result<Self> {
         if path.is_file() && path.exists() {
@@ -38,12 +42,15 @@ impl Event {
             ));
         }
 
-        let uid = if path.is_file() {
-            // TODO: Error handling
-            uuid::Uuid::parse_str(&path.file_stem().unwrap().to_string_lossy().to_string()).unwrap()
-        } else {
-            uuid::Uuid::new_v4()
-        };
+        let uid = uid_from_path(path).ok_or_else(|| {
+            Error::new(
+                ErrorKind::EventParse,
+                &format!(
+                    "Uid derived from path '{}' is not an utf8 string",
+                    path.display()
+                ),
+            )
+        })?;
 
         let mut ical_calendar = IcalCalendar::new();
         ical_calendar.properties = vec![
@@ -250,7 +257,7 @@ impl Event {
             Property {
                 name: "UID".to_owned(),
                 params: None,
-                value: Some(uid.to_string()),
+                value: Some(uid),
             },
             Property {
                 name: "DTSTAMP".to_owned(),
@@ -262,12 +269,12 @@ impl Event {
 
         let tz = occurrence.timezone();
 
+        assert!(
+            path.is_file(),
+            "File property assured at beginning of function."
+        );
         Ok(Event {
-            path: if path.is_file() {
-                path.to_owned()
-            } else {
-                path.join(&uid.to_string()).with_extension(ICAL_FILE_EXT)
-            },
+            path: path.to_owned(),
             occurrence,
             ical: ical_calendar,
             tz,
