@@ -1,11 +1,10 @@
-use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use store_interval_tree::{Interval, IntervalTree};
 
 use crate::config::CalendarConfig;
+use crate::provider::ical::event::uid_from_path;
 use crate::provider::ical::ICAL_FILE_EXT;
 use crate::provider::{self, CalendarCore, Eventlike};
 use crate::provider::{MutCalendarlike, NewEvent, OccurrenceRule, TimeSpan};
@@ -59,35 +58,17 @@ pub fn from_dir(
         Tz::UTC
     };
 
-    let mut events = IntervalTree::<DateTime<Utc>, Vec<Event>>::new();
-    for event in event_file_iter {
-        let (first, last) = event.occurrence_rule().clone().with_tz(&Utc {}).as_range();
-        let interval = Interval::new(first, last);
+    let mut inner = CalendarCore::new(path.to_owned(), config.id.clone(), config.name.clone(), tz);
 
-        // check if interval is already in tree
-        if let Some(mut entry) = events
-            .query_mut(&interval)
-            .find(|entry| entry.interval() == &interval)
-        {
-            entry.value().push(event)
-        } else {
-            events.insert(Interval::new(first, last), vec![event])
-        }
+    for event in event_file_iter {
+        inner.insert(event);
     }
 
-    let inner = CalendarCore {
-        path: path.to_owned(),
-        _identifier: config.id.clone(),
-        friendly_name: config.name.clone(),
-        tz,
-        events,
-    };
     let (wachter, queue) = ical_watcher(path, event_sink.clone());
     Ok(Calendar {
         inner,
         _modification_watcher: wachter,
         pending_modifications: queue,
-        //event_sink: event_sink.clone(),
     })
 }
 
@@ -131,16 +112,19 @@ impl MutCalendarlike for Calendar {
         Ok(())
     }
     fn process_external_modifications(&mut self) {
-        fn remove_for_path(_calendar: &mut CalendarCore<Event>, _path: PathBuf) {
-            log::warn!("External modification, but removal of events is not yet implemented.");
-            //let path = std::fs::canonicalize(&path).unwrap_or(path);
+        fn remove_for_path(calendar: &mut CalendarCore<Event>, path: &Path) {
+            let Some(uid) = uid_from_path(path) else {
+                log::warn!("Unable to obtain uid from file removal event path '{}'", path.to_string_lossy());
+                return;
+            };
+            calendar.remove_via_uid(&uid);
             //events.retain(|_, e| {
             //    e.retain(|e| !e.matches(&path));
             //    !e.is_empty()
             //});
         }
-        fn add_for_path(calendar: &mut CalendarCore<Event>, path: PathBuf) {
-            let event = match Event::from_file(&path) {
+        fn add_for_path(calendar: &mut CalendarCore<Event>, path: &Path) {
+            let event = match Event::from_file(path) {
                 Ok(e) => e,
                 Err(e) => {
                     log::warn!("{}", e);
@@ -151,11 +135,11 @@ impl MutCalendarlike for Calendar {
         }
         for m in self.pending_modifications.try_iter() {
             match m {
-                ExternalModification::Create(path) => add_for_path(&mut self.inner, path),
-                ExternalModification::Remove(path) => remove_for_path(&mut self.inner, path),
+                ExternalModification::Create(path) => add_for_path(&mut self.inner, &path),
+                ExternalModification::Remove(path) => remove_for_path(&mut self.inner, &path),
                 ExternalModification::Modify(path) => {
-                    remove_for_path(&mut self.inner, path.clone());
-                    add_for_path(&mut self.inner, path);
+                    remove_for_path(&mut self.inner, &path);
+                    add_for_path(&mut self.inner, &path);
                 }
             }
         }

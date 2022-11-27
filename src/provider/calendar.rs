@@ -1,32 +1,34 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use chrono_tz::Tz;
+use std::collections::BTreeMap;
 use std::ops::{Bound, Deref};
 use std::path::{Path, PathBuf};
 use store_interval_tree::{Interval, IntervalTree};
 
 use super::{Calendarlike, EventFilter, Eventlike, Occurrence};
 
+type Uid = String;
+
 pub struct CalendarCore<Event: Eventlike> {
     pub(super) path: PathBuf,
     pub(super) _identifier: String,
     pub(super) friendly_name: String,
     pub(super) tz: Tz,
-    pub(super) events: IntervalTree<DateTime<Utc>, Vec<Event>>,
+    events: IntervalTree<DateTime<Utc>, Vec<Event>>,
+    uid_to_interval: BTreeMap<Uid, Interval<DateTime<Utc>>>,
 }
 
 impl<Event: Eventlike> CalendarCore<Event> {
-    //pub fn _new(path: &Path) -> Self {
-    //    let identifier = uuid::Uuid::new_v4().hyphenated();
-    //    let friendly_name = identifier.clone();
-
-    //    Self {
-    //        path: path.to_owned(),
-    //        _identifier: identifier.to_string(),
-    //        friendly_name: friendly_name.to_string(),
-    //        tz: Tz::UTC,
-    //        events: IntervalTree::new(),
-    //    }
-    //}
+    pub fn new(path: PathBuf, identifier: String, friendly_name: String, tz: Tz) -> Self {
+        Self {
+            path,
+            _identifier: identifier,
+            friendly_name,
+            tz,
+            events: IntervalTree::new(),
+            uid_to_interval: BTreeMap::new(),
+        }
+    }
 
     //pub fn _new_with_name(path: &Path, name: String) -> Self {
     //    let identifier = uuid::Uuid::new_v4().hyphenated();
@@ -52,6 +54,8 @@ impl<Event: Eventlike> CalendarCore<Event> {
         let (first, last) = event.occurrence_rule().clone().with_tz(&Utc {}).as_range();
         let interval = Interval::new(first, last);
 
+        let uid = event.uid().to_owned();
+
         // check if interval is already in tree
         if let Some(mut entry) = self
             .events
@@ -61,6 +65,26 @@ impl<Event: Eventlike> CalendarCore<Event> {
             entry.value().push(event)
         } else {
             self.events.insert(Interval::new(first, last), vec![event])
+        }
+
+        let prev = self.uid_to_interval.insert(uid, interval);
+        assert!(prev.is_none(), "duplicate event uid");
+    }
+
+    pub fn remove_via_uid(&mut self, uid: &str) {
+        let interval = self.uid_to_interval.remove(uid).unwrap();
+
+        // There is no direct accessor for a specific interval in the intervaltree, meh...
+        let mut entry = self
+            .events
+            .query_mut(&interval)
+            .find(|e| *e.interval() == interval)
+            .unwrap();
+
+        let val = entry.value();
+        val.retain(|e| e.uid() != uid);
+        if val.is_empty() {
+            self.events.delete(&interval);
         }
     }
 }
