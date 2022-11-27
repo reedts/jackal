@@ -1,5 +1,4 @@
-use chrono::{DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, Utc};
-use chrono_tz::Tz;
+use chrono::{Datelike, Duration, Month, NaiveDate, NaiveDateTime, Utc};
 use log;
 use num_traits::FromPrimitive;
 use std::collections::BTreeMap;
@@ -7,9 +6,7 @@ use std::collections::BTreeMap;
 use crate::config::Config;
 use crate::provider::datetime::days_of_month;
 use crate::provider::ical;
-use crate::provider::{
-    Calendarlike, EventFilter, Eventlike, MutCalendarlike, Occurrence, ProviderCalendar, Result,
-};
+use crate::provider::{EventFilter, MutCalendarlike, Occurrence, ProviderCalendar, Result};
 
 pub struct Agenda {
     calendars: BTreeMap<String, ProviderCalendar>,
@@ -104,7 +101,6 @@ impl Agenda {
     pub fn calendar_by_name_mut(&mut self, name: &str) -> Option<&mut dyn MutCalendarlike> {
         self.calendars.get_mut(name).and_then(|cal| match cal {
             ProviderCalendar::Ical(c) => Some(c as &mut dyn MutCalendarlike),
-            _ => None,
         })
     }
 }

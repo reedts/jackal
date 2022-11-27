@@ -1,30 +1,29 @@
-use chrono::{Date, DateTime, Duration, Month, NaiveDate, TimeZone};
-use rrule::{RRule, RRuleSet, RRuleSetIter};
+use chrono::{DateTime, Duration, Month, NaiveDate, TimeZone};
+use rrule::{RRuleSet, RRuleSetIter};
 use std::ops::Bound;
 
 pub fn days_of_month(month: &Month, year: i32) -> u32 {
     if month.number_from_month() == 12 {
-        NaiveDate::from_ymd(year + 1, 1, 1)
+        NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
     } else {
-        NaiveDate::from_ymd(year, month.number_from_month() as u32 + 1, 1)
+        NaiveDate::from_ymd_opt(year, month.number_from_month() as u32 + 1, 1).unwrap()
     }
-    .signed_duration_since(NaiveDate::from_ymd(
-        year,
-        month.number_from_month() as u32,
-        1,
-    ))
+    .signed_duration_since(
+        NaiveDate::from_ymd_opt(year, month.number_from_month() as u32, 1).unwrap(),
+    )
     .num_days() as u32
 }
 
 pub fn _days_of_year(year: i32) -> u32 {
-    NaiveDate::from_ymd(year, 1, 1)
-        .signed_duration_since(NaiveDate::from_ymd(year + 1, 1, 1))
+    NaiveDate::from_ymd_opt(year, 1, 1)
+        .unwrap()
+        .signed_duration_since(NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap())
         .num_days() as u32
 }
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum TimeSpan<Tz: TimeZone> {
-    Allday(Date<Tz>, Option<Date<Tz>>),
+    Allday(NaiveDate, Option<NaiveDate>, Tz),
     TimePoints(DateTime<Tz>, DateTime<Tz>),
     Duration(DateTime<Tz>, Duration),
     Instant(DateTime<Tz>),
@@ -43,16 +42,16 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
         TimeSpan::Instant(begin)
     }
 
-    pub fn allday(date: Date<Tz>) -> Self {
-        TimeSpan::Allday(date, None)
+    pub fn allday(date: NaiveDate, tz: Tz) -> Self {
+        TimeSpan::Allday(date, None, tz)
     }
 
-    pub fn allday_until(begin: Date<Tz>, end: Date<Tz>) -> Self {
-        TimeSpan::Allday(begin, Some(end))
+    pub fn allday_until(begin: NaiveDate, end: NaiveDate, tz: Tz) -> Self {
+        TimeSpan::Allday(begin, Some(end), tz)
     }
 
     pub fn is_allday(&self) -> bool {
-        matches!(self, TimeSpan::Allday(_, _))
+        matches!(self, TimeSpan::Allday(_, _, _))
     }
 
     pub fn is_instant(&self) -> bool {
@@ -61,7 +60,10 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
 
     pub fn begin(&self) -> DateTime<Tz> {
         match &self {
-            TimeSpan::Allday(begin, _) => begin.and_hms(0, 0, 0),
+            TimeSpan::Allday(begin, _, tz) => tz
+                .from_local_datetime(&begin.and_hms_opt(0, 0, 0).unwrap())
+                .earliest()
+                .unwrap(),
             TimeSpan::TimePoints(begin, _) => begin.clone(),
             TimeSpan::Duration(begin, _) => begin.clone(),
             TimeSpan::Instant(begin) => begin.clone(),
@@ -70,7 +72,15 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
 
     pub fn end(&self) -> DateTime<Tz> {
         match &self {
-            TimeSpan::Allday(begin, end) => end.as_ref().unwrap_or(&begin).and_hms(23, 59, 59),
+            TimeSpan::Allday(begin, end, tz) => tz
+                .from_local_datetime(
+                    &end.as_ref()
+                        .unwrap_or(&begin)
+                        .and_hms_opt(23, 59, 59)
+                        .unwrap(),
+                )
+                .earliest()
+                .unwrap(),
             TimeSpan::TimePoints(_, end) => end.clone(),
             TimeSpan::Duration(begin, dur) => begin.clone() + dur.clone(),
             TimeSpan::Instant(end) => end.clone(),
@@ -79,7 +89,7 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
 
     pub fn duration(&self) -> Duration {
         match &self {
-            TimeSpan::Allday(begin, end) => end
+            TimeSpan::Allday(begin, end, _) => end
                 .as_ref()
                 .map_or(Duration::hours(24), |e| e.clone() - begin.clone()),
             TimeSpan::TimePoints(start, end) => end.clone() - start.clone(),
@@ -90,9 +100,7 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
 
     pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> TimeSpan<Tz2> {
         match self {
-            TimeSpan::Allday(begin, end) => {
-                TimeSpan::<Tz2>::Allday(begin.with_timezone(tz), end.map(|e| e.with_timezone(tz)))
-            }
+            TimeSpan::Allday(begin, end, _) => TimeSpan::<Tz2>::Allday(begin, end, tz.clone()),
             TimeSpan::TimePoints(begin, end) => {
                 TimeSpan::<Tz2>::TimePoints(begin.with_timezone(tz), end.with_timezone(tz))
             }
@@ -153,7 +161,7 @@ impl<Tz: TimeZone> OccurrenceRule<Tz> {
                     rrule
                         .into_iter()
                         .last()
-                        .map(|dt| TimeSpan::from_start_and_duration(ts.begin(), ts.duration()))
+                        .map(|_| TimeSpan::from_start_and_duration(ts.begin(), ts.duration()))
                 } else {
                     None
                 }

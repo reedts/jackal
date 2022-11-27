@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use toml;
 
-const DEFAULT_RECURRENCE_LOOKAHEAD: u32 = 356;
 const DEFAULT_NOTIFICATION_HEADSUP_MINUTES: u32 = 10;
 const CONFIG_PATH_ENV_VAR: &str = "JACKAL_CONFIG_FILE";
 

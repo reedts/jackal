@@ -4,7 +4,7 @@ use unsegen::base::*;
 use unsegen::input::Scrollable;
 use unsegen::widget::*;
 
-use crate::provider::{Eventlike, Occurrence};
+use crate::provider::Occurrence;
 use crate::ui::Context;
 
 enum Entry<'a> {
@@ -72,7 +72,7 @@ impl Widget for EventWindow<'_> {
             .collect::<Vec<Entry>>();
 
         // Append current time if cursor's date is today
-        if self.context.today() == self.context.cursor().date() {
+        if self.context.today() == self.context.cursor().date_naive() {
             events.push(Entry::Time(self.context.now().clone()))
         }
 

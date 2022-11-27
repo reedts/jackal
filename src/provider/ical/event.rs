@@ -1,4 +1,4 @@
-use chrono::{DateTime, Datelike, Duration, Month, NaiveDate, TimeZone, Weekday};
+use chrono::{Datelike, Duration, Month, NaiveDate, Weekday};
 use chrono_tz::{OffsetName, Tz};
 use num_traits::FromPrimitive;
 use rrule::RRule;
@@ -8,7 +8,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use tz;
 use tz::timezone::*;
-use uuid::Uuid;
 
 use ical::parser::ical::component::*;
 use ical::parser::ical::IcalParser;
@@ -116,20 +115,22 @@ impl Event {
                         //
                         // HERE BE DRAGONS!!!!
                         let dtstart = match dst_start_day {
-                            RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month(
+                            RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month_opt(
                                 1970,
                                 mwd.month().into(),
                                 Weekday::from_u8(mwd.week_day()).unwrap(),
                                 mwd.week(),
-                            ),
+                            )
+                            .unwrap(),
                             RuleDay::Julian0WithLeap(days) => {
-                                NaiveDate::from_yo(1970, (days.get() + 1) as u32)
+                                NaiveDate::from_yo_opt(1970, (days.get() + 1) as u32).unwrap()
                             }
                             RuleDay::Julian1WithoutLeap(days) => {
-                                NaiveDate::from_yo(1970, days.get() as u32)
+                                NaiveDate::from_yo_opt(1970, days.get() as u32).unwrap()
                             }
                         }
-                        .and_hms(2, 0, 0);
+                        .and_hms_opt(2, 0, 0)
+                        .unwrap();
 
                         let num_days_of_month = days_of_month(
                             &Month::from_u32(dtstart.month()).unwrap(),
@@ -187,20 +188,22 @@ impl Event {
                         //
                         // HERE BE DRAGONS!!!!
                         let dtstart = match dst_end_day {
-                            RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month(
+                            RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month_opt(
                                 1970,
                                 mwd.month().into(),
                                 Weekday::from_u8(mwd.week_day()).unwrap(),
                                 mwd.week(),
-                            ),
+                            )
+                            .unwrap(),
                             RuleDay::Julian0WithLeap(days) => {
-                                NaiveDate::from_yo(1970, (days.get() + 1) as u32)
+                                NaiveDate::from_yo_opt(1970, (days.get() + 1) as u32).unwrap()
                             }
                             RuleDay::Julian1WithoutLeap(days) => {
-                                NaiveDate::from_yo(1970, days.get() as u32)
+                                NaiveDate::from_yo_opt(1970, days.get() as u32).unwrap()
                             }
                         }
-                        .and_hms(3, 0, 0);
+                        .and_hms_opt(3, 0, 0)
+                        .unwrap();
 
                         let num_days_of_month = days_of_month(
                             &Month::from_u32(dtstart.month()).unwrap(),
@@ -367,10 +370,7 @@ impl Event {
             match &dtend_spec {
                 IcalDateTime::Date(date) => {
                     if let IcalDateTime::Date(bdate) = dtstart_spec {
-                        OccurrenceRule::Onetime(TimeSpan::allday_until(
-                            tz.from_utc_date(&bdate),
-                            tz.from_utc_date(&date),
-                        ))
+                        OccurrenceRule::Onetime(TimeSpan::allday_until(bdate, *date, tz))
                     } else {
                         return Err(Error::new(
                             ErrorKind::DateParse,
@@ -395,9 +395,7 @@ impl Event {
             //  ... a date spec, the event has to have the duration of a single day
             //  ... a datetime spec, the event has to have the dtstart also as dtend
             match dtstart_spec {
-                date @ IcalDateTime::Date(_) => {
-                    OccurrenceRule::Onetime(TimeSpan::allday(date.as_date(&tz)))
-                }
+                IcalDateTime::Date(d) => OccurrenceRule::Onetime(TimeSpan::allday(d, tz)),
                 dt => OccurrenceRule::Onetime(TimeSpan::from_start(dt.as_datetime(&tz))),
             }
         };

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use store_interval_tree::{Interval, IntervalTree};
 use uuid;
 
-use super::{Calendarlike, EventFilter, Eventlike, Occurrence, OccurrenceRule};
+use super::{Calendarlike, EventFilter, Eventlike, Occurrence};
 
 pub struct Calendar<Event: Eventlike> {
     pub(super) path: PathBuf,

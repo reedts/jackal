@@ -93,7 +93,7 @@ fn spawn_notify(begin: DateTime<Tz>, event: &dyn Eventlike) {
     use linkify::{LinkFinder, LinkKind};
 
     let end = begin + event.duration();
-    let with_dates = begin.date() != end.date();
+    let with_dates = begin.date_naive() != end.date_naive();
     let time_str = if with_dates {
         format!("{}-{}", begin.naive_local(), end.naive_local())
     } else {

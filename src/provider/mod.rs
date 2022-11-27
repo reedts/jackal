@@ -3,8 +3,7 @@ use chrono_tz::Tz;
 use rrule::RRule;
 use std::default::Default;
 use std::ops::{Bound, RangeBounds};
-use std::path::{Path, PathBuf};
-use store_interval_tree::IntervalTreeIterator;
+use std::path::Path;
 
 pub mod calendar;
 pub mod datetime;
@@ -29,7 +28,7 @@ impl Default for EventFilter {
 }
 
 impl EventFilter {
-    pub fn datetime_range<R: RangeBounds<NaiveDateTime>>(mut self, range: R) -> Self {
+    pub fn datetime_range<R: RangeBounds<NaiveDateTime>>(self, range: R) -> Self {
         EventFilter::InRange(range.start_bound().cloned(), range.end_bound().cloned())
     }
 }

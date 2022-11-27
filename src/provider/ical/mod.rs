@@ -6,13 +6,10 @@ pub mod event;
 pub use calendar::Calendar;
 pub use event::Event;
 
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
 use super::{Error, ErrorKind, ProviderCalendar, Result};
 use crate::config::CalendarConfig;
-use crate::provider;
 
 use ical::property::Property;
 

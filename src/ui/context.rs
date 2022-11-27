@@ -91,8 +91,8 @@ impl Context {
         &self.now
     }
 
-    pub fn today(&self) -> Date<Local> {
-        self.now.date()
+    pub fn today(&self) -> NaiveDate {
+        self.now().date_naive()
     }
 
     pub fn cursor(&self) -> &DateTime<Local> {

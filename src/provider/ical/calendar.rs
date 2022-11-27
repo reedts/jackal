@@ -1,16 +1,12 @@
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-use std::rc::Rc;
 use store_interval_tree::{Interval, IntervalTree};
 
 use crate::config::CalendarConfig;
 use crate::provider;
-use crate::provider::{
-    Calendarlike, Eventlike, MutCalendarlike, NewEvent, OccurrenceRule, TimeSpan,
-};
+use crate::provider::{Eventlike, MutCalendarlike, NewEvent, OccurrenceRule, TimeSpan};
 
 use super::event::Event;
 use super::{Error, ErrorKind, Result};
@@ -45,8 +41,6 @@ pub fn from_dir(path: &Path, config: &CalendarConfig) -> Result<Calendar> {
     } else {
         Tz::UTC
     };
-
-    let now = tz.from_utc_datetime(&Utc::now().naive_utc());
 
     let mut events = IntervalTree::<DateTime<Utc>, Vec<Event>>::new();
     for event in event_file_iter {

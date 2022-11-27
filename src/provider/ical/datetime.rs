@@ -1,6 +1,4 @@
-use chrono::{
-    Date, DateTime, Duration, Month, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc, Weekday,
-};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc, Weekday};
 use chrono_tz::Tz;
 use ical::property::Property;
 use nom::{
@@ -17,20 +15,6 @@ use std::str::FromStr;
 use crate::provider::{Error, ErrorKind, Result};
 
 use super::{ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE};
-
-pub fn _days_of_month(month: &Month, year: i32) -> u64 {
-    if month.number_from_month() == 12 {
-        NaiveDate::from_ymd(year + 1, 1, 1)
-    } else {
-        NaiveDate::from_ymd(year, month.number_from_month() as u32 + 1, 1)
-    }
-    .signed_duration_since(NaiveDate::from_ymd(
-        year,
-        month.number_from_month() as u32,
-        1,
-    ))
-    .num_days() as u64
-}
 
 pub fn weekday_to_ical(weekday: Weekday) -> String {
     let mut s = format!("{}", weekday).to_uppercase();
@@ -315,7 +299,7 @@ impl<Tz: TimeZone> From<DateTime<Tz>> for IcalDateTime {
 
 impl Default for IcalDateTime {
     fn default() -> Self {
-        IcalDateTime::Floating(NaiveDateTime::from_timestamp(0, 0))
+        IcalDateTime::Floating(NaiveDateTime::from_timestamp_opt(0, 0).unwrap())
     }
 }
 
@@ -330,26 +314,26 @@ impl IcalDateTime {
 
     pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
         match *self {
-            IcalDateTime::Date(dt) => tz.from_utc_date(&dt).and_hms(0, 0, 0),
+            IcalDateTime::Date(dt) => tz.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()),
             IcalDateTime::Floating(dt) => tz.from_utc_datetime(&dt),
             IcalDateTime::Utc(dt) => dt.with_timezone(&tz),
             IcalDateTime::Local(dt) => dt.with_timezone(&tz),
         }
     }
 
-    pub fn as_date<Tz: TimeZone>(&self, tz: &Tz) -> Date<Tz> {
+    pub fn as_date<Tz: TimeZone>(&self) -> NaiveDate {
         match *self {
-            IcalDateTime::Date(dt) => tz.from_utc_date(&dt),
-            IcalDateTime::Floating(dt) => tz.from_utc_date(&dt.date()),
-            IcalDateTime::Utc(dt) => dt.with_timezone(tz).date(),
-            IcalDateTime::Local(dt) => dt.with_timezone(tz).date(),
+            IcalDateTime::Date(dt) => dt.clone(),
+            IcalDateTime::Floating(dt) => dt.date(),
+            IcalDateTime::Utc(dt) => dt.date_naive(),
+            IcalDateTime::Local(dt) => dt.date_naive(),
         }
     }
 
     pub fn _with_tz(self, tz: &chrono_tz::Tz) -> Self {
         match self {
             IcalDateTime::Date(dt) => {
-                IcalDateTime::Local(tz.from_utc_datetime(&dt.and_hms(0, 0, 0)))
+                IcalDateTime::Local(tz.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()))
             }
             IcalDateTime::Floating(dt) => IcalDateTime::Local(tz.from_utc_datetime(&dt)),
             IcalDateTime::Utc(dt) => IcalDateTime::Local(dt.with_timezone(&tz)),

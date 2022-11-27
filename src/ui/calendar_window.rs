@@ -87,7 +87,8 @@ impl<'a> MonthPane<'a> {
 
     pub fn new(month: Month, year: i32, context: &'a Context) -> Self {
         let num_days = days_of_month(&month, year);
-        let offset = NaiveDate::from_ymd(year, month.number_from_month(), 1)
+        let offset = NaiveDate::from_ymd_opt(year, month.number_from_month(), 1)
+            .unwrap()
             .weekday()
             .num_days_from_monday() as u8;
 
