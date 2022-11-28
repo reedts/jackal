@@ -1,17 +1,134 @@
 use base64;
+use ical::parser::ical::component::*;
+use ical::parser::Component;
+use ical::property::Property;
 use serde::{ser, Serialize};
+use std::collections::BTreeMap;
+use std::default::Default;
+use std::fmt::Display;
 
 use crate::provider::{Error, ErrorKind, Result};
 
+pub fn to_string(value: IcalCalendar) -> Result<String> {
+    let mut serial = Serializer::default();
+    todo!()
+}
+
+#[derive(Default)]
 enum Position {
+    #[default]
     Key,
     Parameters,
     Value,
 }
 
+enum Section {
+    Calendar,
+    Timezones,
+    Alarms,
+    Events,
+}
+
+impl Display for Section {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Calendar => "VCALENDAR",
+            Self::Alarms => "VALARM",
+            Self::Events => "VEVENT",
+            Self::Timezones => "VTIMEZONE",
+        };
+
+        write!(f, "{}", s)
+    }
+}
+
 pub struct Serializer {
     output: String,
-    position: Vec<Position>,
+    position: Position,
+    section: Vec<Section>,
+}
+
+impl Serializer {
+    fn begin_section(&mut self, sec: Section) -> Result<()> {
+        match self.position {
+            Position::Value => {
+                self.position = Position::Key;
+                self.output += &format!("BEGIN:{}\n", &sec);
+                self.section.push(sec);
+                Ok(())
+            }
+            _ => Err(Error::new(
+                ErrorKind::SerializeError,
+                "Key value not finished",
+            )),
+        }
+    }
+
+    fn end_section(&mut self) -> Result<()> {
+        match self.position {
+            Position::Value => {
+                self.position = Position::Key;
+                let sec = self.section.pop().unwrap();
+                self.output += &format!("END:{}\n", sec);
+                Ok(())
+            }
+            _ => Err(Error::new(
+                ErrorKind::SerializeError,
+                "Key value not finished",
+            )),
+        }
+    }
+
+    fn serialize_properties(&mut self, value: &Vec<Property>) -> Result<()> {
+        for Property {
+            name,
+            params,
+            value,
+        } in value
+        {
+            name.serialize(&mut *self)?;
+
+            if let Some(p) = params {
+                self.position = Position::Parameters;
+                // This matches the behaviour of "serialize_map",
+                // however the structure itself is not a map.
+                // Maybe we should serialize 2-tuple always this way?
+                for (name, values) in p.iter() {
+                    self.output += ";";
+                    self.position = Position::Parameters;
+                    name.serialize(&mut *self)?;
+                    self.output += "=";
+                    values.serialize(&mut *self)?;
+                }
+            }
+
+            self.output += ":";
+            value.serialize(&mut *self);
+            self.output += "\n";
+        }
+        Ok(())
+    }
+
+    fn serialize_events(&mut self, value: &IcalEvent) -> Result<()> {
+        self.begin_section(Section::Events);
+        self.serialize_properties(&value.properties);
+        self.end_section();
+        Ok(())
+    }
+
+    fn serialize_calendar(&mut self, calendar: &IcalCalendar) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl Default for Serializer {
+    fn default() -> Self {
+        Serializer {
+            output: String::default(),
+            position: Position::default(),
+            section: vec![Section::Calendar],
+        }
+    }
 }
 
 impl<'a> ser::Serializer for &'a mut Serializer {
@@ -139,6 +256,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
+        if self.output.ends_with("=") {
+            self.position = Position::Value;
+        }
+
         Ok(self)
     }
 
@@ -194,9 +315,9 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        match self.position.first().unwrap() {
+        match &self.position {
             &Position::Value => {
-                if !self.output.ends_with(":") {
+                if !(self.output.ends_with(":") && self.output.ends_with("=")) {
                     self.output += ",";
                 }
             }
