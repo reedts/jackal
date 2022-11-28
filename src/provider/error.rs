@@ -1,5 +1,6 @@
 use nom;
 use rrule::RRuleError;
+use serde::{de, ser};
 use std::convert::From;
 use std::error;
 use std::fmt;
@@ -121,6 +122,12 @@ impl fmt::Display for Error {
 }
 
 impl error::Error for Error {}
+
+impl ser::Error for Error {
+    fn custom<T: fmt::Display>(msg: T) -> Self {
+        Error::new(ErrorKind::SerializeError, msg.to_string().as_ref())
+    }
+}
 
 impl ErrorKind {
     pub fn as_str(&self) -> String {

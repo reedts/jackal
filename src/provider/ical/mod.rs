@@ -1,7 +1,7 @@
 pub mod calendar;
 pub mod datetime;
 pub mod event;
-//pub mod ser;
+pub mod ser;
 
 pub use calendar::Calendar;
 pub use event::Event;
