@@ -10,10 +10,12 @@ use config::Config;
 pub enum Event {
     Input(Input),
     Update,
+    ExternalModification,
 }
 
 pub struct Dispatcher {
     rx: mpsc::Receiver<Event>,
+    tx: mpsc::Sender<Event>,
     _input_handle: thread::JoinHandle<()>,
     _update_handle: thread::JoinHandle<()>,
 }
@@ -45,17 +47,16 @@ impl Dispatcher {
                 }
             })
         };
+        let tx_upd = tx.clone();
         let update_handle = {
-            thread::spawn(move || {
-                let tx = tx.clone();
-                loop {
-                    tx.send(Event::Update).unwrap();
-                    thread::sleep(tick_rate);
-                }
+            thread::spawn(move || loop {
+                tx_upd.send(Event::Update).unwrap();
+                thread::sleep(tick_rate);
             })
         };
         Dispatcher {
             rx,
+            tx,
             _input_handle: input_handle,
             _update_handle: update_handle,
         }
@@ -63,5 +64,9 @@ impl Dispatcher {
 
     pub fn next(&self) -> Result<Event, mpsc::RecvError> {
         self.rx.recv()
+    }
+
+    pub fn event_sink(&self) -> &mpsc::Sender<Event> {
+        &self.tx
     }
 }

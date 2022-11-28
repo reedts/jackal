@@ -27,6 +27,7 @@ phf = { version = "0.11.1", features = ["macros"] }
 tz-rs = "0.6.14"
 base64 = "0.13.1"
 store-interval-tree = "0.4.0"
+notify = "5.0"
 
 # Use fork for serde support
 [dependencies.ical]
