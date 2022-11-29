@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 use tz;
 use tz::timezone::*;
 
-use ical::parser::ical::component::*;
+use ical::parser::ical::component::{
+    IcalCalendar, IcalEvent, IcalTimeZone, IcalTimeZoneTransition, Transition as IcalTransition,
+};
 use ical::parser::ical::IcalParser;
 use ical::parser::Component;
 use ical::property::Property;
@@ -101,7 +103,7 @@ impl Event {
                         let dst_end_day = alt_time.dst_end();
 
                         // Transition for standard to dst timezone
-                        let mut std_to_dst = IcalTimeZoneTransition::new();
+                        let mut std_to_dst = IcalTimeZoneTransition::new(IcalTransition::Standard);
                         std_to_dst.add_property(Property {
                             name: "TZNAME".to_string(),
                             params: None,
@@ -173,7 +175,7 @@ impl Event {
                         tz_spec.transitions.push(std_to_dst);
 
                         // Transition for dst timezone back to standard
-                        let mut dst_to_std = IcalTimeZoneTransition::new();
+                        let mut dst_to_std = IcalTimeZoneTransition::new(IcalTransition::Daylight);
                         dst_to_std.add_property(Property {
                             name: "TZNAME".to_string(),
                             params: None,

@@ -675,7 +675,7 @@ dependencies = [
 [[package]]
 name = "ical"
 version = "0.6.0"
-source = "git+https://github.com/daladim/ical-rs?branch=ical_serde#f3a182eee5f1f6acf44fa1512839602d7105a899"
+source = "git+https://github.com/reedts/ical-rs?branch=master#a3dcc3e569c6ecf18da6de9f06972f7f6bf85482"
 dependencies = [
  "serde",
  "thiserror",
