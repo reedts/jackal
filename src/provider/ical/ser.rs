@@ -11,20 +11,24 @@ use crate::provider::{Error, ErrorKind, Result};
 
 pub fn to_string(value: IcalCalendar) -> Result<String> {
     let mut serial = Serializer::default();
-    todo!()
+    serial.serialize_calendar(&value)?;
+    serial.finish()
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 enum Position {
-    #[default]
     Key,
     Parameters,
     Value,
+    #[default]
+    EOL,
 }
 
+#[derive(Debug)]
 enum Section {
     Calendar,
     Timezones,
+    TimezoneTransition(String),
     Alarms,
     Events,
 }
@@ -36,6 +40,7 @@ impl Display for Section {
             Self::Alarms => "VALARM",
             Self::Events => "VEVENT",
             Self::Timezones => "VTIMEZONE",
+            Self::TimezoneTransition(s) => s,
         };
 
         write!(f, "{}", s)
@@ -51,7 +56,7 @@ pub struct Serializer {
 impl Serializer {
     fn begin_section(&mut self, sec: Section) -> Result<()> {
         match self.position {
-            Position::Value => {
+            Position::EOL => {
                 self.position = Position::Key;
                 self.output += &format!("BEGIN:{}\n", &sec);
                 self.section.push(sec);
@@ -59,23 +64,26 @@ impl Serializer {
             }
             _ => Err(Error::new(
                 ErrorKind::SerializeError,
-                "Key value not finished",
+                "Cannot begin new section: key value not finished",
             )),
         }
     }
 
     fn end_section(&mut self) -> Result<()> {
         match self.position {
-            Position::Value => {
-                self.position = Position::Key;
+            Position::EOL => {
                 let sec = self.section.pop().unwrap();
                 self.output += &format!("END:{}\n", sec);
                 Ok(())
             }
-            _ => Err(Error::new(
-                ErrorKind::SerializeError,
-                "Key value not finished",
-            )),
+            _ => {
+                log::warn!("{}", &self.output);
+                log::warn!("{:?}", self.section);
+                Err(Error::new(
+                    ErrorKind::SerializeError,
+                    "Cannot end section: key value not finished",
+                ))
+            }
         }
     }
 
@@ -86,11 +94,12 @@ impl Serializer {
             value,
         } in value
         {
+            self.position = Position::Key;
             name.serialize(&mut *self)?;
 
             if let Some(p) = params {
                 self.position = Position::Parameters;
-                // This matches the behaviour of "serialize_map",
+                // This mimics the behaviour of "serialize_map",
                 // however the structure itself is not a map.
                 // Maybe we should serialize 2-tuple always this way?
                 for (name, values) in p.iter() {
@@ -98,36 +107,92 @@ impl Serializer {
                     self.position = Position::Parameters;
                     name.serialize(&mut *self)?;
                     self.output += "=";
+                    self.position = Position::Value;
                     values.serialize(&mut *self)?;
                 }
             }
 
             self.output += ":";
-            value.serialize(&mut *self);
+            self.position = Position::Value;
+            value.serialize(&mut *self)?;
             self.output += "\n";
+            self.position = Position::EOL;
         }
         Ok(())
     }
 
+    fn serialize_alarm(&mut self, value: &IcalAlarm) -> Result<()> {
+        self.begin_section(Section::Alarms)?;
+        self.serialize_properties(&value.properties)?;
+        self.end_section()?;
+        Ok(())
+    }
+
     fn serialize_events(&mut self, value: &IcalEvent) -> Result<()> {
-        self.begin_section(Section::Events);
-        self.serialize_properties(&value.properties);
-        self.end_section();
+        self.begin_section(Section::Events)?;
+        self.serialize_properties(&value.properties)?;
+
+        // VEVENTS may encapsulate one or more VALARMs
+        for alarm in value.alarms.iter() {
+            self.serialize_alarm(&alarm)?;
+        }
+
+        self.end_section()?;
+        Ok(())
+    }
+
+    fn serialize_timezones(&mut self, value: &IcalTimeZone) -> Result<()> {
+        self.begin_section(Section::Timezones)?;
+        self.serialize_properties(&value.properties)?;
+
+        for transition in value.transitions.iter() {
+            match transition.transition {
+                Transition::Standard => {
+                    self.begin_section(Section::TimezoneTransition("STANDARD".to_owned()))?
+                }
+                Transition::Daylight => {
+                    self.begin_section(Section::TimezoneTransition("DAYLIGHT".to_owned()))?
+                }
+            }
+
+            self.serialize_properties(&transition.properties)?;
+            self.end_section()?;
+        }
+
+        self.end_section()?;
         Ok(())
     }
 
     fn serialize_calendar(&mut self, calendar: &IcalCalendar) -> Result<()> {
+        // First serialize the properties of the calendar itself
+        self.serialize_properties(&calendar.properties)?;
+
+        for timezone in calendar.timezones.iter() {
+            self.serialize_timezones(&timezone)?;
+        }
+
+        for event in calendar.events.iter() {
+            self.serialize_events(&event)?;
+        }
+
         Ok(())
+    }
+
+    pub fn finish(mut self) -> Result<String> {
+        self.end_section()?;
+        Ok(self.output)
     }
 }
 
 impl Default for Serializer {
     fn default() -> Self {
-        Serializer {
+        let mut serial = Serializer {
             output: String::default(),
-            position: Position::default(),
-            section: vec![Section::Calendar],
-        }
+            position: Position::EOL,
+            section: Vec::new(),
+        };
+        serial.begin_section(Section::Calendar).unwrap();
+        serial
     }
 }
 
@@ -256,10 +321,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        if self.output.ends_with("=") {
-            self.position = Position::Value;
-        }
-
         Ok(self)
     }
 
@@ -317,7 +378,7 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     {
         match &self.position {
             &Position::Value => {
-                if !(self.output.ends_with(":") && self.output.ends_with("=")) {
+                if !(self.output.ends_with(":") || self.output.ends_with("=")) {
                     self.output += ",";
                 }
             }
