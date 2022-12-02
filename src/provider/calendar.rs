@@ -50,11 +50,18 @@ impl<Event: Eventlike> CalendarCore<Event> {
     //pub fn _set_name(&mut self, name: String) {
     //    self.friendly_name = name;
     //}
-    pub fn insert(&mut self, event: Event) {
+
+    /// Try to insert the event into the calendar. If an event with the same uid is already
+    /// present, return the to-be-inserted event as an error.
+    pub fn insert(&mut self, event: Event) -> Result<(), Event> {
+        let uid = event.uid().to_owned();
+
+        if self.uid_to_interval.contains_key(&uid) {
+            return Err(event);
+        }
+
         let (first, last) = event.occurrence_rule().clone().with_tz(&Utc {}).as_range();
         let interval = Interval::new(first, last);
-
-        let uid = event.uid().to_owned();
 
         // check if interval is already in tree
         if let Some(mut entry) = self
@@ -68,11 +75,20 @@ impl<Event: Eventlike> CalendarCore<Event> {
         }
 
         let prev = self.uid_to_interval.insert(uid, interval);
-        assert!(prev.is_none(), "duplicate event uid");
+        assert!(
+            prev.is_none(),
+            "Duplicate should have already been handled above"
+        );
+
+        Ok(())
     }
 
-    pub fn remove_via_uid(&mut self, uid: &str) {
-        let interval = self.uid_to_interval.remove(uid).unwrap();
+    /// Try to remove an event with the specified id. Returns whether or not such an event was
+    /// present before and thus successfully removed.
+    pub fn remove_via_uid(&mut self, uid: &str) -> bool {
+        let Some(interval) = self.uid_to_interval.remove(uid) else {
+            return false;
+        };
 
         // There is no direct accessor for a specific interval in the intervaltree, meh...
         let mut entry = self
@@ -86,6 +102,7 @@ impl<Event: Eventlike> CalendarCore<Event> {
         if val.is_empty() {
             self.events.delete(&interval);
         }
+        true
     }
 }
 

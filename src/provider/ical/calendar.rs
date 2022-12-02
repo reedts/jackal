@@ -61,7 +61,12 @@ pub fn from_dir(
     let mut inner = CalendarCore::new(path.to_owned(), config.id.clone(), config.name.clone(), tz);
 
     for event in event_file_iter {
-        inner.insert(event);
+        if let Err(e) = inner.insert(event) {
+            return Err(Error::new(
+                ErrorKind::CalendarParse,
+                &format!("Duplicate event uid '{}'", e.uid()),
+            ));
+        }
     }
 
     let (wachter, queue) = ical_watcher(path, event_sink.clone());
@@ -107,9 +112,12 @@ impl MutCalendarlike for Calendar {
         // write!(&mut file, "{}", event.ical);
         log::info!("{:?}", event.as_ical());
 
-        self.inner.insert(event);
-
-        Ok(())
+        self.inner.insert(event).map_err(|e| {
+            Error::new(
+                ErrorKind::CalendarParse,
+                &format!("Duplicate event uid '{}'", e.uid()),
+            )
+        })
     }
     fn process_external_modifications(&mut self) {
         fn remove_for_path(calendar: &mut CalendarCore<Event>, path: &Path) {
@@ -117,11 +125,12 @@ impl MutCalendarlike for Calendar {
                 log::warn!("Unable to obtain uid from file removal event path '{}'", path.to_string_lossy());
                 return;
             };
-            calendar.remove_via_uid(&uid);
-            //events.retain(|_, e| {
-            //    e.retain(|e| !e.matches(&path));
-            //    !e.is_empty()
-            //});
+            if !calendar.remove_via_uid(&uid) {
+                log::info!(
+                    "Event with uid {} could not be removed (double remove event?)",
+                    uid
+                );
+            }
         }
         fn add_for_path(calendar: &mut CalendarCore<Event>, path: &Path) {
             let event = match Event::from_file(path) {
@@ -131,7 +140,12 @@ impl MutCalendarlike for Calendar {
                     return;
                 }
             };
-            calendar.insert(event);
+            if let Err(event) = calendar.insert(event) {
+                log::info!(
+                    "Event with uid {} is already in the calendar (double insert event?)",
+                    event.uid()
+                );
+            }
         }
         for m in self.pending_modifications.try_iter() {
             match m {
