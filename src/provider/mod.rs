@@ -68,12 +68,12 @@ impl<Tz: TimeZone> NewEvent<Tz> {
         self.begin = self.tz.from_local_datetime(&begin).earliest().unwrap();
     }
 
-    pub fn _set_end(&mut self, end: NaiveDateTime) {
+    pub fn set_end(&mut self, end: NaiveDateTime) {
         self.end = Some(self.tz.from_local_datetime(&end).earliest().unwrap());
         self.duration = None;
     }
 
-    pub fn _set_duration(&mut self, duration: Duration) {
+    pub fn set_duration(&mut self, duration: Duration) {
         self.duration = Some(duration);
         self.end = None;
     }

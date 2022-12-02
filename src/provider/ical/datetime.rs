@@ -1,5 +1,5 @@
-use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc, Weekday};
-use chrono_tz::Tz;
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday};
+use chrono_tz::{OffsetName, Tz};
 use ical::property::Property;
 use nom::{
     branch::alt,
@@ -10,9 +10,10 @@ use nom::{
     IResult,
 };
 use std::convert::TryFrom;
+use std::fmt::Display;
 use std::str::FromStr;
 
-use crate::provider::{Error, ErrorKind, Result};
+use crate::provider::{Error, ErrorKind, Result, TimeSpan};
 
 use super::{ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE};
 
@@ -30,8 +31,6 @@ pub fn generate_timestamp() -> String {
 #[derive(Default, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct IcalDuration {
     sign: i8,
-    years: i64,
-    months: i64,
     weeks: i64,
     days: i64,
     hours: i64,
@@ -40,6 +39,28 @@ pub struct IcalDuration {
 }
 
 impl IcalDuration {
+    pub fn weeks(sign: i8, weeks: i64) -> Self {
+        IcalDuration {
+            sign,
+            weeks,
+            days: 0,
+            hours: 0,
+            minutes: 0,
+            seconds: 0,
+        }
+    }
+
+    pub fn datetime(sign: i8, days: i64, hours: i64, minutes: i64, seconds: i64) -> Self {
+        IcalDuration {
+            sign,
+            weeks: 0,
+            days,
+            hours,
+            minutes,
+            seconds,
+        }
+    }
+
     fn parse_sign(input: &str) -> IResult<&str, Option<char>> {
         opt(one_of("+-"))(input)
     }
@@ -64,8 +85,6 @@ impl IcalDuration {
             input,
             Self {
                 sign: 1,
-                years: 0,
-                months: 0,
                 weeks,
                 days: 0,
                 hours: 0,
@@ -76,11 +95,7 @@ impl IcalDuration {
     }
 
     fn parse_datetime_format(input: &str) -> IResult<&str, Self> {
-        let (input, (years, months, days)) = tuple((
-            opt(Self::value_with_designator("Y")),
-            opt(Self::value_with_designator("M")),
-            opt(Self::value_with_designator("D")),
-        ))(input)?;
+        let (input, days) = opt(Self::value_with_designator("D"))(input)?;
 
         let (input, time) = opt(preceded(
             char('T'),
@@ -93,13 +108,7 @@ impl IcalDuration {
 
         let (hours, minutes, seconds) = time.unwrap_or_default();
 
-        if years.is_none()
-            && months.is_none()
-            && days.is_none()
-            && hours.is_none()
-            && minutes.is_none()
-            && seconds.is_none()
-        {
+        if days.is_none() && hours.is_none() && minutes.is_none() && seconds.is_none() {
             Err(nom::Err::Error(nom::error::ParseError::from_error_kind(
                 input,
                 nom::error::ErrorKind::Verify,
@@ -109,8 +118,6 @@ impl IcalDuration {
                 input,
                 Self {
                     sign: 1,
-                    years: years.unwrap_or_default(),
-                    months: months.unwrap_or_default(),
                     weeks: 0,
                     days: days.unwrap_or_default(),
                     hours: hours.unwrap_or_default(),
@@ -121,12 +128,10 @@ impl IcalDuration {
         }
     }
 
-    fn as_chrono_duration(&self) -> chrono::Duration {
+    fn to_duration(&self) -> chrono::Duration {
         chrono::Duration::seconds(
             self.sign as i64
-                * ((self.years * 12 * 30 * 24 * 60 * 60)
-                    + (self.months * 30 * 24 * 60 * 60)
-                    + (self.weeks * 7 * 24 * 60 * 60)
+                * ((self.weeks * 7 * 24 * 60 * 60)
                     + (self.hours * 60 * 60)
                     + (self.minutes * 60)
                     + (self.seconds)),
@@ -173,6 +178,33 @@ impl FromStr for IcalDuration {
     }
 }
 
+impl Display for IcalDuration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = String::with_capacity(10);
+        output += if self.sign >= 0 { "+" } else { "-" };
+        output += "P";
+        if self.weeks != 0 {
+            output += &format!("{}W", self.weeks.abs());
+        } else {
+            output += "T";
+            if self.days != 0 {
+                output += &format!("{}D", self.days.abs())
+            }
+            if self.hours != 0 {
+                output += &format!("{}H", self.hours.abs())
+            }
+            if self.minutes != 0 {
+                output += &format!("{}M", self.minutes.abs())
+            }
+            if self.seconds != 0 {
+                output += &format!("{}S", self.seconds.abs())
+            }
+        }
+
+        f.write_str(&output)
+    }
+}
+
 impl TryFrom<&Property> for IcalDuration {
     type Error = Error;
 
@@ -186,9 +218,35 @@ impl TryFrom<&Property> for IcalDuration {
     }
 }
 
+impl From<chrono::Duration> for IcalDuration {
+    fn from(dur: chrono::Duration) -> Self {
+        // Check if duration only consists of weeks
+        if dur.is_zero() {
+            IcalDuration::default()
+        } else if dur - chrono::Duration::weeks(dur.num_weeks()) == chrono::Duration::zero() {
+            IcalDuration::weeks(dur.num_milliseconds().signum() as i8, dur.num_weeks())
+        } else {
+            let days = dur.num_days();
+            let mut rest = dur - Duration::days(days);
+            let hours = rest.num_hours();
+            rest = rest - Duration::hours(hours);
+            let minutes = rest.num_minutes();
+            rest = rest - Duration::minutes(minutes);
+            let seconds = rest.num_seconds();
+            IcalDuration::datetime(
+                dur.num_seconds().signum() as i8,
+                days,
+                hours,
+                minutes,
+                seconds,
+            )
+        }
+    }
+}
+
 impl From<IcalDuration> for Duration {
     fn from(dur: IcalDuration) -> Self {
-        dur.as_chrono_duration()
+        dur.to_duration()
     }
 }
 
@@ -198,6 +256,51 @@ pub enum IcalDateTime {
     Floating(NaiveDateTime),
     Utc(DateTime<Utc>),
     Local(DateTime<Tz>),
+}
+
+impl Display for IcalDateTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IcalDateTime::Utc(dt) => write!(
+                f,
+                "{}",
+                dt.format(&format!("{}Z", ISO8601_2004_LOCAL_FORMAT))
+            ),
+            IcalDateTime::Date(date) => {
+                write!(f, "{}", date.format(ISO8601_2004_LOCAL_FORMAT_DATE))
+            }
+            IcalDateTime::Floating(dt) => write!(f, "{}", dt.format(ISO8601_2004_LOCAL_FORMAT)),
+            IcalDateTime::Local(dt) => write!(f, "{}", dt.format(ISO8601_2004_LOCAL_FORMAT)),
+        }
+    }
+}
+
+impl From<NaiveDate> for IcalDateTime {
+    fn from(date: NaiveDate) -> Self {
+        IcalDateTime::Date(date)
+    }
+}
+
+impl From<NaiveDateTime> for IcalDateTime {
+    fn from(dt: NaiveDateTime) -> Self {
+        IcalDateTime::Floating(dt)
+    }
+}
+
+impl From<DateTime<Utc>> for IcalDateTime {
+    fn from(dt: DateTime<Utc>) -> Self {
+        IcalDateTime::Utc(dt)
+    }
+}
+
+impl From<DateTime<Tz>> for IcalDateTime {
+    fn from(dt: DateTime<Tz>) -> Self {
+        if let Tz::UTC = &dt.timezone() {
+            Self::from(dt.with_timezone(&Utc {}))
+        } else {
+            IcalDateTime::Local(dt)
+        }
+    }
 }
 
 impl TryFrom<&Property> for IcalDateTime {
@@ -260,6 +363,39 @@ impl TryFrom<&Property> for IcalDateTime {
     }
 }
 
+pub struct IcalTimeSpan(pub TimeSpan<Tz>);
+
+impl From<IcalTimeSpan> for Vec<Property> {
+    fn from(ts: IcalTimeSpan) -> Self {
+        let mut ret = Vec::<Property>::with_capacity(2);
+        match ts.0 {
+            TimeSpan::Allday(start_date, end_date, _) => {
+                ret.push(IcalDateTime::from(start_date).to_property("DTSTART".to_owned()));
+                if let Some(date) = end_date {
+                    ret.push(IcalDateTime::from(date).to_property("DTEND".to_owned()));
+                }
+            }
+            TimeSpan::Instant(dt) => {
+                ret.push(IcalDateTime::from(dt).to_property("DTSTART".to_owned()))
+            }
+            TimeSpan::Duration(dt, dur) => {
+                ret.push(IcalDateTime::from(dt).to_property("DTSTART".to_owned()));
+                ret.push(Property {
+                    name: "DURATION".to_owned(),
+                    params: None,
+                    value: Some(IcalDuration::from(dur).to_string()),
+                });
+            }
+            TimeSpan::TimePoints(start_dt, end_dt) => {
+                ret.push(IcalDateTime::from(start_dt).to_property("DTSTART".to_owned()));
+                ret.push(IcalDateTime::from(end_dt).to_property("DTEND".to_owned()));
+            }
+        }
+
+        ret
+    }
+}
+
 impl FromStr for IcalDateTime {
     type Err = Error;
 
@@ -281,21 +417,21 @@ impl FromStr for IcalDateTime {
     }
 }
 
-impl<Tz: TimeZone> From<DateTime<Tz>> for IcalDateTime {
-    fn from(dt: DateTime<Tz>) -> Self {
-        let fixed_offset = dt.offset().fix();
+// impl<Tz: TimeZone> From<DateTime<Tz>> for IcalDateTime {
+//     fn from(dt: DateTime<Tz>) -> Self {
+//         let fixed_offset = dt.offset().fix();
 
-        if fixed_offset.utc_minus_local() == 0 {
-            IcalDateTime::Utc(dt.with_timezone(&Utc {}))
-        } else {
-            // FIXME: There is currently no possibility to recreate a
-            // chrono_tz::Tz from a chrono::DateTime<FixedOffset>
-            // We use a UTC datetime and rely on the ical::Event to properly
-            // catch this case
-            IcalDateTime::Utc(dt.with_timezone(&Utc {}))
-        }
-    }
-}
+//         if fixed_offset.utc_minus_local() == 0 {
+//             IcalDateTime::Utc(dt.with_timezone(&Utc {}))
+//         } else {
+//             // FIXME: There is currently no possibility to recreate a
+//             // chrono_tz::Tz from a chrono::DateTime<FixedOffset>
+//             // We use a UTC datetime and rely on the ical::Event to properly
+//             // catch this case
+//             IcalDateTime::Utc(dt.with_timezone(&Utc {}))
+//         }
+//     }
+// }
 
 impl Default for IcalDateTime {
     fn default() -> Self {
@@ -347,6 +483,21 @@ impl IcalDateTime {
             IcalDateTime::Floating(dt) => IcalDateTime::Floating(dt + duration),
             IcalDateTime::Utc(dt) => IcalDateTime::Utc(dt + duration),
             IcalDateTime::Local(dt) => IcalDateTime::Local(dt + duration),
+        }
+    }
+
+    pub fn to_property(&self, name: String) -> Property {
+        Property {
+            name,
+            params: match &self {
+                IcalDateTime::Local(dt) => Some(vec![(
+                    "TZID".to_owned(),
+                    vec![dt.offset().tz_id().to_owned()],
+                )]),
+                IcalDateTime::Date(_) => Some(vec![("VALUE".to_owned(), vec!["DATE".to_owned()])]),
+                _ => None,
+            },
+            value: Some(self.to_string()),
         }
     }
 }

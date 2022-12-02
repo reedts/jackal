@@ -1,6 +1,6 @@
 use nom;
 use rrule::RRuleError;
-use serde::{de, ser};
+use serde::ser;
 use std::convert::From;
 use std::error;
 use std::fmt;

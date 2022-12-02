@@ -1,15 +1,13 @@
 use base64;
 use ical::parser::ical::component::*;
-use ical::parser::Component;
 use ical::property::Property;
 use serde::{ser, Serialize};
-use std::collections::BTreeMap;
 use std::default::Default;
 use std::fmt::Display;
 
 use crate::provider::{Error, ErrorKind, Result};
 
-pub fn to_string(value: IcalCalendar) -> Result<String> {
+pub fn to_string(value: &IcalCalendar) -> Result<String> {
     let mut serial = Serializer::default();
     serial.serialize_calendar(&value)?;
     serial.finish()

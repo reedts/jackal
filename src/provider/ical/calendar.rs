@@ -1,5 +1,6 @@
 use chrono_tz::Tz;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
@@ -9,6 +10,7 @@ use crate::provider::ical::ICAL_FILE_EXT;
 use crate::provider::{self, CalendarCore, Eventlike};
 use crate::provider::{MutCalendarlike, NewEvent, OccurrenceRule, TimeSpan};
 
+use super::ser::to_string;
 use super::{Error, ErrorKind, Event, Result};
 
 pub struct Calendar {
@@ -97,7 +99,15 @@ impl MutCalendarlike for Calendar {
             );
         }
 
-        let mut event = Event::new(&self.path, occurrence)?;
+        let path = std::env::temp_dir().join(&format!(
+            "{}.{}",
+            uuid::Uuid::new_v4().hyphenated().to_string(),
+            ICAL_FILE_EXT
+        ));
+
+        let mut file = fs::File::create(&path)?;
+
+        let mut event = Event::new(&path, occurrence)?;
 
         if let Some(title) = new_event.title {
             event.set_title(title.as_ref());
@@ -108,16 +118,18 @@ impl MutCalendarlike for Calendar {
         }
 
         // TODO: serde
-        // let mut file = fs::File::create(event.path())?;
-        // write!(&mut file, "{}", event.ical);
-        log::info!("{:?}", event.as_ical());
+        let s = to_string(&event.as_ical())?;
+        log::info!("{}", s);
+        file.write_all(s.as_bytes())?;
 
-        self.inner.insert(event).map_err(|e| {
-            Error::new(
-                ErrorKind::CalendarParse,
-                &format!("Duplicate event uid '{}'", e.uid()),
-            )
-        })
+        // self.inner.insert(event).map_err(|e| {
+        //     Error::new(
+        //         ErrorKind::CalendarParse,
+        //         &format!("Duplicate event uid '{}'", e.uid()),
+        //     )
+        // })
+
+        Ok(())
     }
     fn process_external_modifications(&mut self) {
         fn remove_for_path(calendar: &mut CalendarCore<Event>, path: &Path) {

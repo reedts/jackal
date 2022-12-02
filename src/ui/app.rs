@@ -115,10 +115,8 @@ impl<'a> App<'a> {
                                         .finish();
                                 }
                                 mode @ Mode::Insert => {
-                                    let begin = self
-                                        .context
-                                        .cursor()
-                                        .with_timezone(&chrono_tz::Europe::Berlin);
+                                    let begin =
+                                        self.context.cursor().with_timezone(&chrono_tz::UTC);
 
                                     input
                                         .chain(

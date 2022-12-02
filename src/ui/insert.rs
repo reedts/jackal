@@ -4,10 +4,10 @@ use nom::{
     branch::alt,
     bytes::complete::take_until1,
     character::complete::{alpha1, alphanumeric1, char, space0},
-    combinator::{all_consuming, rest},
+    combinator::all_consuming,
     error::*,
     multi::many1,
-    sequence::{delimited, separated_pair},
+    sequence::{delimited, preceded, separated_pair},
     IResult,
 };
 use phf::phf_map;
@@ -44,7 +44,7 @@ const INSERT_ACTIONS: phf::Map<&'static str, InsertAction> = phf_map! {
     },
     "end" => |b, v| {
         let dt = NaiveDateTime::parse_from_str(v, DATETIME_FORMAT).or_else(|_| Err(nom::error::ParseError::from_error_kind(v.to_string(), nom::error::ErrorKind::Tag)))?;
-        b.set_begin(dt);
+        b.set_end(dt);
         Ok(())
     },
 };
@@ -66,12 +66,11 @@ impl<'a> InsertParser<'a> {
 
     fn parse_key_value(key_value: &str) -> IResult<&str, ((&str, &InsertAction), &str)> {
         let (rest, (key, value)) = separated_pair(
-            alpha1,
+            preceded(space0, alpha1),
             char(':'),
             alt((
+                delimited(char('"'), take_until1("\""), char('"')),
                 take_until1(" "),
-                delimited(char('"'), alphanumeric1, char('"')),
-                rest,
             )),
         )(key_value)?;
 
@@ -136,8 +135,6 @@ impl Behavior for InsertParser<'_> {
                     if let Err(e) = res {
                         self.context.last_error_message = Some(format!("{}", e));
                         log::error!("{}", e);
-                    } else {
-                        // actually write & save event
                     }
 
                     None

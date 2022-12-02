@@ -63,7 +63,7 @@ impl Context {
             cursor: Local::now(),
             last_error_message: None,
             input_sinks: BTreeMap::from([
-                (Mode::Insert, PromptLine::with_prompt(">".to_owned())),
+                (Mode::Insert, PromptLine::with_prompt("> ".to_owned())),
                 (Mode::Command, PromptLine::with_prompt(":".to_owned())),
             ]),
             eventlist_index: 0,

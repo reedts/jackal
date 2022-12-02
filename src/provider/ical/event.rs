@@ -37,13 +37,6 @@ pub fn uid_from_path(path: &Path) -> Option<String> {
 
 impl Event {
     pub fn new(path: &Path, occurrence: OccurrenceRule<Tz>) -> Result<Self> {
-        if path.is_file() && path.exists() {
-            return Err(Error::new(
-                ErrorKind::EventParse,
-                &format!("File '{}' already exists", path.display()),
-            ));
-        }
-
         let uid = uid_from_path(path).ok_or_else(|| {
             Error::new(
                 ErrorKind::EventParse,
@@ -95,6 +88,83 @@ impl Event {
             let tz_info = tz::TimeZone::from_posix_tz(occurrence.first().begin().offset().tz_id())?;
 
             if let Some(rule) = tz_info.as_ref().extra_rule() {
+                fn create_timezone_transitions(
+                    transition: IcalTransition,
+                    tz_name: String,
+                    from_offset: i32,
+                    to_offset: i32,
+                    transition_day: &RuleDay,
+                ) -> IcalTimeZoneTransition {
+                    let mut tr = IcalTimeZoneTransition::new(transition);
+                    tr.add_property(Property {
+                        name: "TZNAME".to_string(),
+                        params: None,
+                        value: Some(tz_name),
+                    });
+                    tr.add_property(Property {
+                        name: "TZOFFSETFROM".to_string(),
+                        params: None,
+                        value: Some(format!("{:+05}", from_offset)),
+                    });
+                    tr.add_property(Property {
+                        name: "TZOFFSETTO".to_string(),
+                        params: None,
+                        value: Some(format!("{:+05}", to_offset)),
+                    });
+                    // FIXME: this does not conform to RFC5545 and should be fixed
+                    // once we know how to correctly get DST start(/end)
+                    //
+                    // HERE BE DRAGONS!!!!
+                    let dtstart = match transition_day {
+                        RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month_opt(
+                            1970,
+                            mwd.month().into(),
+                            Weekday::from_u8(mwd.week_day()).unwrap(),
+                            mwd.week(),
+                        )
+                        .unwrap(),
+                        RuleDay::Julian0WithLeap(days) => {
+                            NaiveDate::from_yo_opt(1970, (days.get() + 1) as u32).unwrap()
+                        }
+                        RuleDay::Julian1WithoutLeap(days) => {
+                            NaiveDate::from_yo_opt(1970, days.get() as u32).unwrap()
+                        }
+                    }
+                    .and_hms_opt(2, 0, 0)
+                    .unwrap();
+
+                    let num_days_of_month =
+                        days_of_month(&Month::from_u32(dtstart.month()).unwrap(), dtstart.year());
+                    let day_occurrences_before = dtstart.day() % 7;
+                    let day_occurrences_after = (num_days_of_month - dtstart.day()) % 7;
+
+                    let offset: i32 = if day_occurrences_after == 0 {
+                        -1
+                    } else {
+                        day_occurrences_before as i32 + 1
+                    };
+
+                    tr.add_property(Property {
+                        name: "DTSTART".to_string(),
+                        params: None,
+                        value: Some(dtstart.format(ISO8601_2004_LOCAL_FORMAT).to_string()),
+                    });
+
+                    // We generate this RRULE by hand for now
+                    tr.add_property(Property {
+                        name: "RRULE".to_string(),
+                        params: None,
+                        value: Some(format!(
+                            "FREQ=YEARLY;BYMONTH={};BYDAY={:+1}{}",
+                            dtstart.month(),
+                            offset,
+                            weekday_to_ical(dtstart.weekday())
+                        )),
+                    });
+
+                    tr
+                }
+
                 match rule {
                     TransitionRule::Alternate(alt_time) => {
                         let std_offset_min = alt_time.std().ut_offset() * 60;
@@ -103,148 +173,23 @@ impl Event {
                         let dst_end_day = alt_time.dst_end();
 
                         // Transition for standard to dst timezone
-                        let mut std_to_dst = IcalTimeZoneTransition::new(IcalTransition::Standard);
-                        std_to_dst.add_property(Property {
-                            name: "TZNAME".to_string(),
-                            params: None,
-                            value: Some(alt_time.std().time_zone_designation().to_string()),
-                        });
-                        std_to_dst.add_property(Property {
-                            name: "TZOFFSETFROM".to_string(),
-                            params: None,
-                            value: Some(format!("{:+05}", std_offset_min)),
-                        });
-                        std_to_dst.add_property(Property {
-                            name: "TZOFFSETTO".to_string(),
-                            params: None,
-                            value: Some(format!("{:+05}", dst_offset_min)),
-                        });
-                        // FIXME: this does not conform to RFC5545 and should be fixed
-                        // once we know how to correctly get DST start(/end)
-                        //
-                        // HERE BE DRAGONS!!!!
-                        let dtstart = match dst_start_day {
-                            RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month_opt(
-                                1970,
-                                mwd.month().into(),
-                                Weekday::from_u8(mwd.week_day()).unwrap(),
-                                mwd.week(),
-                            )
-                            .unwrap(),
-                            RuleDay::Julian0WithLeap(days) => {
-                                NaiveDate::from_yo_opt(1970, (days.get() + 1) as u32).unwrap()
-                            }
-                            RuleDay::Julian1WithoutLeap(days) => {
-                                NaiveDate::from_yo_opt(1970, days.get() as u32).unwrap()
-                            }
-                        }
-                        .and_hms_opt(2, 0, 0)
-                        .unwrap();
-
-                        let num_days_of_month = days_of_month(
-                            &Month::from_u32(dtstart.month()).unwrap(),
-                            dtstart.year(),
+                        let std_to_dst = create_timezone_transitions(
+                            IcalTransition::Standard,
+                            alt_time.std().time_zone_designation().to_string(),
+                            std_offset_min,
+                            dst_offset_min,
+                            dst_start_day,
                         );
-                        let day_occurrences_before = dtstart.day() % 7;
-                        let day_occurrences_after = (num_days_of_month - dtstart.day()) % 7;
-
-                        let offset: i32 = if day_occurrences_after == 0 {
-                            -1
-                        } else {
-                            day_occurrences_before as i32 + 1
-                        };
-
-                        std_to_dst.add_property(Property {
-                            name: "DTSTART".to_string(),
-                            params: None,
-                            value: Some(dtstart.format(ISO8601_2004_LOCAL_FORMAT).to_string()),
-                        });
-
-                        // We generate this RRULE by hand for now
-                        std_to_dst.add_property(Property {
-                            name: "RRULE".to_string(),
-                            params: None,
-                            value: Some(format!(
-                                "FREQ=YEARLY;BYMONTH={};BYDAY={:+1}{}",
-                                dtstart.month(),
-                                offset,
-                                weekday_to_ical(dtstart.weekday())
-                            )),
-                        });
-
                         tz_spec.transitions.push(std_to_dst);
 
                         // Transition for dst timezone back to standard
-                        let mut dst_to_std = IcalTimeZoneTransition::new(IcalTransition::Daylight);
-                        dst_to_std.add_property(Property {
-                            name: "TZNAME".to_string(),
-                            params: None,
-                            value: Some(alt_time.std().time_zone_designation().to_string()),
-                        });
-                        dst_to_std.add_property(Property {
-                            name: "TZOFFSETFROM".to_string(),
-                            params: None,
-                            value: Some(format!("{:+05}", dst_offset_min)),
-                        });
-                        dst_to_std.add_property(Property {
-                            name: "TZOFFSETTO".to_string(),
-                            params: None,
-                            value: Some(format!("{:+05}", std_offset_min)),
-                        });
-
-                        // FIXME: this does not conform to RFC5545 and should be fixed
-                        // once we know how to correctly get DST start(/end)
-                        //
-                        // HERE BE DRAGONS!!!!
-                        let dtstart = match dst_end_day {
-                            RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month_opt(
-                                1970,
-                                mwd.month().into(),
-                                Weekday::from_u8(mwd.week_day()).unwrap(),
-                                mwd.week(),
-                            )
-                            .unwrap(),
-                            RuleDay::Julian0WithLeap(days) => {
-                                NaiveDate::from_yo_opt(1970, (days.get() + 1) as u32).unwrap()
-                            }
-                            RuleDay::Julian1WithoutLeap(days) => {
-                                NaiveDate::from_yo_opt(1970, days.get() as u32).unwrap()
-                            }
-                        }
-                        .and_hms_opt(3, 0, 0)
-                        .unwrap();
-
-                        let num_days_of_month = days_of_month(
-                            &Month::from_u32(dtstart.month()).unwrap(),
-                            dtstart.year(),
+                        let dst_to_std = create_timezone_transitions(
+                            IcalTransition::Daylight,
+                            alt_time.dst().time_zone_designation().to_string(),
+                            dst_offset_min,
+                            std_offset_min,
+                            dst_end_day,
                         );
-                        let day_occurrences_before = dtstart.day() % 7;
-                        let day_occurrences_after = (num_days_of_month - dtstart.day()) % 7;
-
-                        let offset: i32 = if day_occurrences_after == 0 {
-                            -1
-                        } else {
-                            day_occurrences_before as i32 + 1
-                        };
-
-                        dst_to_std.add_property(Property {
-                            name: "DTSTART".to_string(),
-                            params: None,
-                            value: Some(dtstart.format(ISO8601_2004_LOCAL_FORMAT).to_string()),
-                        });
-
-                        // We generate this RRULE by hand for now
-                        dst_to_std.add_property(Property {
-                            name: "RRULE".to_string(),
-                            params: None,
-                            value: Some(format!(
-                                "FREQ=YEARLY;BYMONTH={};BYDAY={:+1}{}",
-                                dtstart.month(),
-                                offset,
-                                weekday_to_ical(dtstart.weekday())
-                            )),
-                        });
-
                         tz_spec.transitions.push(dst_to_std);
                     }
                     _ => (),
@@ -267,6 +212,25 @@ impl Event {
                 value: Some(generate_timestamp()),
             },
         ];
+
+        match &occurrence {
+            OccurrenceRule::Onetime(ts) => {
+                ical_event
+                    .properties
+                    .append(&mut IcalTimeSpan(ts.clone()).into());
+            }
+            OccurrenceRule::Recurring(ts, rrule) => {
+                ical_event
+                    .properties
+                    .append(&mut IcalTimeSpan(ts.clone()).into());
+                ical_event.properties.push(Property {
+                    name: "RRULE".to_owned(),
+                    params: None,
+                    value: Some(rrule.to_string()),
+                });
+            }
+        }
+
         ical_calendar.events.push(ical_event);
 
         let tz = occurrence.timezone();
@@ -456,21 +420,7 @@ impl Event {
     }
 
     pub fn set_summary(&mut self, summary: &str) {
-        let summary_prop = self
-            .ical
-            .properties
-            .iter_mut()
-            .find(|prop| prop.name == "SUMMARY");
-
-        if let Some(prop) = summary_prop {
-            prop.value = Some(summary.to_owned());
-        } else {
-            self.ical.add_property(Property {
-                name: "SUMMARY".to_owned(),
-                params: None,
-                value: Some(summary.to_owned()),
-            });
-        }
+        self.set_title(summary)
     }
 
     pub fn set_title(&mut self, title: &str) {
@@ -483,6 +433,18 @@ impl Event {
                 value: Some(title.to_owned()),
             });
         };
+    }
+
+    pub fn set_description(&mut self, desc: &str) {
+        if let Some(property) = self.get_property_mut("DESCRIPTION") {
+            property.value = Some(desc.to_owned());
+        } else {
+            self.ical.events[0].add_property(Property {
+                name: "DESCRIPTION".to_owned(),
+                params: None,
+                value: Some(desc.to_owned()),
+            });
+        }
     }
 
     pub fn path(&self) -> &Path {
