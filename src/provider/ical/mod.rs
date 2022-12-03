@@ -19,6 +19,7 @@ const JACKAL_PRODID: &'static str = "-//JACKAL//NONSGML Calendar//EN";
 const JACKAL_CALENDAR_VERSION: &'static str = "2.0";
 
 const ISO8601_2004_LOCAL_FORMAT: &'static str = "%Y%m%dT%H%M%S";
+const ISO8601_2004_UTC_FORMAT: &'static str = "%Y%m%dT%H%M%SZ";
 const ISO8601_2004_LOCAL_FORMAT_DATE: &'static str = "%Y%m%d";
 
 const ICAL_FILE_EXT: &'static str = "ics";

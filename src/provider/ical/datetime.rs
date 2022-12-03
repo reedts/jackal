@@ -15,7 +15,7 @@ use std::str::FromStr;
 
 use crate::provider::{Error, ErrorKind, Result, TimeSpan};
 
-use super::{ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE};
+use super::{ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE, ISO8601_2004_UTC_FORMAT};
 
 pub fn weekday_to_ical(weekday: Weekday) -> String {
     let mut s = format!("{}", weekday).to_uppercase();
@@ -350,12 +350,10 @@ impl TryFrom<&Property> for IcalDateTime {
             if let Some(tz) = tz {
                 Ok(Self::Local(tz.from_local_datetime(&dt).earliest().unwrap()))
             } else {
-                if val.ends_with("Z") {
-                    Ok(Self::Utc(DateTime::<Utc>::from_utc(dt, Utc)))
-                } else {
-                    Ok(Self::Floating(dt))
-                }
+                Ok(Self::Floating(dt))
             }
+        } else if let Ok(dt) = NaiveDateTime::parse_from_str(val, ISO8601_2004_UTC_FORMAT) {
+            Ok(Self::Utc(DateTime::<Utc>::from_utc(dt, Utc)))
         } else {
             let date = NaiveDate::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT_DATE)?;
             Ok(Self::Date(date))
@@ -400,20 +398,20 @@ impl FromStr for IcalDateTime {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        if let Ok(dt) =
-            NaiveDateTime::parse_from_str(s, &format!("{}z", ISO8601_2004_LOCAL_FORMAT_DATE))
-        {
-            return Ok(IcalDateTime::Utc(Utc {}.from_utc_datetime(&dt)));
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, ISO8601_2004_UTC_FORMAT) {
+            Ok(IcalDateTime::Utc(Utc {}.from_utc_datetime(&dt)))
+        } else if let Ok(dt) = NaiveDateTime::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT) {
+            // At this point we can only interpret this format as Floating time as we don't know
+            // whether the ical property also holds the TZID parameter
+            Ok(IcalDateTime::Floating(dt))
+        } else if let Ok(dt) = NaiveDate::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT_DATE) {
+            Ok(IcalDateTime::Date(dt))
+        } else {
+            Err(Error::new(
+                ErrorKind::TimeParse,
+                &format!("Could not extract datetime from '{}'", s),
+            ))
         }
-
-        if let Ok(dt) = NaiveDate::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT_DATE) {
-            return Ok(IcalDateTime::Date(dt));
-        }
-
-        Err(Error::new(
-            ErrorKind::TimeParse,
-            &format!("Could not extract datetime from '{}'", s),
-        ))
     }
 }
 
