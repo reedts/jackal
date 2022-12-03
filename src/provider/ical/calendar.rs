@@ -1,4 +1,5 @@
 use chrono_tz::Tz;
+use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -16,7 +17,8 @@ use super::{Error, ErrorKind, Event, Result};
 pub struct Calendar {
     inner: provider::CalendarCore<Event>,
     _modification_watcher: notify::RecommendedWatcher,
-    pending_modifications: mpsc::Receiver<ExternalModification>,
+    pending_modifications: mpsc::Receiver<CalendarModification>,
+    current_modifications: HashSet<CalendarModification>,
 }
 
 impl std::ops::Deref for Calendar {
@@ -76,6 +78,7 @@ pub fn from_dir(
         inner,
         _modification_watcher: wachter,
         pending_modifications: queue,
+        current_modifications: HashSet::new(),
     })
 }
 
@@ -99,15 +102,19 @@ impl MutCalendarlike for Calendar {
             );
         }
 
-        let path = std::env::temp_dir().join(&format!(
-            "{}.{}",
-            uuid::Uuid::new_v4().hyphenated().to_string(),
-            ICAL_FILE_EXT
-        ));
+        let event_uid = uuid::Uuid::new_v4();
+        let target_path =
+            self.path
+                .join(&format!("{}.{}", event_uid.as_hyphenated(), ICAL_FILE_EXT));
+        let source_path =
+            std::env::temp_dir().join(&format!("{}.{}", event_uid.as_hyphenated(), ICAL_FILE_EXT));
 
-        let mut file = fs::File::create(&path)?;
+        self.current_modifications
+            .insert(CalendarModification::Create(target_path.clone()));
 
-        let mut event = Event::new(&path, occurrence)?;
+        let mut file = fs::File::create(&source_path)?;
+
+        let mut event = Event::new(&source_path, occurrence)?;
 
         if let Some(title) = new_event.title {
             event.set_title(title.as_ref());
@@ -122,12 +129,21 @@ impl MutCalendarlike for Calendar {
         log::info!("{}", s);
         file.write_all(s.as_bytes())?;
 
-        // self.inner.insert(event).map_err(|e| {
-        //     Error::new(
-        //         ErrorKind::CalendarParse,
-        //         &format!("Duplicate event uid '{}'", e.uid()),
-        //     )
-        // })
+        // fs::rename does not work over different mount points
+        fs::copy(&source_path, &target_path)?;
+        fs::remove_file(source_path)?;
+
+        self.inner
+            .insert(event.move_to_dir(&target_path.parent().unwrap()))
+            .map_err(|e| {
+                Error::new(
+                    ErrorKind::CalendarParse,
+                    &format!("Duplicate event uid '{}'", e.uid()),
+                )
+            })?;
+
+        self.current_modifications
+            .remove(&CalendarModification::Create(target_path.clone()));
 
         Ok(())
     }
@@ -160,19 +176,22 @@ impl MutCalendarlike for Calendar {
             }
         }
         for m in self.pending_modifications.try_iter() {
-            match m {
-                ExternalModification::Create(path) => add_for_path(&mut self.inner, &path),
-                ExternalModification::Remove(path) => remove_for_path(&mut self.inner, &path),
-                ExternalModification::Modify(path) => {
-                    remove_for_path(&mut self.inner, &path);
-                    add_for_path(&mut self.inner, &path);
+            if !self.current_modifications.contains(&m) {
+                match m {
+                    CalendarModification::Create(path) => add_for_path(&mut self.inner, &path),
+                    CalendarModification::Remove(path) => remove_for_path(&mut self.inner, &path),
+                    CalendarModification::Modify(path) => {
+                        remove_for_path(&mut self.inner, &path);
+                        add_for_path(&mut self.inner, &path);
+                    }
                 }
             }
         }
     }
 }
 
-enum ExternalModification {
+#[derive(PartialEq, Eq, Hash)]
+enum CalendarModification {
     Create(PathBuf),
     Remove(PathBuf),
     Modify(PathBuf),
@@ -184,7 +203,7 @@ fn ical_watcher(
     event_sink: mpsc::Sender<crate::events::Event>,
 ) -> (
     notify::RecommendedWatcher,
-    mpsc::Receiver<ExternalModification>,
+    mpsc::Receiver<CalendarModification>,
 ) {
     use notify::{RecursiveMode, Watcher};
 
@@ -196,36 +215,36 @@ fn ical_watcher(
         }
     }
 
-    fn relevant_modification(event: notify::Event) -> Option<ExternalModification> {
+    fn relevant_modification(event: notify::Event) -> Option<CalendarModification> {
         use notify::event::*;
         match event.kind {
             EventKind::Create(CreateKind::File) if is_ical(&event.paths[0]) => {
-                Some(ExternalModification::Create(event.paths[0].clone()))
+                Some(CalendarModification::Create(event.paths[0].clone()))
             }
             EventKind::Remove(RemoveKind::File)
             | EventKind::Modify(ModifyKind::Name(RenameMode::From))
                 if is_ical(&event.paths[0]) =>
             {
-                Some(ExternalModification::Remove(event.paths[0].clone()))
+                Some(CalendarModification::Remove(event.paths[0].clone()))
             }
             EventKind::Modify(ModifyKind::Data(_))
             | EventKind::Modify(ModifyKind::Name(RenameMode::To))
                 if is_ical(&event.paths[0]) =>
             {
-                Some(ExternalModification::Modify(event.paths[0].clone()))
+                Some(CalendarModification::Modify(event.paths[0].clone()))
             }
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
                 // TODO: Maybe we want to return both events here.
                 // However, for the specific case of ical we don't really expect a rename (from
                 // ical to ical) because that would imply a changing of uuids!
                 if is_ical(&event.paths[0]) {
-                    Some(ExternalModification::Remove(event.paths[0].clone()))
+                    Some(CalendarModification::Remove(event.paths[0].clone()))
                 } else if is_ical(&event.paths[1]) {
                     // It may appear weird that we are emiting "modify" events when something is
                     // renamed/moved to an .ics file. The reason for this is that we have no
                     // information about whether the file existed before. Hence we take the safe
                     // option of (possibly pointlessly) removing old files.
-                    Some(ExternalModification::Modify(event.paths[1].clone()))
+                    Some(CalendarModification::Modify(event.paths[1].clone()))
                 } else {
                     None
                 }

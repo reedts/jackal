@@ -459,6 +459,12 @@ impl Event {
         &self.ical.events[0]
     }
 
+    pub(super) fn move_to_dir(mut self, dir: &Path) -> Self {
+        assert!(dir.is_dir(), "Provided path must point to a directory");
+        self.path = dir.join(self.path.file_name().unwrap());
+        self
+    }
+
     // Note: This is really a "best effort" approach here, since we 1. cannot really assume that
     // paths contain the uuid and 2. cannot canonicalize, e.g., the path of a deleted file...
     // We assume here, however, that both paths have been canonicalized.

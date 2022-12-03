@@ -105,15 +105,15 @@ impl<'a> InsertParser<'a> {
         if let Some(calendar) = self.context.agenda_mut().calendar_by_name_mut(name) {
             calendar
                 .add_event(self.new_event.take().unwrap())
-                .or_else(|_| {
-                    Err(ParseError::from_error_kind(
-                        name.to_string(),
-                        ErrorKind::Verify,
+                .or_else(|e| {
+                    Err(Error::from_error_kind(
+                        format!("Could not add event: {}", e),
+                        ErrorKind::Fail,
                     ))
                 })
         } else {
             Err(ParseError::from_error_kind(
-                name.to_string(),
+                format!("Calendar '{}' not found", name),
                 ErrorKind::Tag,
             ))
         }
