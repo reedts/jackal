@@ -153,7 +153,7 @@ impl MutCalendarlike for Calendar {
                 log::warn!("Unable to obtain uid from file removal event path '{}'", path.to_string_lossy());
                 return;
             };
-            if !calendar.remove_via_uid(&uid) {
+            if !calendar.remove_by_uid(&uid) {
                 log::info!(
                     "Event with uid {} could not be removed (double remove event?)",
                     uid

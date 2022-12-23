@@ -5,9 +5,7 @@ use std::ops::{Bound, Deref};
 use std::path::{Path, PathBuf};
 use store_interval_tree::{Interval, IntervalTree};
 
-use super::{Calendarlike, EventFilter, Eventlike, Occurrence};
-
-type Uid = String;
+use super::{Alarm, AlarmGenerator, Calendarlike, EventFilter, Eventlike, Occurrence, Uid};
 
 pub struct CalendarCore<Event: Eventlike> {
     pub(super) path: PathBuf,
@@ -15,6 +13,7 @@ pub struct CalendarCore<Event: Eventlike> {
     pub(super) friendly_name: String,
     pub(super) tz: Tz,
     events: IntervalTree<DateTime<Utc>, Vec<Event>>,
+    alarms: IntervalTree<DateTime<Utc>, Vec<AlarmGenerator>>,
     uid_to_interval: BTreeMap<Uid, Interval<DateTime<Utc>>>,
 }
 
@@ -26,6 +25,7 @@ impl<Event: Eventlike> CalendarCore<Event> {
             friendly_name,
             tz,
             events: IntervalTree::new(),
+            alarms: IntervalTree::new(),
             uid_to_interval: BTreeMap::new(),
         }
     }
@@ -60,8 +60,55 @@ impl<Event: Eventlike> CalendarCore<Event> {
             return Err(event);
         }
 
-        let (first, last) = event.occurrence_rule().clone().with_tz(&Utc {}).as_range();
+        let (first, last) = event.occurrence_rule().clone().with_tz(&Utc).as_range();
         let interval = Interval::new(first, last);
+
+        let first_span = event.occurrence_rule().first();
+        let last_span = event.occurrence_rule().last();
+
+        // Check for alarms in event
+        let alarms: Vec<AlarmGenerator> = event.alarms().into_iter().cloned().collect();
+
+        // Insert alarms
+        for alarm in alarms {
+            let first_alarm = Bound::Included(
+                alarm
+                    .occurrence_alarms(Occurrence {
+                        span: first_span.clone(),
+                        event: &event,
+                    })
+                    .first()
+                    .unwrap()
+                    .datetime()
+                    .with_timezone(&Utc),
+            );
+            let last_alarm = if let Some(last) = &last_span {
+                Bound::Included(
+                    alarm
+                        .occurrence_alarms(Occurrence {
+                            span: last.clone(),
+                            event: &event,
+                        })
+                        .last()
+                        .unwrap()
+                        .datetime()
+                        .with_timezone(&Utc),
+                )
+            } else {
+                Bound::Unbounded
+            };
+
+            let interval = Interval::new(first_alarm, last_alarm);
+            if let Some(mut entry) = self
+                .alarms
+                .query_mut(&interval)
+                .find(|entry| entry.interval() == &interval)
+            {
+                entry.value().push(alarm)
+            } else {
+                self.alarms.insert(interval, vec![alarm])
+            }
+        }
 
         // check if interval is already in tree
         if let Some(mut entry) = self
@@ -83,9 +130,20 @@ impl<Event: Eventlike> CalendarCore<Event> {
         Ok(())
     }
 
+    pub fn find_by_uid(&self, uid: &str) -> Option<&Event> {
+        self.uid_to_interval
+            .get(uid)
+            .and_then(|interval| {
+                self.events
+                    .query(&interval)
+                    .find(|e| *e.interval() == *interval)
+            })
+            .and_then(|v| v.value().iter().find(|ev| ev.uid() == uid))
+    }
+
     /// Try to remove an event with the specified id. Returns whether or not such an event was
     /// present before and thus successfully removed.
-    pub fn remove_via_uid(&mut self, uid: &str) -> bool {
+    pub fn remove_by_uid(&mut self, uid: &str) -> bool {
         let Some(interval) = self.uid_to_interval.remove(uid) else {
             return false;
         };
@@ -145,7 +203,7 @@ impl<Event: Eventlike + 'static, T: Deref<Target = CalendarCore<Event>>> Calenda
                     .skip_while(|ts| ts.begin().with_timezone(&Utc) <= begin_dt)
                     .take_while(|ts| ts.begin().with_timezone(&Utc) <= end_dt)
                     .map(move |ts| Occurrence {
-                        span: ts.with_tz(&Utc),
+                        span: ts.with_tz(&Tz::UTC),
                         event: event as &'a dyn Eventlike,
                     })
             })
@@ -169,5 +227,34 @@ impl<Event: Eventlike + 'static, T: Deref<Target = CalendarCore<Event>>> Calenda
                 self.events_in(begin_dt, end_dt)
             }
         }
+    }
+
+    fn alarms_in<'a>(
+        &'a self,
+        begin: Bound<DateTime<Utc>>,
+        end: Bound<DateTime<Utc>>,
+    ) -> Vec<Alarm<'a, Tz>> {
+        let begin_dt = match &begin {
+            Bound::Unbounded => DateTime::<Utc>::MIN_UTC,
+            Bound::Included(dt) => dt.clone(),
+            Bound::Excluded(dt) => dt.clone() + Duration::seconds(1),
+        };
+
+        let end_dt = match &end {
+            Bound::Unbounded => DateTime::<Utc>::MAX_UTC,
+            Bound::Included(dt) => dt.clone(),
+            Bound::Excluded(dt) => dt.clone() - Duration::seconds(1),
+        };
+
+        self.alarms
+            .query(&Interval::new(begin, end))
+            .flat_map(|entry| entry.value().iter())
+            .flat_map(|alarm| {
+                alarm
+                    .all_alarms(self.find_by_uid(alarm.event_uid()).unwrap())
+                    .skip_while(|alarm| alarm.datetime().with_timezone(&Utc) <= begin_dt)
+                    .take_while(|alarm| alarm.datetime().with_timezone(&Utc) <= end_dt)
+            })
+            .collect()
     }
 }

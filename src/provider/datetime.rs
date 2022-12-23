@@ -87,6 +87,36 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
         }
     }
 
+    pub fn add_to_begin(self, add: Duration) -> TimeSpan<Tz> {
+        match self {
+            TimeSpan::Allday(start, end, tz) => TimeSpan::Allday(start + add, end, tz),
+            TimeSpan::TimePoints(start, end) => TimeSpan::TimePoints(start + add, end),
+            TimeSpan::Instant(start) => TimeSpan::Instant(start + add),
+            TimeSpan::Duration(start, dur) => TimeSpan::Duration(start + add.clone(), dur - add),
+        }
+    }
+
+    pub fn add_to_end(self, add: Duration) -> TimeSpan<Tz> {
+        match self {
+            TimeSpan::Allday(start, end, tz) => {
+                if add.num_days() >= 1 {
+                    TimeSpan::Allday(start, Some(end.unwrap_or(start) + add), tz)
+                } else {
+                    TimeSpan::Allday(start, end, tz)
+                }
+            }
+            TimeSpan::TimePoints(start, end) => TimeSpan::TimePoints(start, end + add),
+            TimeSpan::Duration(start, end) => TimeSpan::Duration(start, end + add),
+            TimeSpan::Instant(start) => {
+                if !add.is_zero() {
+                    TimeSpan::Duration(start, add)
+                } else {
+                    TimeSpan::Instant(start)
+                }
+            }
+        }
+    }
+
     pub fn duration(&self) -> Duration {
         match &self {
             TimeSpan::Allday(begin, end, _) => end

@@ -122,7 +122,11 @@ impl Drop for NotificationGuard {
     }
 }
 
-fn spawn_notify(occurence: Occurrence, running_notifications: &Arc<Mutex<HashSet<String>>>) {
+fn spawn_notify(
+    title: String,
+    occurence: Occurrence,
+    running_notifications: &Arc<Mutex<HashSet<String>>>,
+) {
     use linkify::{LinkFinder, LinkKind};
     let guard = if let Some(guard) =
         NotificationGuard::new(occurence.event.uid().to_owned(), running_notifications)
@@ -136,8 +140,8 @@ fn spawn_notify(occurence: Occurrence, running_notifications: &Arc<Mutex<HashSet
         return;
     };
 
-    let begin = occurence.span.begin();
-    let end = occurence.span.end();
+    let begin = occurence.span.begin().with_timezone(&Utc);
+    let end = occurence.span.end().with_timezone(&Utc);
 
     let begin_display = begin.with_timezone(&Local);
     let end_display = end.with_timezone(&Local);
@@ -153,7 +157,6 @@ fn spawn_notify(occurence: Occurrence, running_notifications: &Arc<Mutex<HashSet
         body += "\n";
         body += description;
     }
-    let title = occurence.event.title().to_owned();
 
     // TODO: We probably want to look for urls in other fields like location or URL, too.
     let url = occurence.event.description().and_then(|description| {
@@ -200,7 +203,7 @@ fn wait(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
 
-    let mut logger = Logger::try_with_env_or_str("info")?.duplicate_to_stderr(Duplicate::Warn);
+    let mut logger = Logger::try_with_env_or_str("info")?.duplicate_to_stderr(Duplicate::Debug);
 
     if let Some(log_file) = args.log_file {
         logger = logger
@@ -230,21 +233,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let begin = Utc::now();
             let end = begin + check_window;
 
-            let mut next_events = calendar
-                .events_in(begin.naive_utc()..end.naive_utc())
+            // First find defined alarms in interval
+            let mut next_occurrences = calendar
+                .alarms_in(begin.naive_utc()..end.naive_utc())
+                .map(|alarm| {
+                    (
+                        alarm.datetime().with_timezone(&Utc),
+                        alarm
+                            .description()
+                            .unwrap_or(alarm.occurrence().event().title())
+                            .to_owned(),
+                        alarm.occurrence().clone(),
+                    )
+                })
                 .collect::<Vec<_>>();
-            next_events.sort_unstable_by_key(|occurrence| occurrence.begin());
 
-            for occurrence in next_events {
-                let begin_utc = occurrence.begin();
-                let headsup_begin = begin_utc - headsup_time;
+            // For events without alarms add them with "headsup_time" offset
+            next_occurrences.extend(
+                calendar
+                    .events_in(begin.naive_utc()..end.naive_utc())
+                    .filter_map(|occurrence| {
+                        if occurrence.event().alarms().len() == 0 {
+                            Some((
+                                occurrence.begin().with_timezone(&Utc) - headsup_time,
+                                occurrence.event().title().to_owned(),
+                                occurrence,
+                            ))
+                        } else {
+                            None
+                        }
+                    }),
+            );
 
+            next_occurrences.sort_unstable_by_key(|(dt, _, _)| dt.clone());
+
+            for (headsup_begin, title, occurrence) in next_occurrences {
+                log::info!("Next notification scheduled for {}", headsup_begin);
                 match wait(&mod_rx, headsup_begin, "until headsup time of next event") {
                     ControlFlow::Restart => continue 'outer,
                     ControlFlow::Continue => {}
                 }
 
-                spawn_notify(occurrence, &running_notifications);
+                spawn_notify(title, occurrence, &running_notifications);
             }
 
             let end = end - headsup_time;

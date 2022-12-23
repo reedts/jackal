@@ -1,4 +1,4 @@
-use chrono::{Datelike, Duration, Month, NaiveDate, Weekday};
+use chrono::{Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday};
 use chrono_tz::{OffsetName, Tz};
 use num_traits::FromPrimitive;
 use rrule::RRule;
@@ -10,23 +10,155 @@ use tz;
 use tz::timezone::*;
 
 use ical::parser::ical::component::{
-    IcalCalendar, IcalEvent, IcalTimeZone, IcalTimeZoneTransition, Transition as IcalTransition,
+    IcalAlarm, IcalCalendar, IcalEvent, IcalTimeZone, IcalTimeZoneTransition,
+    Transition as IcalTransition,
 };
 use ical::parser::ical::IcalParser;
 use ical::parser::Component;
 use ical::property::Property;
 
 use super::datetime::*;
-use super::{PropertyList, ISO8601_2004_LOCAL_FORMAT};
+use super::{PropertyList, ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_UTC_FORMAT};
 
 use crate::provider::{
-    days_of_month, Error, ErrorKind, Eventlike, OccurrenceRule, Result, TimeSpan,
+    days_of_month, AlarmGenerator, AlarmTrigger, Error, ErrorKind, Eventlike, OccurrenceRule,
+    Result, TimeSpan, Uid,
 };
+
+struct IcalAlarmGenerator {
+    trigger: AlarmTrigger,
+    repeat: Option<u32>,
+    wait: Option<Duration>,
+    description: Option<String>,
+}
+
+impl IcalAlarmGenerator {
+    // There are EXACTLY THREE values for the ACTION property.
+    // Anything else will be ignored by jackal to avoid further problems
+    // with these VALARM items.
+    const VALID_ACTION_VALUES: [&str; 3] = ["DISPLAY", "AUDIO", "EMAIL"];
+
+    pub fn finish(self, event: Uid) -> AlarmGenerator {
+        AlarmGenerator::new(
+            self.trigger,
+            self.repeat,
+            self.wait,
+            self.description,
+            event,
+        )
+    }
+}
+
+impl TryFrom<&IcalAlarm> for IcalAlarmGenerator {
+    type Error = Error;
+    fn try_from(value: &IcalAlarm) -> std::result::Result<Self, Self::Error> {
+        // Check if specified VALARM component is compatible.
+        if value
+            .get_property("ACTION")
+            .filter(|p| Self::VALID_ACTION_VALUES.contains(&p.value.as_deref().unwrap_or_default()))
+            .is_none()
+        {
+            return Err(Error::new(
+                ErrorKind::EventParse,
+                "VALARM has invalid ACTION value",
+            ));
+        }
+
+        let trigger = if let Some(t) = value.get_property("TRIGGER") {
+            // Check whether trigger value is a datetime
+            let datetime = t.params.as_ref().and_then(|p| {
+                p.iter().find(|(name, values)| {
+                    name == "VALUE" && values.first().unwrap() == "DATE-TIME"
+                })
+            });
+
+            if datetime.is_some() {
+                let naivedt = NaiveDateTime::parse_from_str(
+                    t.value.as_deref().unwrap(),
+                    ISO8601_2004_UTC_FORMAT,
+                )
+                .map_err(|_| {
+                    Error::new(
+                        ErrorKind::TimeParse,
+                        "Datetime in 'TRIGGER' value must be in UTC",
+                    )
+                })?;
+                AlarmTrigger::Absolute(Utc.from_utc_datetime(&naivedt))
+            } else {
+                // Check whether 'RELATED' is defined
+                let related = t.params.as_ref().and_then(|p| {
+                    p.iter().find_map(|(name, values)| {
+                        if name == "RELATED" {
+                            values.first().map(String::as_str)
+                        } else {
+                            None
+                        }
+                    })
+                });
+
+                match related.unwrap_or("START") {
+                    "START" => AlarmTrigger::Start(
+                        t.value.as_ref().unwrap().parse::<IcalDuration>()?.into(),
+                    ),
+                    "END" => {
+                        AlarmTrigger::End(t.value.as_ref().unwrap().parse::<IcalDuration>()?.into())
+                    }
+                    _ => {
+                        return Err(Error::new(
+                            ErrorKind::EventParse,
+                            "Invalid value for RELATED in VALARM component",
+                        ))
+                    }
+                }
+            }
+        } else {
+            return Err(Error::new(
+                ErrorKind::EventParse,
+                "No TRIGGER specified in VALARM component",
+            ));
+        };
+
+        let repeat = value
+            .get_property("REPEAT")
+            .and_then(|v| v.value.as_ref().unwrap().parse::<u32>().ok());
+        let wait: Option<Duration> = value.get_property("DURATION").and_then(|v| {
+            v.value
+                .as_ref()
+                .unwrap()
+                .parse::<IcalDuration>()
+                .ok()
+                .map(<IcalDuration as Into<Duration>>::into)
+        });
+
+        // If ACTION is DISPLAY or EMAIL, RFC5545 states that DESCRIPTION must be present.
+        // However, as jackal also should get along with ACTION=AUDIO which DOES NOT require
+        // DESCRIPTION to be set (and seems to be the default for Mac-Calendar... ugh...) we
+        // do not enforce this here.
+        let description = value
+            .get_property("DESCRIPTION")
+            .and_then(|v| v.value.clone());
+
+        if repeat.is_some() && wait.is_none() {
+            Err(Error::new(
+                ErrorKind::ParseError,
+                "REPEAT and DURATION must both be specified",
+            ))
+        } else {
+            Ok(IcalAlarmGenerator {
+                trigger,
+                repeat,
+                wait,
+                description: description.to_owned(),
+            })
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Event {
     path: PathBuf,
     occurrence: OccurrenceRule<Tz>,
+    alarms: Vec<AlarmGenerator>,
     ical: IcalCalendar,
     tz: Tz,
 }
@@ -243,6 +375,7 @@ impl Event {
             path: path.to_owned(),
             occurrence,
             ical: ical_calendar,
+            alarms: Vec::new(),
             tz,
         })
     }
@@ -320,14 +453,20 @@ impl Event {
             .properties
             .iter()
             .find(|p| p.name == "DTSTART")
-            .ok_or(Error::new(ErrorKind::EventMissingKey, "No DTSTART found"))?;
+            .ok_or(Error::new(
+                ErrorKind::EventMissingKey,
+                &format!("'{}': No DTSTART found", path.display()),
+            ))?;
 
         let dtend = event.properties.iter().find(|p| p.name == "DTEND");
         // Check if DURATION is set
         let duration = event.properties.iter().find(|p| p.name == "DURATION");
 
         // Required (if METHOD not set)
-        let dtstart_spec = IcalDateTime::try_from(dtstart)?;
+        let dtstart_spec = IcalDateTime::try_from(dtstart).map_err(|e| {
+            let msg = e.to_string();
+            e.with_msg(&format!("'{}': {}", path.display(), msg))
+        })?;
 
         // Set TZ id based on start spec
         let tz = if let IcalDateTime::Local(dt) = dtstart_spec {
@@ -339,7 +478,11 @@ impl Event {
         // DTEND does not HAVE to be specified...
         let mut occurrence = if let Some(dt) = dtend {
             // ...but if set it must be parseable
-            let dtend_spec = IcalDateTime::try_from(dt)?;
+            let dtend_spec = IcalDateTime::try_from(dt).map_err(|e| {
+                let msg = e.to_string();
+                e.with_msg(&format!("'{}': {}", path.display(), msg))
+            })?;
+
             match &dtend_spec {
                 IcalDateTime::Date(date) => {
                     if let IcalDateTime::Date(bdate) = dtstart_spec {
@@ -347,7 +490,10 @@ impl Event {
                     } else {
                         return Err(Error::new(
                             ErrorKind::DateParse,
-                            "DTEND must also be of type 'DATE' if DTSTART is",
+                            &format!(
+                                "'{}': DTEND must also be of type 'DATE' if DTSTART is",
+                                path.display()
+                            ),
                         ));
                     }
                 }
@@ -357,7 +503,10 @@ impl Event {
                 )),
             }
         } else if let Some(duration) = duration {
-            let dur_spec = IcalDuration::try_from(duration)?;
+            let dur_spec = IcalDuration::try_from(duration).map_err(|e| {
+                let msg = e.to_string();
+                e.with_msg(&format!("'{}': {}", path.display(), msg))
+            })?;
             OccurrenceRule::Onetime(TimeSpan::from_start_and_duration(
                 dtstart_spec.as_datetime(&tz),
                 dur_spec.into(),
@@ -389,12 +538,35 @@ impl Event {
             }
         }
 
-        // TODO: VTIMEZONE
+        let alarms: Vec<AlarmGenerator> = event
+            .alarms
+            .iter()
+            .map(|a| IcalAlarmGenerator::try_from(a))
+            .inspect(|r| {
+                if let Err(e) = r {
+                    log::error!("{}: {}", path.display(), e);
+                }
+            })
+            .filter_map(|a| {
+                a.ok().map(|outer| {
+                    outer.finish(
+                        event
+                            .get_property("UID")
+                            .map(|prop| prop.value.as_ref().unwrap().to_owned())
+                            .unwrap(),
+                    )
+                })
+            })
+            .collect();
+
         // TODO: Check for exdate
+
+        // TODO: VTIMEZONE
 
         Ok(Event {
             path: path.into(),
             occurrence,
+            alarms,
             ical,
             tz,
         })
@@ -500,6 +672,10 @@ impl Eventlike for Event {
 
     fn duration(&self) -> Duration {
         self.occurrence.duration().into()
+    }
+
+    fn alarms(&self) -> Vec<&AlarmGenerator> {
+        self.alarms.iter().collect()
     }
 }
 

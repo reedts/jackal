@@ -5,17 +5,21 @@ use std::default::Default;
 use std::ops::{Bound, RangeBounds};
 use std::path::Path;
 
+pub mod alarm;
 pub mod calendar;
 pub mod datetime;
 pub mod error;
 
 pub mod ical;
 
+pub use alarm::*;
 pub use calendar::*;
 pub use datetime::*;
 pub use error::*;
 
 pub type Result<T> = std::result::Result<T, self::Error>;
+
+type Uid = String;
 
 pub enum EventFilter {
     InRange(Bound<NaiveDateTime>, Bound<NaiveDateTime>),
@@ -91,24 +95,34 @@ pub trait Eventlike {
     fn occurrence_rule(&self) -> &OccurrenceRule<Tz>;
     fn tz(&self) -> &Tz;
     fn duration(&self) -> Duration;
+    fn alarms(&self) -> Vec<&AlarmGenerator>;
 }
 
+#[derive(Clone)]
 pub struct Occurrence<'a> {
-    pub span: TimeSpan<Utc>,
+    pub span: TimeSpan<Tz>,
     pub event: &'a dyn Eventlike,
 }
 
 impl Occurrence<'_> {
-    pub fn begin(&self) -> DateTime<Utc> {
+    pub fn begin(&self) -> DateTime<Tz> {
         self.span.begin()
     }
 
-    pub fn end(&self) -> DateTime<Utc> {
+    pub fn end(&self) -> DateTime<Tz> {
         self.span.end()
     }
 
     pub fn event(&self) -> &dyn Eventlike {
         self.event
+    }
+
+    pub fn alarms<'e>(&'e self) -> Vec<Alarm<'e, Tz>> {
+        self.event
+            .alarms()
+            .iter()
+            .flat_map(|alarm| alarm.occurrence_alarms(self.clone()).into_iter())
+            .collect()
     }
 }
 
@@ -122,6 +136,11 @@ pub trait Calendarlike {
         end: Bound<DateTime<Utc>>,
     ) -> Vec<Occurrence<'a>>;
     fn filter_events<'a>(&'a self, filter: EventFilter) -> Vec<Occurrence<'a>>;
+    fn alarms_in<'a>(
+        &'a self,
+        begin: Bound<DateTime<Utc>>,
+        end: Bound<DateTime<Utc>>,
+    ) -> Vec<Alarm<'a, Tz>>;
 }
 
 pub trait MutCalendarlike: Calendarlike {

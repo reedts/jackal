@@ -1,4 +1,5 @@
-use chrono::{Datelike, Duration, Month, NaiveDate, NaiveDateTime, Utc};
+use chrono::{Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono_tz::Tz;
 use log;
 use num_traits::FromPrimitive;
 use std::collections::BTreeMap;
@@ -6,7 +7,7 @@ use std::collections::BTreeMap;
 use crate::config::Config;
 use crate::provider::datetime::days_of_month;
 use crate::provider::ical;
-use crate::provider::{EventFilter, MutCalendarlike, Occurrence, ProviderCalendar, Result};
+use crate::provider::{Alarm, EventFilter, MutCalendarlike, Occurrence, ProviderCalendar, Result};
 
 pub struct Agenda {
     calendars: BTreeMap<String, ProviderCalendar>,
@@ -100,6 +101,27 @@ impl Agenda {
         let today = Utc::now().date_naive();
 
         self.events_of_day(&today)
+    }
+
+    pub fn alarms_in<'a>(
+        &'a self,
+        range: impl std::ops::RangeBounds<NaiveDateTime> + 'a + Clone,
+    ) -> impl Iterator<Item = Alarm<'a, Tz>> {
+        use std::ops::Bound;
+        let start = match range.start_bound() {
+            Bound::Included(dt) => Bound::Included(Utc.from_utc_datetime(&dt)),
+            Bound::Excluded(dt) => Bound::Included(Utc.from_utc_datetime(&dt)),
+            _ => Bound::Unbounded,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(dt) => Bound::Included(Utc.from_utc_datetime(&dt)),
+            Bound::Excluded(dt) => Bound::Included(Utc.from_utc_datetime(&dt)),
+            _ => Bound::Unbounded,
+        };
+
+        self.calendars
+            .values()
+            .flat_map(move |calendar| calendar.as_calendar().alarms_in(start, end))
     }
 
     pub fn calendar_by_name_mut(&mut self, name: &str) -> Option<&mut dyn MutCalendarlike> {
