@@ -200,8 +200,8 @@ impl<Event: Eventlike + 'static, T: Deref<Target = CalendarCore<Event>>> Calenda
                 event
                     .occurrence_rule()
                     .iter()
-                    .skip_while(|ts| ts.begin().with_timezone(&Utc) <= begin_dt)
-                    .take_while(|ts| ts.begin().with_timezone(&Utc) <= end_dt)
+                    .skip_while(|ts| ts.end().with_timezone(&Utc) < begin_dt)
+                    .take_while(|ts| ts.begin().with_timezone(&Utc) < end_dt)
                     .map(move |ts| Occurrence {
                         span: ts.with_tz(&Tz::UTC),
                         event: event as &'a dyn Eventlike,

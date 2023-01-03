@@ -72,18 +72,29 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
 
     pub fn end(&self) -> DateTime<Tz> {
         match &self {
-            TimeSpan::Allday(begin, end, tz) => tz
-                .from_local_datetime(
-                    &end.as_ref()
-                        .unwrap_or(&begin)
-                        .and_hms_opt(23, 59, 59)
-                        .unwrap(),
+            TimeSpan::Allday(begin, end, tz) => {
+                tz.from_local_datetime(
+                    &end.as_ref().unwrap_or(&begin).and_hms_opt(0, 0, 0).unwrap(),
                 )
                 .earliest()
-                .unwrap(),
+                .unwrap()
+                    + Duration::days(1)
+            }
             TimeSpan::TimePoints(_, end) => end.clone(),
             TimeSpan::Duration(begin, dur) => begin.clone() + dur.clone(),
             TimeSpan::Instant(end) => end.clone(),
+        }
+    }
+
+    pub fn num_days(&self) -> u32 {
+        if let TimeSpan::Allday(begin, end, _) = &self {
+            if let Some(e) = end {
+                (*e - *begin).num_days() as u32
+            } else {
+                1
+            }
+        } else {
+            (self.end() - self.begin()).num_days() as u32
         }
     }
 
@@ -126,6 +137,14 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
             TimeSpan::Duration(_, dur) => dur.clone(),
             TimeSpan::Instant(_) => chrono::Duration::seconds(0),
         }
+    }
+
+    pub fn contains<T>(&self, value: &T) -> bool
+    where
+        DateTime<Tz>: PartialOrd<T>,
+        T: PartialOrd<DateTime<Tz>> + ?Sized,
+    {
+        &self.begin() <= value && &self.end() > value
     }
 
     pub fn with_tz<Tz2: TimeZone>(self, tz: &Tz2) -> TimeSpan<Tz2> {
