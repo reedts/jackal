@@ -16,7 +16,7 @@ enum Entry<'a> {
 impl Entry<'_> {
     pub fn datetime(&self) -> DateTime<Local> {
         match self {
-            Entry::Event(Occurrence { span, .. }) => span.clone().with_tz(&Local {}).begin(),
+            Entry::Event(Occurrence { span, .. }) => span.clone().with_tz(&Local).begin(),
             Entry::Cursor(dt) | Entry::Time(dt) => dt.clone(),
         }
     }
@@ -26,15 +26,34 @@ impl Display for Entry<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Event(Occurrence { span, event }) => {
-                let local_span = span.clone().with_tz(&Local {});
-                let time = if span.is_allday() {
-                    "Allday".to_owned()
+                let local_span = span.clone().with_tz(&Local);
+
+                let time = if span.num_days() > 1 {
+                    if span.is_allday() {
+                        format!(
+                            "{} - {}",
+                            local_span.begin().date_naive(),
+                            local_span.end().date_naive()
+                        )
+                    } else {
+                        format!(
+                            "{} - {}",
+                            local_span.begin().time().format("%H:%M"),
+                            local_span.end().time().format("%H:%M")
+                        )
+                    }
                 } else {
-                    format!(
-                        "{} - {}",
-                        local_span.begin().time().format("%H:%M"),
-                        local_span.end().time().format("%H:%M")
-                    )
+                    if span.is_allday() {
+                        "Allday".to_owned()
+                    } else if span.is_instant() {
+                        format!("{}", local_span.begin().time().format("%H:%M"))
+                    } else {
+                        format!(
+                            "{} - {}",
+                            local_span.begin().time().format("%H:%M"),
+                            local_span.end().time().format("%H:%M")
+                        )
+                    }
                 };
                 write!(f, "{}: {}", time, event.summary())
             }
