@@ -47,7 +47,11 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
     }
 
     pub fn allday_until(begin: NaiveDate, end: NaiveDate, tz: Tz) -> Self {
-        TimeSpan::Allday(begin, Some(end), tz)
+        if begin + Duration::days(1) >= end {
+            TimeSpan::Allday(begin, None, tz)
+        } else {
+            TimeSpan::Allday(begin, Some(end), tz)
+        }
     }
 
     pub fn is_allday(&self) -> bool {
@@ -73,12 +77,17 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
     pub fn end(&self) -> DateTime<Tz> {
         match &self {
             TimeSpan::Allday(begin, end, tz) => {
-                tz.from_local_datetime(
-                    &end.as_ref().unwrap_or(&begin).and_hms_opt(0, 0, 0).unwrap(),
-                )
-                .earliest()
-                .unwrap()
-                    + Duration::days(1)
+                if let Some(e) = end {
+                    tz.from_local_datetime(&e.and_hms_opt(0, 0, 0).unwrap())
+                        .earliest()
+                        .unwrap()
+                } else {
+                    tz.from_local_datetime(
+                        &(begin.and_hms_opt(0, 0, 0).unwrap() + Duration::days(1)),
+                    )
+                    .earliest()
+                    .unwrap()
+                }
             }
             TimeSpan::TimePoints(_, end) => end.clone(),
             TimeSpan::Duration(begin, dur) => begin.clone() + dur.clone(),
@@ -87,15 +96,7 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
     }
 
     pub fn num_days(&self) -> u32 {
-        if let TimeSpan::Allday(begin, end, _) = &self {
-            if let Some(e) = end {
-                (*e - *begin).num_days() as u32
-            } else {
-                1
-            }
-        } else {
-            (self.end() - self.begin()).num_days() as u32
-        }
+        self.duration().num_days() as u32
     }
 
     pub fn add_to_begin(self, add: Duration) -> TimeSpan<Tz> {

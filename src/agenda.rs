@@ -72,7 +72,7 @@ impl Agenda {
             .unwrap();
         let end = begin + Duration::days(days_of_month(&month, year) as i64);
 
-        self.events_in(begin..=end)
+        self.events_in(begin..end)
     }
 
     pub fn _events_of_current_month<'a>(&'a self) -> impl Iterator<Item = Occurrence<'a>> + 'a {
@@ -93,7 +93,7 @@ impl Agenda {
         self.calendars.values().flat_map(move |calendar| {
             calendar
                 .as_calendar()
-                .filter_events(EventFilter::default().datetime_range(begin..=end))
+                .filter_events(EventFilter::default().datetime_range(begin..end))
         })
     }
 
