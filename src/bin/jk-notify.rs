@@ -38,6 +38,12 @@ fn open_url(url: &str) {
         .unwrap();
 }
 
+fn time_until(until: DateTime<Utc>) -> std::time::Duration {
+    let now = Utc::now().naive_utc();
+    let time = until.naive_utc() - now;
+    time.to_std().unwrap_or(std::time::Duration::ZERO)
+}
+
 fn notify(
     title: String,
     body: String,
@@ -81,16 +87,18 @@ fn notify(
         n.show().unwrap().wait_for_action(|action| match action {
             "dismiss" => dismissed = true,
             "snooze" => {
-                let now = Utc::now().naive_utc();
-                let to_sleep = begin.naive_utc() - now;
-                log::info!("Sleeping {} until begin notification time", to_sleep,);
-                std::thread::sleep(to_sleep.to_std().unwrap_or(std::time::Duration::ZERO));
+                log::info!("Sleeping until begin notification time");
+                std::thread::sleep(time_until(begin));
             }
             "open_url" => open_url(url.as_ref().unwrap()),
             "__closed" => dismissed = true,
             _ => {}
         });
     }
+
+    // Keep the guard active until the end of the event in case it was dismissed. Otherwise
+    // updates due to a new entry will reschedule the event.
+    std::thread::sleep(time_until(end));
 }
 
 struct NotificationGuard {
@@ -182,12 +190,9 @@ fn wait(
     info: &str,
 ) -> ControlFlow {
     loop {
-        let now = Utc::now().naive_utc();
-        let to_sleep = until.naive_utc() - now;
+        log::info!("Sleeping {}", info);
 
-        log::info!("Sleeping {} {}", to_sleep, info);
-
-        match events.recv_timeout(to_sleep.to_std().unwrap_or(std::time::Duration::ZERO)) {
+        match events.recv_timeout(time_until(until)) {
             Ok(lib::events::Event::ExternalModification) => return ControlFlow::Restart,
             Ok(lib::events::Event::Update | lib::events::Event::Input(_)) => {
                 panic!("No dispatcher was started so where do those come from?!")
