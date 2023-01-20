@@ -42,6 +42,16 @@ pub fn from_dir(
     }
 
     let mut event_file_iter = fs::read_dir(&path)?
+        .filter(|dir| {
+            if let Ok(d) = dir {
+                d.path()
+                    .extension()
+                    .filter(|ext| ext == &ICAL_FILE_EXT)
+                    .is_some()
+            } else {
+                false
+            }
+        })
         .map(|dir| {
             dir.map_or_else(
                 |_| -> Result<_> { Err(Error::from(ErrorKind::CalendarParse)) },
