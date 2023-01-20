@@ -148,8 +148,10 @@ fn spawn_notify(
         return;
     };
 
-    let begin = occurence.span.begin().with_timezone(&Utc);
-    let end = occurence.span.end().with_timezone(&Utc);
+    let local_span = occurence.span.with_tz(&Utc);
+
+    let begin = local_span.begin();
+    let end = local_span.end();
 
     let begin_display = begin.with_timezone(&Local);
     let end_display = end.with_timezone(&Local);

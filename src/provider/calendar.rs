@@ -15,6 +15,7 @@ pub struct CalendarCore<Event: Eventlike> {
     events: IntervalTree<DateTime<Utc>, Vec<Event>>,
     alarms: IntervalTree<DateTime<Utc>, Vec<AlarmGenerator>>,
     uid_to_interval: BTreeMap<Uid, Interval<DateTime<Utc>>>,
+    uid_to_alarm_intervals: BTreeMap<Uid, Vec<Interval<DateTime<Utc>>>>,
 }
 
 impl<Event: Eventlike> CalendarCore<Event> {
@@ -27,29 +28,9 @@ impl<Event: Eventlike> CalendarCore<Event> {
             events: IntervalTree::new(),
             alarms: IntervalTree::new(),
             uid_to_interval: BTreeMap::new(),
+            uid_to_alarm_intervals: BTreeMap::new(),
         }
     }
-
-    //pub fn _new_with_name(path: &Path, name: String) -> Self {
-    //    let identifier = uuid::Uuid::new_v4().hyphenated();
-
-    //    Self {
-    //        path: path.to_owned(),
-    //        _identifier: identifier.to_string(),
-    //        friendly_name: name,
-    //        tz: Tz::UTC,
-    //        events: IntervalTree::new(),
-    //    }
-    //}
-
-    //pub fn _with_name(mut self, name: String) -> Self {
-    //    self._set_name(name);
-    //    self
-    //}
-
-    //pub fn _set_name(&mut self, name: String) {
-    //    self.friendly_name = name;
-    //}
 
     /// Try to insert the event into the calendar. If an event with the same uid is already
     /// present, return the to-be-inserted event as an error.
@@ -63,13 +44,16 @@ impl<Event: Eventlike> CalendarCore<Event> {
         let (first, last) = event.occurrence_rule().clone().with_tz(&Utc).as_range();
         let interval = Interval::new(first, last);
 
+        // get first/last timespan of all occurrences for computing
+        // intervals for alarms
         let first_span = event.occurrence_rule().first();
         let last_span = event.occurrence_rule().last();
 
         // Check for alarms in event
         let alarms: Vec<AlarmGenerator> = event.alarms().into_iter().cloned().collect();
-
         // Insert alarms
+        let mut alarm_intervals: Vec<Interval<DateTime<Utc>>> = Vec::with_capacity(alarms.len());
+
         for alarm in alarms {
             let first_alarm = Bound::Included(
                 alarm
@@ -106,9 +90,16 @@ impl<Event: Eventlike> CalendarCore<Event> {
             {
                 entry.value().push(alarm)
             } else {
-                self.alarms.insert(interval, vec![alarm])
+                self.alarms.insert(interval.clone(), vec![alarm])
             }
+
+            alarm_intervals.push(interval);
         }
+
+        let prev = self
+            .uid_to_alarm_intervals
+            .insert(uid.clone(), alarm_intervals);
+        assert!(prev.is_none(), "Duplicate should have already been handled");
 
         // check if interval is already in tree
         if let Some(mut entry) = self
@@ -156,10 +147,38 @@ impl<Event: Eventlike> CalendarCore<Event> {
             .unwrap();
 
         let val = entry.value();
+        let has_alarms = val
+            .iter()
+            .find(|e| e.uid() == uid)
+            .filter(|e| e.alarms().len() > 0)
+            .is_some();
+
         val.retain(|e| e.uid() != uid);
         if val.is_empty() {
             self.events.delete(&interval);
         }
+
+        if has_alarms {
+            let alarm_intervals = self
+                .uid_to_alarm_intervals
+                .remove(uid)
+                .expect("Alarm interval should exist");
+
+            for alarm_interval in alarm_intervals.into_iter() {
+                let mut entry = self
+                    .alarms
+                    .query_mut(&alarm_interval)
+                    .find(|a| *a.interval() == alarm_interval)
+                    .unwrap();
+
+                let val = entry.value();
+                val.retain(|a| a.event_uid() != uid);
+                if val.is_empty() {
+                    self.alarms.delete(&alarm_interval);
+                }
+            }
+        }
+
         true
     }
 }
@@ -243,7 +262,7 @@ impl<Event: Eventlike + 'static, T: Deref<Target = CalendarCore<Event>>> Calenda
         let end_dt = match &end {
             Bound::Unbounded => DateTime::<Utc>::MAX_UTC,
             Bound::Included(dt) => dt.clone(),
-            Bound::Excluded(dt) => dt.clone() - Duration::seconds(1),
+            Bound::Excluded(dt) => dt.clone() + Duration::seconds(1),
         };
 
         self.alarms
