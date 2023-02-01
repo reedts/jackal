@@ -51,55 +51,59 @@ impl<Event: Eventlike> CalendarCore<Event> {
 
         // Check for alarms in event
         let alarms: Vec<AlarmGenerator> = event.alarms().into_iter().cloned().collect();
-        // Insert alarms
-        let mut alarm_intervals: Vec<Interval<DateTime<Utc>>> = Vec::with_capacity(alarms.len());
 
-        for alarm in alarms {
-            let first_alarm = Bound::Included(
-                alarm
-                    .occurrence_alarms(Occurrence {
-                        span: first_span.clone(),
-                        event: &event,
-                    })
-                    .first()
-                    .unwrap()
-                    .datetime()
-                    .with_timezone(&Utc),
-            );
-            let last_alarm = if let Some(last) = &last_span {
-                Bound::Included(
+        // Insert alarms if there are any
+        if !alarms.is_empty() {
+            let mut alarm_intervals: Vec<Interval<DateTime<Utc>>> =
+                Vec::with_capacity(alarms.len());
+
+            for alarm in alarms {
+                let first_alarm = Bound::Included(
                     alarm
                         .occurrence_alarms(Occurrence {
-                            span: last.clone(),
+                            span: first_span.clone(),
                             event: &event,
                         })
-                        .last()
+                        .first()
                         .unwrap()
                         .datetime()
                         .with_timezone(&Utc),
-                )
-            } else {
-                Bound::Unbounded
-            };
+                );
+                let last_alarm = if let Some(last) = &last_span {
+                    Bound::Included(
+                        alarm
+                            .occurrence_alarms(Occurrence {
+                                span: last.clone(),
+                                event: &event,
+                            })
+                            .last()
+                            .unwrap()
+                            .datetime()
+                            .with_timezone(&Utc),
+                    )
+                } else {
+                    Bound::Unbounded
+                };
 
-            let interval = Interval::new(first_alarm, last_alarm);
-            if let Some(mut entry) = self
-                .alarms
-                .query_mut(&interval)
-                .find(|entry| entry.interval() == &interval)
-            {
-                entry.value().push(alarm)
-            } else {
-                self.alarms.insert(interval.clone(), vec![alarm])
+                let interval = Interval::new(first_alarm, last_alarm);
+                if let Some(mut entry) = self
+                    .alarms
+                    .query_mut(&interval)
+                    .find(|entry| entry.interval() == &interval)
+                {
+                    entry.value().push(alarm)
+                } else {
+                    self.alarms.insert(interval.clone(), vec![alarm])
+                }
+
+                alarm_intervals.push(interval);
             }
 
-            alarm_intervals.push(interval);
+            let prev = self
+                .uid_to_alarm_intervals
+                .insert(uid.clone(), alarm_intervals);
+            assert!(prev.is_none(), "Duplicate should have already been handled");
         }
-
-        let prev = self
-            .uid_to_alarm_intervals
-            .insert(uid.clone(), alarm_intervals);
-        assert!(prev.is_none(), "Duplicate should have already been handled");
 
         // check if interval is already in tree
         if let Some(mut entry) = self
