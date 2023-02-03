@@ -2,6 +2,7 @@
 name = "jackal"
 version = "0.1.0"
 authors = ["reedts <j.reedts@gmail.com>"]
+repository = "https://github.com/reedts/jackal"
 edition = "2018"
 default-run = "jk"
 
@@ -29,6 +30,8 @@ base64 = "0.13.1"
 store-interval-tree = "0.4.0"
 notify = "5.0"
 derive_more = "0.99.17"
+nix = "0.26.2"
+backtrace = "0.3.67"
 
 # Use fork for serde support
 [dependencies.ical]

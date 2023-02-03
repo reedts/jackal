@@ -1,9 +1,10 @@
 extern crate jackal as lib;
 
-use flexi_logger::{Duplicate, FileSpec, Logger};
+use flexi_logger::{FileSpec, Logger};
 use lib::agenda::Agenda;
 use lib::events::Dispatcher;
 use lib::ui::app::App;
+use nix::sys::termios;
 use std::io::stdout;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -39,7 +40,7 @@ pub struct Args {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
 
-    let mut logger = Logger::try_with_env_or_str("info")?.duplicate_to_stderr(Duplicate::Warn);
+    let mut logger = Logger::try_with_env_or_str("info")?;
 
     if let Some(log_file) = args.log_file {
         logger = logger
@@ -48,6 +49,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     logger.start()?;
+
+    const STDOUT: std::os::unix::io::RawFd = 0;
+    let orig_attr = std::sync::Mutex::new(
+        termios::tcgetattr(STDOUT).expect("Failed to get terminal attributes"),
+    );
+
+    std::panic::set_hook(Box::new(move |info| {
+        // Switch to main terminal screen
+        println!("{}{}", termion::screen::ToMainScreen, termion::cursor::Show);
+
+        let _ = termios::tcsetattr(STDOUT, termios::SetArg::TCSANOW, &orig_attr.lock().unwrap());
+
+        println!("Jackal ran into a fatal error!");
+        println!(
+            "Consider filing an issue with a log file and the backtrace below at {}",
+            env!("CARGO_PKG_REPOSITORY")
+        );
+
+        println!("{}", info);
+        println!("{:?}", backtrace::Backtrace::new());
+    }));
 
     let config = lib::config::load_suitable_config(args.configfile.as_deref())?;
 
