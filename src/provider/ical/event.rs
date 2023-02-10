@@ -1,8 +1,7 @@
 use chrono::{Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday};
-use chrono_tz::{OffsetName, Tz};
 use num_traits::FromPrimitive;
 use rrule::RRule;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -20,6 +19,7 @@ use ical::property::Property;
 use super::datetime::*;
 use super::{PropertyList, ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_UTC_FORMAT};
 
+use crate::provider::tz::*;
 use crate::provider::{
     days_of_month, AlarmGenerator, AlarmTrigger, Error, ErrorKind, Eventlike, OccurrenceRule,
     Result, TimeSpan, Uid,
@@ -192,144 +192,141 @@ impl Event {
                 value: Some(super::JACKAL_CALENDAR_VERSION.to_owned()),
             },
         ];
+        // TODO: The following needs to be rewritten with the new jackal TimeZone implementation
+        //
+        //
+        //if let Tz::Iana(chrono_tz::Tz::UTC) = occurrence.timezone() {
+        //    ()
+        //} else {
+        //    // push timezone information
+        //    let mut tz_spec = IcalTimeZone::new();
+        //    tz_spec.add_property(Property {
+        //        name: "TZID".to_owned(),
+        //        params: None,
+        //        value: Some(occurrence.first().begin().offset().id),
+        //    });
 
-        if let Tz::UTC = occurrence.timezone() {
-            ()
-        } else {
-            // push timezone information
-            let mut tz_spec = IcalTimeZone::new();
-            tz_spec.add_property(Property {
-                name: "TZID".to_owned(),
-                params: None,
-                value: Some(occurrence.first().begin().offset().tz_id().to_string()),
-            });
+        //    if let Some(name) = occurrence.first().begin().offset().name {
+        //        tz_spec.add_property(Property {
+        //            name: "TZNAME".to_owned(),
+        //            params: None,
+        //            value: Some(name),
+        //        });
+        //    }
 
-            tz_spec.add_property(Property {
-                name: "TZNAME".to_owned(),
-                params: None,
-                value: Some(
-                    occurrence
-                        .first()
-                        .begin()
-                        .offset()
-                        .abbreviation()
-                        .to_string(),
-                ),
-            });
+        //    let tz_info = tz::TimeZone::from_posix_tz(&occurrence.first().begin().offset().id)?;
 
-            let tz_info = tz::TimeZone::from_posix_tz(occurrence.first().begin().offset().tz_id())?;
+        //    if let Some(rule) = tz_info.as_ref().extra_rule() {
+        //        fn create_timezone_transitions(
+        //            transition: IcalTransition,
+        //            tz_name: String,
+        //            from_offset: i32,
+        //            to_offset: i32,
+        //            transition_day: &RuleDay,
+        //        ) -> IcalTimeZoneTransition {
+        //            let mut tr = IcalTimeZoneTransition::new(transition);
+        //            tr.add_property(Property {
+        //                name: "TZNAME".to_string(),
+        //                params: None,
+        //                value: Some(tz_name),
+        //            });
+        //            tr.add_property(Property {
+        //                name: "TZOFFSETFROM".to_string(),
+        //                params: None,
+        //                value: Some(format!("{:+05}", from_offset)),
+        //            });
+        //            tr.add_property(Property {
+        //                name: "TZOFFSETTO".to_string(),
+        //                params: None,
+        //                value: Some(format!("{:+05}", to_offset)),
+        //            });
+        //            // FIXME: this does not conform to RFC5545 and should be fixed
+        //            // once we know how to correctly get DST start(/end)
+        //            //
+        //            // HERE BE DRAGONS!!!!
+        //            let dtstart = match transition_day {
+        //                RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month_opt(
+        //                    1970,
+        //                    mwd.month().into(),
+        //                    Weekday::from_u8(mwd.week_day()).unwrap(),
+        //                    mwd.week(),
+        //                )
+        //                .unwrap(),
+        //                RuleDay::Julian0WithLeap(days) => {
+        //                    NaiveDate::from_yo_opt(1970, (days.get() + 1) as u32).unwrap()
+        //                }
+        //                RuleDay::Julian1WithoutLeap(days) => {
+        //                    NaiveDate::from_yo_opt(1970, days.get() as u32).unwrap()
+        //                }
+        //            }
+        //            .and_hms_opt(2, 0, 0)
+        //            .unwrap();
 
-            if let Some(rule) = tz_info.as_ref().extra_rule() {
-                fn create_timezone_transitions(
-                    transition: IcalTransition,
-                    tz_name: String,
-                    from_offset: i32,
-                    to_offset: i32,
-                    transition_day: &RuleDay,
-                ) -> IcalTimeZoneTransition {
-                    let mut tr = IcalTimeZoneTransition::new(transition);
-                    tr.add_property(Property {
-                        name: "TZNAME".to_string(),
-                        params: None,
-                        value: Some(tz_name),
-                    });
-                    tr.add_property(Property {
-                        name: "TZOFFSETFROM".to_string(),
-                        params: None,
-                        value: Some(format!("{:+05}", from_offset)),
-                    });
-                    tr.add_property(Property {
-                        name: "TZOFFSETTO".to_string(),
-                        params: None,
-                        value: Some(format!("{:+05}", to_offset)),
-                    });
-                    // FIXME: this does not conform to RFC5545 and should be fixed
-                    // once we know how to correctly get DST start(/end)
-                    //
-                    // HERE BE DRAGONS!!!!
-                    let dtstart = match transition_day {
-                        RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month_opt(
-                            1970,
-                            mwd.month().into(),
-                            Weekday::from_u8(mwd.week_day()).unwrap(),
-                            mwd.week(),
-                        )
-                        .unwrap(),
-                        RuleDay::Julian0WithLeap(days) => {
-                            NaiveDate::from_yo_opt(1970, (days.get() + 1) as u32).unwrap()
-                        }
-                        RuleDay::Julian1WithoutLeap(days) => {
-                            NaiveDate::from_yo_opt(1970, days.get() as u32).unwrap()
-                        }
-                    }
-                    .and_hms_opt(2, 0, 0)
-                    .unwrap();
+        //            let num_days_of_month =
+        //                days_of_month(&Month::from_u32(dtstart.month()).unwrap(), dtstart.year());
+        //            let day_occurrences_before = dtstart.day() % 7;
+        //            let day_occurrences_after = (num_days_of_month - dtstart.day()) % 7;
 
-                    let num_days_of_month =
-                        days_of_month(&Month::from_u32(dtstart.month()).unwrap(), dtstart.year());
-                    let day_occurrences_before = dtstart.day() % 7;
-                    let day_occurrences_after = (num_days_of_month - dtstart.day()) % 7;
+        //            let offset: i32 = if day_occurrences_after == 0 {
+        //                -1
+        //            } else {
+        //                day_occurrences_before as i32 + 1
+        //            };
 
-                    let offset: i32 = if day_occurrences_after == 0 {
-                        -1
-                    } else {
-                        day_occurrences_before as i32 + 1
-                    };
+        //            tr.add_property(Property {
+        //                name: "DTSTART".to_string(),
+        //                params: None,
+        //                value: Some(dtstart.format(ISO8601_2004_LOCAL_FORMAT).to_string()),
+        //            });
 
-                    tr.add_property(Property {
-                        name: "DTSTART".to_string(),
-                        params: None,
-                        value: Some(dtstart.format(ISO8601_2004_LOCAL_FORMAT).to_string()),
-                    });
+        //            // We generate this RRULE by hand for now
+        //            tr.add_property(Property {
+        //                name: "RRULE".to_string(),
+        //                params: None,
+        //                value: Some(format!(
+        //                    "FREQ=YEARLY;BYMONTH={};BYDAY={:+1}{}",
+        //                    dtstart.month(),
+        //                    offset,
+        //                    weekday_to_ical(dtstart.weekday())
+        //                )),
+        //            });
 
-                    // We generate this RRULE by hand for now
-                    tr.add_property(Property {
-                        name: "RRULE".to_string(),
-                        params: None,
-                        value: Some(format!(
-                            "FREQ=YEARLY;BYMONTH={};BYDAY={:+1}{}",
-                            dtstart.month(),
-                            offset,
-                            weekday_to_ical(dtstart.weekday())
-                        )),
-                    });
+        //            tr
+        //        }
 
-                    tr
-                }
+        //        match rule {
+        //            TransitionRule::Alternate(alt_time) => {
+        //                let std_offset_min = alt_time.std().ut_offset() * 60;
+        //                let dst_offset_min = alt_time.dst().ut_offset() * 60;
+        //                let dst_start_day = alt_time.dst_start();
+        //                let dst_end_day = alt_time.dst_end();
 
-                match rule {
-                    TransitionRule::Alternate(alt_time) => {
-                        let std_offset_min = alt_time.std().ut_offset() * 60;
-                        let dst_offset_min = alt_time.dst().ut_offset() * 60;
-                        let dst_start_day = alt_time.dst_start();
-                        let dst_end_day = alt_time.dst_end();
+        //                // Transition for standard to dst timezone
+        //                let std_to_dst = create_timezone_transitions(
+        //                    IcalTransition::Standard,
+        //                    alt_time.std().time_zone_designation().to_string(),
+        //                    std_offset_min,
+        //                    dst_offset_min,
+        //                    dst_start_day,
+        //                );
+        //                tz_spec.transitions.push(std_to_dst);
 
-                        // Transition for standard to dst timezone
-                        let std_to_dst = create_timezone_transitions(
-                            IcalTransition::Standard,
-                            alt_time.std().time_zone_designation().to_string(),
-                            std_offset_min,
-                            dst_offset_min,
-                            dst_start_day,
-                        );
-                        tz_spec.transitions.push(std_to_dst);
+        //                // Transition for dst timezone back to standard
+        //                let dst_to_std = create_timezone_transitions(
+        //                    IcalTransition::Daylight,
+        //                    alt_time.dst().time_zone_designation().to_string(),
+        //                    dst_offset_min,
+        //                    std_offset_min,
+        //                    dst_end_day,
+        //                );
+        //                tz_spec.transitions.push(dst_to_std);
+        //            }
+        //            _ => (),
+        //        }
+        //    }
 
-                        // Transition for dst timezone back to standard
-                        let dst_to_std = create_timezone_transitions(
-                            IcalTransition::Daylight,
-                            alt_time.dst().time_zone_designation().to_string(),
-                            dst_offset_min,
-                            std_offset_min,
-                            dst_end_day,
-                        );
-                        tz_spec.transitions.push(dst_to_std);
-                    }
-                    _ => (),
-                }
-            }
-
-            ical_calendar.timezones.push(tz_spec);
-        }
+        //    ical_calendar.timezones.push(tz_spec);
+        //}
 
         let mut ical_event = IcalEvent::new();
         ical_event.properties = vec![
@@ -449,6 +446,13 @@ impl Event {
 
         let event = ical.events.first().unwrap();
 
+        // TODO: Handle multiple VTIMEZONE definitions
+        let tz = ical
+            .timezones
+            .first()
+            .and_then(|tz| Tz::try_from(tz).ok())
+            .unwrap_or(Tz::utc());
+
         let dtstart = event
             .properties
             .iter()
@@ -463,22 +467,15 @@ impl Event {
         let duration = event.properties.iter().find(|p| p.name == "DURATION");
 
         // Required (if METHOD not set)
-        let dtstart_spec = IcalDateTime::try_from(dtstart).map_err(|e| {
+        let dtstart_spec = IcalDateTime::from_property(dtstart, Some(&tz)).map_err(|e| {
             let msg = e.to_string();
             e.with_msg(&format!("'{}': {}", path.display(), msg))
         })?;
 
-        // Set TZ id based on start spec
-        let tz = if let IcalDateTime::Local(dt) = dtstart_spec {
-            dt.timezone()
-        } else {
-            chrono_tz::UTC
-        };
-
         // DTEND does not HAVE to be specified...
         let mut occurrence = if let Some(dt) = dtend {
             // ...but if set it must be parseable
-            let dtend_spec = IcalDateTime::try_from(dt).map_err(|e| {
+            let dtend_spec = IcalDateTime::from_property(dt, Some(&tz)).map_err(|e| {
                 let msg = e.to_string();
                 e.with_msg(&format!("'{}': {}", path.display(), msg))
             })?;
@@ -486,7 +483,7 @@ impl Event {
             match &dtend_spec {
                 IcalDateTime::Date(date) => {
                     if let IcalDateTime::Date(bdate) = dtstart_spec {
-                        OccurrenceRule::Onetime(TimeSpan::allday_until(bdate, *date, tz))
+                        OccurrenceRule::Onetime(TimeSpan::allday_until(bdate, *date, tz.clone()))
                     } else {
                         return Err(Error::new(
                             ErrorKind::DateParse,
@@ -517,7 +514,7 @@ impl Event {
             //  ... a date spec, the event has to have the duration of a single day
             //  ... a datetime spec, the event has to have the dtstart also as dtend
             match dtstart_spec {
-                IcalDateTime::Date(d) => OccurrenceRule::Onetime(TimeSpan::allday(d, tz)),
+                IcalDateTime::Date(d) => OccurrenceRule::Onetime(TimeSpan::allday(d, tz.clone())),
                 dt => OccurrenceRule::Onetime(TimeSpan::from_start(dt.as_datetime(&tz))),
             }
         };
@@ -532,9 +529,15 @@ impl Event {
                 .parse::<RRule<rrule::Unvalidated>>()
             {
                 let start = occurrence.first().begin();
-                let tz = occurrence.timezone();
-                occurrence = occurrence
-                    .with_recurring(ruleset.build(start.with_timezone(&rrule::Tz::Tz(tz)))?);
+                let tz: rrule::Tz = occurrence.timezone().try_into().unwrap_or(rrule::Tz::UTC);
+                occurrence = occurrence.with_recurring(
+                    ruleset.build(start.with_timezone(&tz)).map_err(|err| {
+                        Error::new(
+                            ErrorKind::EventParse,
+                            &format!("'{}': {}", path.display(), err),
+                        )
+                    })?,
+                );
             }
         }
 

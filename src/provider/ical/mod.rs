@@ -8,10 +8,10 @@ pub use event::Event;
 
 use std::path::{Path, PathBuf};
 
-use super::{Error, ErrorKind, ProviderCalendar, Result};
 use crate::config::CalendarConfig;
+use crate::provider::*;
 
-use ical::property::Property;
+use ::ical::property::Property;
 
 type PropertyList = Vec<Property>;
 

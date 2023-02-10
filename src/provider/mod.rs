@@ -1,5 +1,4 @@
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
-use chrono_tz::Tz;
 use rrule::RRule;
 use std::default::Default;
 use std::ops::{Bound, RangeBounds};
@@ -9,6 +8,7 @@ pub mod alarm;
 pub mod calendar;
 pub mod datetime;
 pub mod error;
+pub mod tz;
 
 pub mod ical;
 
@@ -16,6 +16,8 @@ pub use alarm::*;
 pub use calendar::*;
 pub use datetime::*;
 pub use error::*;
+
+use self::tz::*;
 
 pub type Result<T> = std::result::Result<T, self::Error>;
 

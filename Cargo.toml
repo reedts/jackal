@@ -32,6 +32,8 @@ notify = "5.0"
 derive_more = "0.99.17"
 nix = "0.26.2"
 backtrace = "0.3.67"
+itertools = "0.10.5"
+parse-zoneinfo = "0.3.0"
 
 # Use fork for serde support
 [dependencies.ical]

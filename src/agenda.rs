@@ -1,5 +1,4 @@
 use chrono::{Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc};
-use chrono_tz::Tz;
 use log;
 use num_traits::FromPrimitive;
 use std::collections::BTreeMap;
@@ -7,6 +6,7 @@ use std::collections::BTreeMap;
 use crate::config::Config;
 use crate::provider::datetime::days_of_month;
 use crate::provider::ical;
+use crate::provider::tz::*;
 use crate::provider::{Alarm, EventFilter, MutCalendarlike, Occurrence, ProviderCalendar, Result};
 
 pub struct Agenda {

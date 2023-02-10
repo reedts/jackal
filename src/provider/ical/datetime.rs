@@ -1,20 +1,25 @@
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday};
-use chrono_tz::{OffsetName, Tz};
+use ical::parser::ical::component::{
+    IcalTimeZone, IcalTimeZoneTransition, Transition as IcalTimeZoneTransitionType,
+};
+use ical::parser::Component;
 use ical::property::Property;
 use nom::{
     branch::alt,
-    bytes::complete::tag,
+    bytes::complete::{tag, take},
     character::complete::{char, digit1, one_of},
-    combinator::{all_consuming, map_res, opt},
+    combinator::{all_consuming, map, map_res, opt},
     sequence::{preceded, terminated, tuple},
     IResult,
 };
+use rrule::{RRule, RRuleSet};
 use std::convert::TryFrom;
 use std::fmt::Display;
+use std::iter::FromIterator;
 use std::str::FromStr;
 
-use crate::provider::{Error, ErrorKind, Result, TimeSpan};
-
+use super::tz::*;
+use super::{Error, ErrorKind, Result, TimeSpan};
 use super::{ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_LOCAL_FORMAT_DATE, ISO8601_2004_UTC_FORMAT};
 
 pub fn weekday_to_ical(weekday: Weekday) -> String {
@@ -250,12 +255,231 @@ impl From<IcalDuration> for Duration {
     }
 }
 
+impl TryFrom<&IcalTimeZone> for Tz {
+    type Error = Error;
+    fn try_from(value: &IcalTimeZone) -> std::result::Result<Self, Self::Error> {
+        fn parse_offset(s: &str) -> Result<i32> {
+            let (_, (sign, hours, minutes, seconds)) = tuple((
+                map_res(
+                    one_of::<_, _, (&str, nom::error::ErrorKind)>("+-"),
+                    |s: char| (s.to_string() + "1").parse::<i32>(),
+                ),
+                map_res(take(2usize), |s: &str| s.parse::<i32>()),
+                map_res(take(2usize), |s: &str| s.parse::<i32>()),
+                map_res(opt(take(2usize)), |s: Option<&str>| {
+                    s.unwrap_or("0").parse::<i32>()
+                }),
+            ))(s)?;
+
+            Ok(sign * (hours * 3600 + minutes * 60 + seconds))
+        }
+
+        let id = value
+            .get_property("TZID")
+            .ok_or(Error::new(ErrorKind::TimezoneError, "Timezone has no id"))?
+            .value
+            .as_deref()
+            .unwrap();
+
+        // First try for "well-known" (IANA) TZID
+        if let tz @ Ok(_) = id.parse::<Tz>() {
+            return tz;
+        }
+
+        // If not well-known we build a Tz from custom transitions
+        let mut transitions = Vec::<Transition>::with_capacity(value.transitions.len());
+
+        for IcalTimeZoneTransition {
+            transition,
+            properties,
+        } in value.transitions.iter()
+        {
+            let (utc_offset_secs, dst_offset_secs) = match transition {
+                IcalTimeZoneTransitionType::Standard => (
+                    parse_offset(
+                        properties
+                            .get_property("TZOFFSETTO")
+                            .unwrap()
+                            .value
+                            .as_ref()
+                            .unwrap(),
+                    )
+                    .expect("TZOFFSETTO not convertible"),
+                    0,
+                ),
+                IcalTimeZoneTransitionType::Daylight => {
+                    let utc_offset = parse_offset(
+                        properties
+                            .get_property("TZOFFSETFROM")
+                            .unwrap()
+                            .value
+                            .as_ref()
+                            .unwrap(),
+                    )
+                    .expect("TZOFFSETFROM not convertible");
+                    (
+                        utc_offset,
+                        parse_offset(
+                            properties
+                                .get_property("TZOFFSETTO")
+                                .unwrap()
+                                .value
+                                .as_ref()
+                                .unwrap(),
+                        )
+                        .expect("TZOFFSETTO not convertible")
+                            - utc_offset,
+                    )
+                }
+            };
+
+            let name = properties
+                .get_property("TZNAME")
+                .and_then(|prop| prop.value.to_owned());
+
+            // build RRULE for custom timezone
+            // There is no need to provide a Tz here as DTSTART in VTIMEZONE
+            // must contain a local (or 'floating') value
+            let dtstart = IcalDateTime::from_property(
+                properties.get_property("DTSTART").ok_or(Error::new(
+                    ErrorKind::TimezoneError,
+                    &format!(
+                        "Missing DTSTART for timezone '{}'",
+                        name.as_deref().unwrap_or(&id)
+                    ),
+                ))?,
+                None,
+            )?;
+
+            let rule = if let Some(rrule_str) = properties
+                .get_property("RRULE")
+                .and_then(|prop| prop.value.as_deref())
+            {
+                let rrule = rrule_str
+                    .parse::<RRule<rrule::Unvalidated>>()
+                    .expect("Could not parse RRULE of timezone");
+                TransitionRule::Recurring(rrule.build(dtstart.as_datetime(&rrule::Tz::LOCAL))?)
+            } else {
+                TransitionRule::Single(dtstart.as_naive_local())
+            };
+
+            transitions.push(Transition {
+                utc_offset_secs,
+                dst_offset_secs,
+                id: id.to_string(),
+                name,
+                rule,
+            });
+        }
+
+        Ok(Self::from_iter(transitions))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IcalDateTime {
     Date(NaiveDate),
     Floating(NaiveDateTime),
     Utc(DateTime<Utc>),
     Local(DateTime<Tz>),
+}
+
+impl IcalDateTime {
+    pub fn from_property(property: &Property, tz: Option<&Tz>) -> Result<Self> {
+        let val = property
+            .value
+            .as_ref()
+            .ok_or(Error::from(ErrorKind::DateParse).with_msg("Missing datetime value"))?;
+
+        let has_options = property.params.is_some();
+        let mut used_tz: Option<Tz> = None;
+
+        if has_options {
+            // check if value is date
+            if property
+                .params
+                .as_ref()
+                .unwrap()
+                .iter()
+                .find(|(name, values)| name == "VALUE" && values[0] == "DATE")
+                .is_some()
+            {
+                return Ok(Self::Date(NaiveDate::parse_from_str(
+                    val,
+                    ISO8601_2004_LOCAL_FORMAT_DATE,
+                )?));
+            }
+
+            // check for TZID in options
+            if let Some((_, values)) = &property
+                .params
+                .as_ref()
+                .unwrap()
+                .iter()
+                .find(|(name, _)| name == "TZID")
+            {
+                if tz.is_some() && tz.unwrap().id() == values[0] {
+                    used_tz = Some(tz.unwrap().clone())
+                } else {
+                    used_tz = Some(values[0].parse::<Tz>()?)
+                }
+            };
+        }
+
+        if let Ok(dt) = NaiveDateTime::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT) {
+            if let Some(tz) = used_tz {
+                Ok(Self::Local(tz.from_local_datetime(&dt).earliest().unwrap()))
+            } else {
+                Ok(Self::Floating(dt))
+            }
+        } else if let Ok(dt) = NaiveDateTime::parse_from_str(val, ISO8601_2004_UTC_FORMAT) {
+            Ok(Self::Utc(Utc.from_utc_datetime(&dt)))
+        } else {
+            let date = NaiveDate::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT_DATE)?;
+            Ok(Self::Date(date))
+        }
+    }
+
+    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
+        match self {
+            IcalDateTime::Date(dt) => tz.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()),
+            IcalDateTime::Floating(dt) => tz.from_utc_datetime(&dt),
+            IcalDateTime::Utc(dt) => dt.with_timezone(&tz),
+            IcalDateTime::Local(dt) => dt.with_timezone(&tz),
+        }
+    }
+
+    pub fn as_naive_local(&self) -> NaiveDateTime {
+        match self {
+            IcalDateTime::Date(dt) => dt.and_hms_opt(0, 0, 0).unwrap(),
+            IcalDateTime::Floating(dt) => dt.clone(),
+            IcalDateTime::Utc(dt) => dt.naive_local(),
+            IcalDateTime::Local(dt) => dt.naive_local(),
+        }
+    }
+
+    pub fn as_date<Tz: TimeZone>(&self) -> NaiveDate {
+        match self {
+            IcalDateTime::Date(dt) => dt.clone(),
+            IcalDateTime::Floating(dt) => dt.date(),
+            IcalDateTime::Utc(dt) => dt.date_naive(),
+            IcalDateTime::Local(dt) => dt.date_naive(),
+        }
+    }
+
+    pub fn to_property(&self, name: String) -> Property {
+        Property {
+            name,
+            params: match &self {
+                IcalDateTime::Local(dt) => {
+                    Some(vec![("TZID".to_owned(), vec![dt.offset().id.clone()])])
+                }
+                IcalDateTime::Date(_) => Some(vec![("VALUE".to_owned(), vec!["DATE".to_owned()])]),
+                _ => None,
+            },
+            value: Some(self.to_string()),
+        }
+    }
 }
 
 impl Display for IcalDateTime {
@@ -295,7 +519,7 @@ impl From<DateTime<Utc>> for IcalDateTime {
 
 impl From<DateTime<Tz>> for IcalDateTime {
     fn from(dt: DateTime<Tz>) -> Self {
-        if let Tz::UTC = &dt.timezone() {
+        if let Tz::Iana(chrono_tz::Tz::UTC) = &dt.timezone() {
             Self::from(dt.with_timezone(&Utc {}))
         } else {
             IcalDateTime::Local(dt)
@@ -303,64 +527,32 @@ impl From<DateTime<Tz>> for IcalDateTime {
     }
 }
 
-impl TryFrom<&Property> for IcalDateTime {
-    type Error = Error;
+impl FromStr for IcalDateTime {
+    type Err = Error;
 
-    fn try_from(value: &Property) -> Result<Self> {
-        let val = value
-            .value
-            .as_ref()
-            .ok_or(Self::Error::from(ErrorKind::DateParse).with_msg("Missing datetime value"))?;
-
-        let has_options = value.params.is_some();
-        let mut tz: Option<Tz> = None;
-
-        if has_options {
-            // check if value is date
-            if let Some(_) = &value
-                .params
-                .as_ref()
-                .unwrap()
-                .iter()
-                .find(|o| o.0 == "VALUE" && o.1[0] == "DATE")
-            {
-                return Ok(Self::Date(NaiveDate::parse_from_str(
-                    val,
-                    ISO8601_2004_LOCAL_FORMAT_DATE,
-                )?));
-            }
-
-            // check for TZID in options
-            if let Some(option) = &value
-                .params
-                .as_ref()
-                .unwrap()
-                .iter()
-                .find(|o| o.0 == "TZID")
-            {
-                tz = Some(
-                    option.1[0]
-                        .parse::<chrono_tz::Tz>()
-                        .map_err(|err: String| Error::new(ErrorKind::DateParse, err.as_str()))?,
-                )
-            };
-        }
-
-        if let Ok(dt) = NaiveDateTime::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT) {
-            if let Some(tz) = tz {
-                Ok(Self::Local(tz.from_local_datetime(&dt).earliest().unwrap()))
-            } else {
-                Ok(Self::Floating(dt))
-            }
-        } else if let Ok(dt) = NaiveDateTime::parse_from_str(val, ISO8601_2004_UTC_FORMAT) {
-            Ok(Self::Utc(DateTime::<Utc>::from_utc(dt, Utc)))
+    fn from_str(s: &str) -> Result<Self> {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, ISO8601_2004_UTC_FORMAT) {
+            Ok(IcalDateTime::Utc(Utc {}.from_utc_datetime(&dt)))
+        } else if let Ok(dt) = NaiveDateTime::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT) {
+            // At this point we can only interpret this format as Floating time as we don't know
+            // whether the ical property also holds the TZID parameter
+            Ok(IcalDateTime::Floating(dt))
+        } else if let Ok(dt) = NaiveDate::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT_DATE) {
+            Ok(IcalDateTime::Date(dt))
         } else {
-            let date = NaiveDate::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT_DATE)?;
-            Ok(Self::Date(date))
+            Err(Error::new(
+                ErrorKind::TimeParse,
+                &format!("Could not extract datetime from '{}'", s),
+            ))
         }
     }
 }
 
+impl Default for IcalDateTime {
+    fn default() -> Self {
+        IcalDateTime::Floating(NaiveDateTime::from_timestamp_opt(0, 0).unwrap())
+    }
+}
 pub struct IcalTimeSpan(pub TimeSpan<Tz>);
 
 impl From<IcalTimeSpan> for Vec<Property> {
@@ -391,111 +583,5 @@ impl From<IcalTimeSpan> for Vec<Property> {
         }
 
         ret
-    }
-}
-
-impl FromStr for IcalDateTime {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self> {
-        if let Ok(dt) = NaiveDateTime::parse_from_str(s, ISO8601_2004_UTC_FORMAT) {
-            Ok(IcalDateTime::Utc(Utc {}.from_utc_datetime(&dt)))
-        } else if let Ok(dt) = NaiveDateTime::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT) {
-            // At this point we can only interpret this format as Floating time as we don't know
-            // whether the ical property also holds the TZID parameter
-            Ok(IcalDateTime::Floating(dt))
-        } else if let Ok(dt) = NaiveDate::parse_from_str(s, ISO8601_2004_LOCAL_FORMAT_DATE) {
-            Ok(IcalDateTime::Date(dt))
-        } else {
-            Err(Error::new(
-                ErrorKind::TimeParse,
-                &format!("Could not extract datetime from '{}'", s),
-            ))
-        }
-    }
-}
-
-// impl<Tz: TimeZone> From<DateTime<Tz>> for IcalDateTime {
-//     fn from(dt: DateTime<Tz>) -> Self {
-//         let fixed_offset = dt.offset().fix();
-
-//         if fixed_offset.utc_minus_local() == 0 {
-//             IcalDateTime::Utc(dt.with_timezone(&Utc {}))
-//         } else {
-//             // FIXME: There is currently no possibility to recreate a
-//             // chrono_tz::Tz from a chrono::DateTime<FixedOffset>
-//             // We use a UTC datetime and rely on the ical::Event to properly
-//             // catch this case
-//             IcalDateTime::Utc(dt.with_timezone(&Utc {}))
-//         }
-//     }
-// }
-
-impl Default for IcalDateTime {
-    fn default() -> Self {
-        IcalDateTime::Floating(NaiveDateTime::from_timestamp_opt(0, 0).unwrap())
-    }
-}
-
-impl IcalDateTime {
-    pub fn _is_date(&self) -> bool {
-        use IcalDateTime::*;
-        match *self {
-            Date(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn as_datetime<Tz: TimeZone>(&self, tz: &Tz) -> chrono::DateTime<Tz> {
-        match *self {
-            IcalDateTime::Date(dt) => tz.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()),
-            IcalDateTime::Floating(dt) => tz.from_utc_datetime(&dt),
-            IcalDateTime::Utc(dt) => dt.with_timezone(&tz),
-            IcalDateTime::Local(dt) => dt.with_timezone(&tz),
-        }
-    }
-
-    pub fn as_date<Tz: TimeZone>(&self) -> NaiveDate {
-        match *self {
-            IcalDateTime::Date(dt) => dt.clone(),
-            IcalDateTime::Floating(dt) => dt.date(),
-            IcalDateTime::Utc(dt) => dt.date_naive(),
-            IcalDateTime::Local(dt) => dt.date_naive(),
-        }
-    }
-
-    pub fn _with_tz(self, tz: &chrono_tz::Tz) -> Self {
-        match self {
-            IcalDateTime::Date(dt) => {
-                IcalDateTime::Local(tz.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()))
-            }
-            IcalDateTime::Floating(dt) => IcalDateTime::Local(tz.from_utc_datetime(&dt)),
-            IcalDateTime::Utc(dt) => IcalDateTime::Local(dt.with_timezone(&tz)),
-            IcalDateTime::Local(dt) => IcalDateTime::Local(dt.with_timezone(&tz)),
-        }
-    }
-
-    pub fn _and_duration(self, duration: chrono::Duration) -> Self {
-        match self {
-            IcalDateTime::Date(dt) => IcalDateTime::Date(dt + duration),
-            IcalDateTime::Floating(dt) => IcalDateTime::Floating(dt + duration),
-            IcalDateTime::Utc(dt) => IcalDateTime::Utc(dt + duration),
-            IcalDateTime::Local(dt) => IcalDateTime::Local(dt + duration),
-        }
-    }
-
-    pub fn to_property(&self, name: String) -> Property {
-        Property {
-            name,
-            params: match &self {
-                IcalDateTime::Local(dt) => Some(vec![(
-                    "TZID".to_owned(),
-                    vec![dt.offset().tz_id().to_owned()],
-                )]),
-                IcalDateTime::Date(_) => Some(vec![("VALUE".to_owned(), vec!["DATE".to_owned()])]),
-                _ => None,
-            },
-            value: Some(self.to_string()),
-        }
     }
 }

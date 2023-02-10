@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use chrono_tz::Tz;
 use derive_more::Constructor;
 
+use super::tz::*;
 use super::{Eventlike, Occurrence, OccurrenceIter, TimeSpan, Uid};
 
 #[derive(Clone)]
@@ -82,7 +82,7 @@ impl AlarmGenerator {
                 }
             }
             AlarmTrigger::Absolute(dt) => {
-                span = TimeSpan::Instant(dt.with_timezone(&Tz::UTC));
+                span = TimeSpan::Instant(dt.with_timezone(&Tz::utc()));
                 Alarm {
                     datetime: span.begin(),
                     generator: &self,

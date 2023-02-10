@@ -1,10 +1,10 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use chrono_tz::Tz;
 use std::collections::BTreeMap;
 use std::ops::{Bound, Deref};
 use std::path::{Path, PathBuf};
 use store_interval_tree::{Interval, IntervalTree};
 
+use super::tz::*;
 use super::{Alarm, AlarmGenerator, Calendarlike, EventFilter, Eventlike, Occurrence, Uid};
 
 pub struct CalendarCore<Event: Eventlike> {
@@ -226,7 +226,7 @@ impl<Event: Eventlike + 'static, T: Deref<Target = CalendarCore<Event>>> Calenda
                     .skip_while(|ts| ts.end().with_timezone(&Utc) <= begin_dt)
                     .take_while(|ts| ts.begin().with_timezone(&Utc) <= end_dt)
                     .map(move |ts| Occurrence {
-                        span: ts.with_tz(&Tz::UTC),
+                        span: ts.with_tz(&Tz::utc()),
                         event: event as &'a dyn Eventlike,
                     })
             })

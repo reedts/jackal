@@ -1,6 +1,7 @@
 use crate::agenda::Agenda;
 use crate::config::Config;
 use crate::events::{Dispatcher, Event};
+use crate::provider::tz::*;
 use crate::provider::NewEvent;
 
 use super::{CalendarWindow, Context, EventWindow, EventWindowBehaviour, Mode};
@@ -115,8 +116,7 @@ impl<'a> App<'a> {
                                         .finish();
                                 }
                                 mode @ Mode::Insert => {
-                                    let begin =
-                                        self.context.cursor().with_timezone(&chrono_tz::UTC);
+                                    let begin = self.context.cursor().with_timezone(&Tz::utc());
 
                                     input
                                         .chain(

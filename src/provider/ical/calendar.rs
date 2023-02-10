@@ -1,5 +1,5 @@
-use chrono_tz::Tz;
 use std::collections::HashSet;
+use std::convert::TryInto;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -12,6 +12,7 @@ use crate::provider::{self, CalendarCore, Eventlike};
 use crate::provider::{MutCalendarlike, NewEvent, OccurrenceRule, TimeSpan};
 
 use super::ser::to_string;
+use super::tz::*;
 use super::{Error, ErrorKind, Event, Result};
 
 pub struct Calendar {
@@ -67,9 +68,9 @@ pub fn from_dir(
         .peekable();
 
     let tz = if let Some(event) = event_file_iter.peek() {
-        *(event.tz())
+        event.tz().clone()
     } else {
-        Tz::UTC
+        Tz::utc()
     };
 
     let mut inner = CalendarCore::new(path.to_owned(), config.id.clone(), config.name.clone(), tz);
@@ -95,11 +96,14 @@ pub fn from_dir(
 impl MutCalendarlike for Calendar {
     fn add_event(&mut self, new_event: NewEvent<Tz>) -> Result<()> {
         let mut occurrence = if let Some(end) = new_event.end {
-            OccurrenceRule::Onetime(TimeSpan::from_start_and_end(new_event.begin, end))
+            OccurrenceRule::Onetime(TimeSpan::from_start_and_end(new_event.begin.clone(), end))
         } else if let Some(duration) = new_event.duration {
-            OccurrenceRule::Onetime(TimeSpan::from_start_and_duration(new_event.begin, duration))
+            OccurrenceRule::Onetime(TimeSpan::from_start_and_duration(
+                new_event.begin.clone(),
+                duration,
+            ))
         } else {
-            OccurrenceRule::Onetime(TimeSpan::from_start(new_event.begin))
+            OccurrenceRule::Onetime(TimeSpan::from_start(new_event.begin.clone()))
         };
 
         if let Some(rrule) = new_event.rrule {
@@ -107,7 +111,7 @@ impl MutCalendarlike for Calendar {
                 rrule.build(
                     new_event
                         .begin
-                        .with_timezone(&rrule::Tz::Tz(new_event.begin.timezone())),
+                        .with_timezone(&new_event.begin.timezone().try_into()?),
                 )?,
             );
         }

@@ -1,5 +1,4 @@
 use chrono::NaiveDateTime;
-use chrono_tz::Tz;
 use nom::{
     branch::alt,
     bytes::complete::take_until1,
@@ -16,6 +15,7 @@ use unsegen::input::*;
 use super::command::ActionResult;
 use super::context::Context;
 use crate::config::Config;
+use crate::provider::tz::*;
 use crate::provider::NewEvent;
 
 type InsertAction = fn(&mut NewEvent<Tz>, &str) -> ActionResult;
