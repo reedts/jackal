@@ -1,17 +1,13 @@
-use chrono::{Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday};
-use num_traits::FromPrimitive;
+use chrono::{
+    DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday,
+};
 use rrule::RRule;
 use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use tz;
-use tz::timezone::*;
 
-use ical::parser::ical::component::{
-    IcalAlarm, IcalCalendar, IcalEvent, IcalTimeZone, IcalTimeZoneTransition,
-    Transition as IcalTransition,
-};
+use ical::parser::ical::component::{IcalAlarm, IcalCalendar, IcalEvent, IcalTimeZone};
 use ical::parser::ical::IcalParser;
 use ical::parser::Component;
 use ical::property::Property;
@@ -192,141 +188,10 @@ impl Event {
                 value: Some(super::JACKAL_CALENDAR_VERSION.to_owned()),
             },
         ];
-        // TODO: The following needs to be rewritten with the new jackal TimeZone implementation
-        //
-        //
-        //if let Tz::Iana(chrono_tz::Tz::UTC) = occurrence.timezone() {
-        //    ()
-        //} else {
-        //    // push timezone information
-        //    let mut tz_spec = IcalTimeZone::new();
-        //    tz_spec.add_property(Property {
-        //        name: "TZID".to_owned(),
-        //        params: None,
-        //        value: Some(occurrence.first().begin().offset().id),
-        //    });
 
-        //    if let Some(name) = occurrence.first().begin().offset().name {
-        //        tz_spec.add_property(Property {
-        //            name: "TZNAME".to_owned(),
-        //            params: None,
-        //            value: Some(name),
-        //        });
-        //    }
-
-        //    let tz_info = tz::TimeZone::from_posix_tz(&occurrence.first().begin().offset().id)?;
-
-        //    if let Some(rule) = tz_info.as_ref().extra_rule() {
-        //        fn create_timezone_transitions(
-        //            transition: IcalTransition,
-        //            tz_name: String,
-        //            from_offset: i32,
-        //            to_offset: i32,
-        //            transition_day: &RuleDay,
-        //        ) -> IcalTimeZoneTransition {
-        //            let mut tr = IcalTimeZoneTransition::new(transition);
-        //            tr.add_property(Property {
-        //                name: "TZNAME".to_string(),
-        //                params: None,
-        //                value: Some(tz_name),
-        //            });
-        //            tr.add_property(Property {
-        //                name: "TZOFFSETFROM".to_string(),
-        //                params: None,
-        //                value: Some(format!("{:+05}", from_offset)),
-        //            });
-        //            tr.add_property(Property {
-        //                name: "TZOFFSETTO".to_string(),
-        //                params: None,
-        //                value: Some(format!("{:+05}", to_offset)),
-        //            });
-        //            // FIXME: this does not conform to RFC5545 and should be fixed
-        //            // once we know how to correctly get DST start(/end)
-        //            //
-        //            // HERE BE DRAGONS!!!!
-        //            let dtstart = match transition_day {
-        //                RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month_opt(
-        //                    1970,
-        //                    mwd.month().into(),
-        //                    Weekday::from_u8(mwd.week_day()).unwrap(),
-        //                    mwd.week(),
-        //                )
-        //                .unwrap(),
-        //                RuleDay::Julian0WithLeap(days) => {
-        //                    NaiveDate::from_yo_opt(1970, (days.get() + 1) as u32).unwrap()
-        //                }
-        //                RuleDay::Julian1WithoutLeap(days) => {
-        //                    NaiveDate::from_yo_opt(1970, days.get() as u32).unwrap()
-        //                }
-        //            }
-        //            .and_hms_opt(2, 0, 0)
-        //            .unwrap();
-
-        //            let num_days_of_month =
-        //                days_of_month(&Month::from_u32(dtstart.month()).unwrap(), dtstart.year());
-        //            let day_occurrences_before = dtstart.day() % 7;
-        //            let day_occurrences_after = (num_days_of_month - dtstart.day()) % 7;
-
-        //            let offset: i32 = if day_occurrences_after == 0 {
-        //                -1
-        //            } else {
-        //                day_occurrences_before as i32 + 1
-        //            };
-
-        //            tr.add_property(Property {
-        //                name: "DTSTART".to_string(),
-        //                params: None,
-        //                value: Some(dtstart.format(ISO8601_2004_LOCAL_FORMAT).to_string()),
-        //            });
-
-        //            // We generate this RRULE by hand for now
-        //            tr.add_property(Property {
-        //                name: "RRULE".to_string(),
-        //                params: None,
-        //                value: Some(format!(
-        //                    "FREQ=YEARLY;BYMONTH={};BYDAY={:+1}{}",
-        //                    dtstart.month(),
-        //                    offset,
-        //                    weekday_to_ical(dtstart.weekday())
-        //                )),
-        //            });
-
-        //            tr
-        //        }
-
-        //        match rule {
-        //            TransitionRule::Alternate(alt_time) => {
-        //                let std_offset_min = alt_time.std().ut_offset() * 60;
-        //                let dst_offset_min = alt_time.dst().ut_offset() * 60;
-        //                let dst_start_day = alt_time.dst_start();
-        //                let dst_end_day = alt_time.dst_end();
-
-        //                // Transition for standard to dst timezone
-        //                let std_to_dst = create_timezone_transitions(
-        //                    IcalTransition::Standard,
-        //                    alt_time.std().time_zone_designation().to_string(),
-        //                    std_offset_min,
-        //                    dst_offset_min,
-        //                    dst_start_day,
-        //                );
-        //                tz_spec.transitions.push(std_to_dst);
-
-        //                // Transition for dst timezone back to standard
-        //                let dst_to_std = create_timezone_transitions(
-        //                    IcalTransition::Daylight,
-        //                    alt_time.dst().time_zone_designation().to_string(),
-        //                    dst_offset_min,
-        //                    std_offset_min,
-        //                    dst_end_day,
-        //                );
-        //                tz_spec.transitions.push(dst_to_std);
-        //            }
-        //            _ => (),
-        //        }
-        //    }
-
-        //    ical_calendar.timezones.push(tz_spec);
-        //}
+        ical_calendar
+            .timezones
+            .push((&occurrence.timezone()).into());
 
         let mut ical_event = IcalEvent::new();
         ical_event.properties = vec![
@@ -529,15 +394,51 @@ impl Event {
                 .parse::<RRule<rrule::Unvalidated>>()
             {
                 let start = occurrence.first().begin();
-                let tz: rrule::Tz = occurrence.timezone().try_into().unwrap_or(rrule::Tz::UTC);
-                occurrence = occurrence.with_recurring(
-                    ruleset.build(start.with_timezone(&tz)).map_err(|err| {
-                        Error::new(
-                            ErrorKind::EventParse,
-                            &format!("'{}': {}", path.display(), err),
-                        )
-                    })?,
-                );
+                let rrule_tz: rrule::Tz = occurrence.timezone().try_into().unwrap_or_else(|_| {
+                    log::warn!("RRULE in event '{}' uses a custom defined timezone which is currently not supported (see https://github.com/fmeringdal/rust-rrule/pull/85). Falling back
+                        to local timezone. Datetime may be wrong!", path.display());
+                    rrule::Tz::LOCAL
+                });
+
+                let mut rrule_set =
+                    ruleset
+                        .build(start.with_timezone(&rrule_tz))
+                        .map_err(|err| {
+                            Error::new(
+                                ErrorKind::EventParse,
+                                &format!("'{}': {}", path.display(), err),
+                            )
+                        })?;
+
+                // collect and add RDATES
+                let rdates: Vec<DateTime<rrule::Tz>> = event.properties.iter().filter(|p| p.name == "RDATE").map(|property| {
+                    let ical_dt = IcalDateTime::from_property(property, Some(&tz))
+                        .expect("RDATE has invalid datetime");
+                    let rdate_tz: rrule::Tz = ical_dt.timezone().try_into().unwrap_or_else(|_| {
+                    log::warn!("RRULE in event '{}' uses a custom defined timezone which is currently not supported\
+                        (see https://github.com/fmeringdal/rust-rrule/pull/85).\
+                        Falling back to local timezone. Datetime may be wrong!", path.display());
+                    rrule::Tz::LOCAL
+                    });
+                    ical_dt.as_datetime(&rdate_tz)
+                }).collect();
+                rrule_set = rrule_set.set_rdates(rdates);
+
+                // collect and add EXDATES
+                let exdates: Vec<DateTime<rrule::Tz>> = event.properties.iter().filter(|p| p.name == "EXDATE").map(|property| {
+                    let ical_dt = IcalDateTime::from_property(property, Some(&tz))
+                        .expect("RDATE has invalid datetime");
+                    let rdate_tz: rrule::Tz = ical_dt.timezone().try_into().unwrap_or_else(|_| {
+                    log::warn!("RRULE in event '{}' uses a custom defined timezone which is currently not supported\
+                        (see https://github.com/fmeringdal/rust-rrule/pull/85).\
+                        Falling back to local timezone. Datetime may be wrong!", path.display());
+                    rrule::Tz::LOCAL
+                    });
+                    ical_dt.as_datetime(&rdate_tz)
+                }).collect();
+                rrule_set = rrule_set.set_exdates(exdates);
+
+                occurrence = occurrence.with_recurring(rrule_set);
             }
         }
 
@@ -691,5 +592,45 @@ impl From<Event> for IcalEvent {
 impl From<Event> for IcalCalendar {
     fn from(event: Event) -> Self {
         event.ical
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::ical::ser::to_string;
+
+    #[test]
+    fn new_event_with_custom_tz_single() {
+        let tz = Tz::Custom {
+            id: "TestTz".to_owned(),
+            transitions: TransitionSet {
+                transitions: vec![Transition {
+                    utc_offset_secs: 3600,
+                    dst_offset_secs: 3600 * 2,
+                    id: "TestTzTrans".to_owned(),
+                    name: Some("TestTzTransName".to_owned()),
+                    rule: TransitionRule::Single(
+                        NaiveDate::from_ymd_opt(2000, 8, 10)
+                            .unwrap()
+                            .and_hms_opt(2, 0, 0)
+                            .unwrap(),
+                    ),
+                }],
+            },
+        };
+
+        let occurrence = OccurrenceRule::Onetime(TimeSpan::Instant(
+            tz.from_utc_datetime(
+                &NaiveDate::from_ymd_opt(2021, 6, 27)
+                    .unwrap()
+                    .and_hms_opt(9, 0, 0)
+                    .unwrap(),
+            ),
+        ));
+
+        let event = Event::new(&PathBuf::from("./test.ical"), occurrence).expect("Event should be valid");
+        let s = to_string(&event.as_ical()).expect("Event should be serializeable");
+        println!("{}", s);
     }
 }

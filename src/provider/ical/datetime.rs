@@ -1,6 +1,8 @@
-use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday};
+use chrono::{
+    DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday,
+};
 use ical::parser::ical::component::{
-    IcalTimeZone, IcalTimeZoneTransition, Transition as IcalTimeZoneTransitionType,
+    IcalTimeZone, IcalTimeZoneTransition, IcalTimeZoneTransitionType,
 };
 use ical::parser::Component;
 use ical::property::Property;
@@ -12,11 +14,16 @@ use nom::{
     sequence::{preceded, terminated, tuple},
     IResult,
 };
+use num_traits::FromPrimitive;
 use rrule::{RRule, RRuleSet};
 use std::convert::TryFrom;
 use std::fmt::Display;
 use std::iter::FromIterator;
 use std::str::FromStr;
+use tz;
+use tz::timezone;
+
+use crate::provider::days_of_month;
 
 use super::tz::*;
 use super::{Error, ErrorKind, Result, TimeSpan};
@@ -255,6 +262,184 @@ impl From<IcalDuration> for Duration {
     }
 }
 
+impl From<&Tz> for IcalTimeZone {
+    fn from(value: &Tz) -> Self {
+        fn create_timezone_transitions(
+            transition: IcalTimeZoneTransitionType,
+            tz_name: String,
+            from_offset: i32,
+            to_offset: i32,
+            transition_day: &tz::timezone::RuleDay,
+        ) -> IcalTimeZoneTransition {
+            let mut tr = IcalTimeZoneTransition::new(transition);
+            tr.add_property(Property {
+                name: "TZNAME".to_string(),
+                params: None,
+                value: Some(tz_name),
+            });
+            tr.add_property(Property {
+                name: "TZOFFSETFROM".to_string(),
+                params: None,
+                value: Some(format!("{:+05}", from_offset)),
+            });
+            tr.add_property(Property {
+                name: "TZOFFSETTO".to_string(),
+                params: None,
+                value: Some(format!("{:+05}", to_offset)),
+            });
+            // FIXME: this does not conform to RFC5545 and should be fixed
+            // once we know how to correctly get DST start(/end)
+            //
+            // HERE BE DRAGONS!!!!
+            let dtstart = match transition_day {
+                tz::timezone::RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month_opt(
+                    1970,
+                    mwd.month().into(),
+                    Weekday::from_u8(mwd.week_day()).unwrap(),
+                    mwd.week(),
+                )
+                .unwrap(),
+                tz::timezone::RuleDay::Julian0WithLeap(days) => {
+                    NaiveDate::from_yo_opt(1970, (days.get() + 1) as u32).unwrap()
+                }
+                tz::timezone::RuleDay::Julian1WithoutLeap(days) => {
+                    NaiveDate::from_yo_opt(1970, days.get() as u32).unwrap()
+                }
+            }
+            .and_hms_opt(2, 0, 0)
+            .unwrap();
+
+            let num_days_of_month =
+                days_of_month(&Month::from_u32(dtstart.month()).unwrap(), dtstart.year());
+            let day_occurrences_before = dtstart.day() % 7;
+            let day_occurrences_after = (num_days_of_month - dtstart.day()) % 7;
+
+            let offset: i32 = if day_occurrences_after == 0 {
+                -1
+            } else {
+                day_occurrences_before as i32 + 1
+            };
+
+            tr.add_property(Property {
+                name: "DTSTART".to_string(),
+                params: None,
+                value: Some(dtstart.format(ISO8601_2004_LOCAL_FORMAT).to_string()),
+            });
+
+            // We generate this RRULE by hand for now
+            tr.add_property(Property {
+                name: "RRULE".to_string(),
+                params: None,
+                value: Some(format!(
+                    "FREQ=YEARLY;BYMONTH={};BYDAY={:+1}{}",
+                    dtstart.month(),
+                    offset,
+                    weekday_to_ical(dtstart.weekday())
+                )),
+            });
+
+            tr
+        }
+
+        let mut tz_spec = IcalTimeZone::new();
+        tz_spec.add_property(Property {
+            name: "TZID".to_owned(),
+            params: None,
+            value: Some(value.id().to_owned()),
+        });
+
+        match value {
+            Tz::Local | Tz::Iana(chrono_tz::UTC) => IcalTimeZone::default(),
+            Tz::Iana(tz) => {
+                let tz_info =
+                    tz::TimeZone::from_posix_tz(tz.name()).expect("IANA specifier must exist");
+
+                if let Some(rule) = tz_info.as_ref().extra_rule() {
+                    match rule {
+                        tz::timezone::TransitionRule::Alternate(alt_time) => {
+                            let std_offset_min = alt_time.std().ut_offset() * 60;
+                            let dst_offset_min = alt_time.dst().ut_offset() * 60;
+                            let dst_start_day = alt_time.dst_start();
+                            let dst_end_day = alt_time.dst_end();
+
+                            // Transition for standard to dst timezone
+                            let std_to_dst = create_timezone_transitions(
+                                IcalTimeZoneTransitionType::STANDARD,
+                                alt_time.std().time_zone_designation().to_string(),
+                                std_offset_min,
+                                dst_offset_min,
+                                dst_start_day,
+                            );
+                            tz_spec.transitions.push(std_to_dst);
+
+                            // Transition for dst timezone back to standard
+                            let dst_to_std = create_timezone_transitions(
+                                IcalTimeZoneTransitionType::DAYLIGHT,
+                                alt_time.dst().time_zone_designation().to_string(),
+                                dst_offset_min,
+                                std_offset_min,
+                                dst_end_day,
+                            );
+                            tz_spec.transitions.push(dst_to_std);
+                        }
+                        _ => (),
+                    };
+                }
+                tz_spec
+            }
+            Tz::Custom { id: _, transitions } => {
+                for transition in transitions.transitions.iter() {
+                    let transition_rule = if transition.dst_offset_secs > 0 {
+                        IcalTimeZoneTransitionType::STANDARD
+                    } else {
+                        IcalTimeZoneTransitionType::DAYLIGHT
+                    };
+
+                    let mut tr = IcalTimeZoneTransition::new(transition_rule);
+
+                    if let Some(name) = transition.name.as_deref() {
+                        tr.add_property(Property {
+                            name: "TZNAME".to_string(),
+                            params: None,
+                            value: Some(name.to_string()),
+                        });
+                    }
+
+                    match tr.transition {
+                        IcalTimeZoneTransitionType::STANDARD => {
+                            tr.add_property(Property {
+                                name: "TZOFFSETFROM".to_string(),
+                                params: None,
+                                value: Some(format!("{:+05}", transition.dst_offset_secs / 3600)),
+                            });
+                            tr.add_property(Property {
+                                name: "TZOFFSETTO".to_string(),
+                                params: None,
+                                value: Some(format!("{:+05}", transition.utc_offset_secs / 3600)),
+                            });
+                        }
+                        IcalTimeZoneTransitionType::DAYLIGHT => {
+                            tr.add_property(Property {
+                                name: "TZOFFSETFROM".to_string(),
+                                params: None,
+                                value: Some(format!("{:+05}", transition.utc_offset_secs / 3600)),
+                            });
+                            tr.add_property(Property {
+                                name: "TZOFFSETTO".to_string(),
+                                params: None,
+                                value: Some(format!("{:+05}", transition.dst_offset_secs / 3600)),
+                            });
+                        }
+                    }
+
+                    tz_spec.transitions.push(tr);
+                }
+                tz_spec
+            }
+        }
+    }
+}
+
 impl TryFrom<&IcalTimeZone> for Tz {
     type Error = Error;
     fn try_from(value: &IcalTimeZone) -> std::result::Result<Self, Self::Error> {
@@ -289,15 +474,11 @@ impl TryFrom<&IcalTimeZone> for Tz {
         // If not well-known we build a Tz from custom transitions
         let mut transitions = Vec::<Transition>::with_capacity(value.transitions.len());
 
-        for IcalTimeZoneTransition {
-            transition,
-            properties,
-        } in value.transitions.iter()
-        {
-            let (utc_offset_secs, dst_offset_secs) = match transition {
-                IcalTimeZoneTransitionType::Standard => (
+        for ical_transition in value.transitions.iter() {
+            let (utc_offset_secs, dst_offset_secs) = match ical_transition.transition {
+                IcalTimeZoneTransitionType::STANDARD => (
                     parse_offset(
-                        properties
+                        ical_transition
                             .get_property("TZOFFSETTO")
                             .unwrap()
                             .value
@@ -307,9 +488,9 @@ impl TryFrom<&IcalTimeZone> for Tz {
                     .expect("TZOFFSETTO not convertible"),
                     0,
                 ),
-                IcalTimeZoneTransitionType::Daylight => {
+                IcalTimeZoneTransitionType::DAYLIGHT => {
                     let utc_offset = parse_offset(
-                        properties
+                        ical_transition
                             .get_property("TZOFFSETFROM")
                             .unwrap()
                             .value
@@ -320,7 +501,7 @@ impl TryFrom<&IcalTimeZone> for Tz {
                     (
                         utc_offset,
                         parse_offset(
-                            properties
+                            ical_transition
                                 .get_property("TZOFFSETTO")
                                 .unwrap()
                                 .value
@@ -333,7 +514,7 @@ impl TryFrom<&IcalTimeZone> for Tz {
                 }
             };
 
-            let name = properties
+            let name = ical_transition
                 .get_property("TZNAME")
                 .and_then(|prop| prop.value.to_owned());
 
@@ -341,7 +522,7 @@ impl TryFrom<&IcalTimeZone> for Tz {
             // There is no need to provide a Tz here as DTSTART in VTIMEZONE
             // must contain a local (or 'floating') value
             let dtstart = IcalDateTime::from_property(
-                properties.get_property("DTSTART").ok_or(Error::new(
+                ical_transition.get_property("DTSTART").ok_or(Error::new(
                     ErrorKind::TimezoneError,
                     &format!(
                         "Missing DTSTART for timezone '{}'",
@@ -351,7 +532,7 @@ impl TryFrom<&IcalTimeZone> for Tz {
                 None,
             )?;
 
-            let rule = if let Some(rrule_str) = properties
+            let rule = if let Some(rrule_str) = ical_transition
                 .get_property("RRULE")
                 .and_then(|prop| prop.value.as_deref())
             {
@@ -437,6 +618,14 @@ impl IcalDateTime {
         } else {
             let date = NaiveDate::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT_DATE)?;
             Ok(Self::Date(date))
+        }
+    }
+
+    pub fn timezone(&self) -> Tz {
+        match self {
+            IcalDateTime::Date(_) | IcalDateTime::Floating(_) => Tz::Local,
+            IcalDateTime::Utc(_) => Tz::utc(),
+            IcalDateTime::Local(dt) => dt.timezone(),
         }
     }
 

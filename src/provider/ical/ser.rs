@@ -145,10 +145,10 @@ impl Serializer {
 
         for transition in value.transitions.iter() {
             match transition.transition {
-                Transition::Standard => {
+                IcalTimeZoneTransitionType::STANDARD => {
                     self.begin_section(Section::TimezoneTransition("STANDARD".to_owned()))?
                 }
-                Transition::Daylight => {
+                IcalTimeZoneTransitionType::DAYLIGHT => {
                     self.begin_section(Section::TimezoneTransition("DAYLIGHT".to_owned()))?
                 }
             }

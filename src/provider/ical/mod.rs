@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::config::CalendarConfig;
 use crate::provider::*;
 
+use ::ical::parser::Component;
 use ::ical::property::Property;
 
 type PropertyList = Vec<Property>;

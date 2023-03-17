@@ -359,3 +359,19 @@ impl TryFrom<Tz> for rrule::Tz {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::*;
+
+    #[test]
+    fn iana_tz() {
+        let dt = NaiveDate::from_ymd_opt(2020, 9, 8).unwrap().and_hms_opt(8, 0, 0).unwrap();
+        let chronotz = "Europe/Berlin".parse::<chrono_tz::Tz>().expect("'Europe/Berlin' is a valid IANA timezone");
+
+        let tz = Tz::Iana(chronotz.clone());
+
+        assert_eq!(chronotz.from_utc_datetime(&dt), tz.from_utc_datetime(&dt));
+    }
+}
