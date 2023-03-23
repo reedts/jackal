@@ -367,8 +367,13 @@ mod tests {
 
     #[test]
     fn iana_tz() {
-        let dt = NaiveDate::from_ymd_opt(2020, 9, 8).unwrap().and_hms_opt(8, 0, 0).unwrap();
-        let chronotz = "Europe/Berlin".parse::<chrono_tz::Tz>().expect("'Europe/Berlin' is a valid IANA timezone");
+        let dt = NaiveDate::from_ymd_opt(2020, 9, 8)
+            .unwrap()
+            .and_hms_opt(8, 0, 0)
+            .unwrap();
+        let chronotz = "Europe/Berlin"
+            .parse::<chrono_tz::Tz>()
+            .expect("'Europe/Berlin' is a valid IANA timezone");
 
         let tz = Tz::Iana(chronotz.clone());
 

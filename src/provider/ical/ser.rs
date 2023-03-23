@@ -54,7 +54,7 @@ pub struct Serializer {
 impl Serializer {
     fn begin_section(&mut self, sec: Section) -> Result<()> {
         match self.position {
-            Position::EOL => {
+            Position::EOL | Position::Key => {
                 self.position = Position::Key;
                 self.output += &format!("BEGIN:{}\n", &sec);
                 self.section.push(sec);
@@ -69,7 +69,8 @@ impl Serializer {
 
     fn end_section(&mut self) -> Result<()> {
         match self.position {
-            Position::EOL => {
+            Position::EOL | Position::Key => {
+                self.position = Position::Key;
                 let sec = self.section.pop().unwrap();
                 self.output += &format!("END:{}\n", sec);
                 Ok(())

@@ -1,5 +1,6 @@
 use chrono::{
-    DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday,
+    DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc,
+    Weekday,
 };
 use ical::parser::ical::component::{
     IcalTimeZone, IcalTimeZoneTransition, IcalTimeZoneTransitionType,
@@ -270,7 +271,10 @@ impl From<&Tz> for IcalTimeZone {
             from_offset: i32,
             to_offset: i32,
             transition_day: &tz::timezone::RuleDay,
+            transition_time_in_secs: i32,
         ) -> IcalTimeZoneTransition {
+            const LAST_WEEK_OF_MONTH: u8 = 5;
+
             let mut tr = IcalTimeZoneTransition::new(transition);
             tr.add_property(Property {
                 name: "TZNAME".to_string(),
@@ -280,50 +284,65 @@ impl From<&Tz> for IcalTimeZone {
             tr.add_property(Property {
                 name: "TZOFFSETFROM".to_string(),
                 params: None,
-                value: Some(format!("{:+05}", from_offset)),
+                value: Some(format!(
+                    "{:+03}{:02}",
+                    from_offset % 59,
+                    from_offset - (from_offset % 59 * 60) * 60
+                )),
             });
             tr.add_property(Property {
                 name: "TZOFFSETTO".to_string(),
                 params: None,
-                value: Some(format!("{:+05}", to_offset)),
+                value: Some(format!(
+                    "{:+03}{:02}",
+                    to_offset % 59,
+                    to_offset - (to_offset % 59 * 60) * 60
+                )),
             });
             // FIXME: this does not conform to RFC5545 and should be fixed
-            // once we know how to correctly get DST start(/end)
+            // once we know how to correctly get DST start(/end) so we do not
+            // have to use '1970'
             //
             // HERE BE DRAGONS!!!!
-            let dtstart = match transition_day {
-                tz::timezone::RuleDay::MonthWeekDay(mwd) => NaiveDate::from_weekday_of_month_opt(
-                    1970,
-                    mwd.month().into(),
-                    Weekday::from_u8(mwd.week_day()).unwrap(),
-                    mwd.week(),
-                )
-                .unwrap(),
-                tz::timezone::RuleDay::Julian0WithLeap(days) => {
-                    NaiveDate::from_yo_opt(1970, (days.get() + 1) as u32).unwrap()
-                }
-                tz::timezone::RuleDay::Julian1WithoutLeap(days) => {
-                    NaiveDate::from_yo_opt(1970, days.get() as u32).unwrap()
-                }
-            }
-            .and_hms_opt(2, 0, 0)
-            .unwrap();
+            let (startdate, week_num) = match transition_day {
+                tz::timezone::RuleDay::MonthWeekDay(mwd) => {
+                    let weekday =
+                        Weekday::from_u8((mwd.week_day() as i8 - 1).rem_euclid(7) as u8).unwrap();
+                    let month = mwd.month() as u32;
+                    // FIXME: This should be changed to the real transition date
+                    let year = 1970i32;
 
-            let num_days_of_month =
-                days_of_month(&Month::from_u32(dtstart.month()).unwrap(), dtstart.year());
-            let day_occurrences_before = dtstart.day() % 7;
-            let day_occurrences_after = (num_days_of_month - dtstart.day()) % 7;
-
-            let offset: i32 = if day_occurrences_after == 0 {
-                -1
-            } else {
-                day_occurrences_before as i32 + 1
+                    // Find out how many occurrences of `weekday` are in `month`
+                    let real_week = if mwd.week() == LAST_WEEK_OF_MONTH {
+                        let num_days_of_month =
+                            days_of_month(&Month::from_u32(month).unwrap(), year);
+                        let first_weekday_of_month =
+                            NaiveDate::from_ymd_opt(year, month, 1).unwrap().weekday();
+                        let day_offset = (first_weekday_of_month.number_from_monday() as i32
+                            - weekday.number_from_monday() as i32)
+                            .rem_euclid(7);
+                        // +1 because we also have to count the first occurrence we already
+                        // calculated at `day_offset`
+                        (((num_days_of_month - day_offset as u32) / 7) + 1) as u8
+                    } else {
+                        mwd.week()
+                    };
+                    (
+                        NaiveDate::from_weekday_of_month_opt(year, month, weekday, real_week)
+                            .unwrap(),
+                        mwd.week(),
+                    )
+                }
+                _ => panic!(),
             };
+
+            let dtstart = startdate.and_hms_opt(0, 0, 0).unwrap()
+                + chrono::Duration::seconds(transition_time_in_secs as i64);
 
             tr.add_property(Property {
                 name: "DTSTART".to_string(),
                 params: None,
-                value: Some(dtstart.format(ISO8601_2004_LOCAL_FORMAT).to_string()),
+                value: Some(dtstart.format(ISO8601_2004_UTC_FORMAT).to_string()),
             });
 
             // We generate this RRULE by hand for now
@@ -333,7 +352,11 @@ impl From<&Tz> for IcalTimeZone {
                 value: Some(format!(
                     "FREQ=YEARLY;BYMONTH={};BYDAY={:+1}{}",
                     dtstart.month(),
-                    offset,
+                    if week_num == LAST_WEEK_OF_MONTH {
+                        -1
+                    } else {
+                        week_num as i8
+                    },
                     weekday_to_ical(dtstart.weekday())
                 )),
             });
@@ -357,8 +380,8 @@ impl From<&Tz> for IcalTimeZone {
                 if let Some(rule) = tz_info.as_ref().extra_rule() {
                     match rule {
                         tz::timezone::TransitionRule::Alternate(alt_time) => {
-                            let std_offset_min = alt_time.std().ut_offset() * 60;
-                            let dst_offset_min = alt_time.dst().ut_offset() * 60;
+                            let std_offset_min = alt_time.std().ut_offset();
+                            let dst_offset_min = alt_time.dst().ut_offset();
                             let dst_start_day = alt_time.dst_start();
                             let dst_end_day = alt_time.dst_end();
 
@@ -369,6 +392,7 @@ impl From<&Tz> for IcalTimeZone {
                                 std_offset_min,
                                 dst_offset_min,
                                 dst_start_day,
+                                alt_time.dst_end_time(),
                             );
                             tz_spec.transitions.push(std_to_dst);
 
@@ -379,6 +403,7 @@ impl From<&Tz> for IcalTimeZone {
                                 dst_offset_min,
                                 std_offset_min,
                                 dst_end_day,
+                                alt_time.dst_start_time(),
                             );
                             tz_spec.transitions.push(dst_to_std);
                         }
@@ -772,5 +797,43 @@ impl From<IcalTimeSpan> for Vec<Property> {
         }
 
         ret
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_tz_to_ical() {
+        let converted_tz = IcalTimeZone::from(&Tz::Local);
+
+        assert!(converted_tz.transitions.is_empty());
+        assert!(converted_tz.properties.is_empty());
+    }
+
+    #[test]
+    fn utc_tz_to_ical() {
+        let converted_tz = IcalTimeZone::from(&Tz::utc());
+
+        assert!(converted_tz.transitions.is_empty());
+        assert!(converted_tz.properties.is_empty());
+    }
+
+    #[test]
+    fn iana_tz_to_ical() {
+        use crate::provider::ical::ser::*;
+        use ical::parser::ical::component::IcalCalendar;
+
+        const EXPECTED_RESULT: &str = r#"
+            BEGIN:VTIMEZONE
+            TZID:Europe/Berlin
+            END:VTIMEZONE
+        "#;
+        let converted_tz = IcalTimeZone::from(&Tz::Iana(chrono_tz::Tz::Europe__Berlin));
+        let mut calendar = IcalCalendar::default();
+        calendar.timezones.push(converted_tz);
+        let serializer = to_string(&calendar).expect("Calendar should be serializable");
+        println!("{}", serializer);
     }
 }

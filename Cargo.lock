@@ -853,7 +853,6 @@ dependencies = [
  "notify",
  "notify-rust",
  "num-traits 0.2.15",
- "parse-zoneinfo",
  "phf",
  "rrule",
  "rusty-hook",
