@@ -825,15 +825,30 @@ mod tests {
         use crate::provider::ical::ser::*;
         use ical::parser::ical::component::IcalCalendar;
 
-        const EXPECTED_RESULT: &str = r#"
-            BEGIN:VTIMEZONE
-            TZID:Europe/Berlin
-            END:VTIMEZONE
-        "#;
+        const EXPECTED_RESULT: &str = r#"BEGIN:VCALENDAR
+BEGIN:VTIMEZONE
+TZID:Europe/Berlin
+BEGIN:STANDARD
+TZNAME:CET
+TZOFFSETFROM:+0100
+TZOFFSETTO:+0200
+DTSTART:19700329T030000Z
+RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+END:STANDARD
+BEGIN:DAYLIGHT
+TZNAME:CEST
+TZOFFSETFROM:+0200
+TZOFFSETTO:+0100
+DTSTART:19701025T020000Z
+RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+END:DAYLIGHT
+END:VTIMEZONE
+END:VCALENDAR
+"#;
         let converted_tz = IcalTimeZone::from(&Tz::Iana(chrono_tz::Tz::Europe__Berlin));
         let mut calendar = IcalCalendar::default();
         calendar.timezones.push(converted_tz);
-        let serializer = to_string(&calendar).expect("Calendar should be serializable");
-        println!("{}", serializer);
+        let serialized = to_string(&calendar).expect("Calendar should be serializable");
+        assert_eq!(serialized, EXPECTED_RESULT)
     }
 }

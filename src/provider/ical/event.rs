@@ -297,6 +297,11 @@ impl Event {
     }
 
     pub fn from_ical(path: &Path, ical: IcalCalendar) -> Result<Self> {
+        const CUSTOM_TZ_RRULE_ERROR_MSG: &'static str =
+            "RRULE in event uses a custom defined timezone which is currently \
+            not supported (see https://github.com/fmeringdal/rust-rrule/pull/85).\
+            Falling back to local timezone. Datetime may be wrong!";
+
         if ical.events.len() > 1 {
             return Err(Error::from(ErrorKind::CalendarParse).with_msg(&format!(
                 "Calendar '{}' has more than one event entry",
@@ -395,8 +400,7 @@ impl Event {
             {
                 let start = occurrence.first().begin();
                 let rrule_tz: rrule::Tz = occurrence.timezone().try_into().unwrap_or_else(|_| {
-                    log::warn!("RRULE in event '{}' uses a custom defined timezone which is currently not supported (see https://github.com/fmeringdal/rust-rrule/pull/85). Falling back
-                        to local timezone. Datetime may be wrong!", path.display());
+                    log::warn!("{}: {}", path.display(), CUSTOM_TZ_RRULE_ERROR_MSG);
                     rrule::Tz::LOCAL
                 });
 
@@ -411,31 +415,39 @@ impl Event {
                         })?;
 
                 // collect and add RDATES
-                let rdates: Vec<DateTime<rrule::Tz>> = event.properties.iter().filter(|p| p.name == "RDATE").map(|property| {
-                    let ical_dt = IcalDateTime::from_property(property, Some(&tz))
-                        .expect("RDATE has invalid datetime");
-                    let rdate_tz: rrule::Tz = ical_dt.timezone().try_into().unwrap_or_else(|_| {
-                    log::warn!("RRULE in event '{}' uses a custom defined timezone which is currently not supported\
-                        (see https://github.com/fmeringdal/rust-rrule/pull/85).\
-                        Falling back to local timezone. Datetime may be wrong!", path.display());
-                    rrule::Tz::LOCAL
-                    });
-                    ical_dt.as_datetime(&rdate_tz)
-                }).collect();
+                let rdates: Vec<DateTime<rrule::Tz>> = event
+                    .properties
+                    .iter()
+                    .filter(|p| p.name == "RDATE")
+                    .map(|property| {
+                        let ical_dt = IcalDateTime::from_property(property, Some(&tz))
+                            .expect("RDATE has invalid datetime");
+                        let rdate_tz: rrule::Tz =
+                            ical_dt.timezone().try_into().unwrap_or_else(|_| {
+                                log::warn!("{}: {}", path.display(), CUSTOM_TZ_RRULE_ERROR_MSG);
+                                rrule::Tz::LOCAL
+                            });
+                        ical_dt.as_datetime(&rdate_tz)
+                    })
+                    .collect();
                 rrule_set = rrule_set.set_rdates(rdates);
 
                 // collect and add EXDATES
-                let exdates: Vec<DateTime<rrule::Tz>> = event.properties.iter().filter(|p| p.name == "EXDATE").map(|property| {
-                    let ical_dt = IcalDateTime::from_property(property, Some(&tz))
-                        .expect("RDATE has invalid datetime");
-                    let rdate_tz: rrule::Tz = ical_dt.timezone().try_into().unwrap_or_else(|_| {
-                    log::warn!("RRULE in event '{}' uses a custom defined timezone which is currently not supported\
-                        (see https://github.com/fmeringdal/rust-rrule/pull/85).\
-                        Falling back to local timezone. Datetime may be wrong!", path.display());
-                    rrule::Tz::LOCAL
-                    });
-                    ical_dt.as_datetime(&rdate_tz)
-                }).collect();
+                let exdates: Vec<DateTime<rrule::Tz>> = event
+                    .properties
+                    .iter()
+                    .filter(|p| p.name == "EXDATE")
+                    .map(|property| {
+                        let ical_dt = IcalDateTime::from_property(property, Some(&tz))
+                            .expect("RDATE has invalid datetime");
+                        let rdate_tz: rrule::Tz =
+                            ical_dt.timezone().try_into().unwrap_or_else(|_| {
+                                log::warn!("{}: {}", path.display(), CUSTOM_TZ_RRULE_ERROR_MSG);
+                                rrule::Tz::LOCAL
+                            });
+                        ical_dt.as_datetime(&rdate_tz)
+                    })
+                    .collect();
                 rrule_set = rrule_set.set_exdates(exdates);
 
                 occurrence = occurrence.with_recurring(rrule_set);
@@ -462,10 +474,6 @@ impl Event {
                 })
             })
             .collect();
-
-        // TODO: Check for exdate
-
-        // TODO: VTIMEZONE
 
         Ok(Event {
             path: path.into(),

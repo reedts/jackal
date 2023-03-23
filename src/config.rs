@@ -1,10 +1,12 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use toml;
+
+use crate::provider::tz::Tz;
 
 const DEFAULT_NOTIFICATION_HEADSUP_MINUTES: u32 = 10;
 const CONFIG_PATH_ENV_VAR: &str = "JACKAL_CONFIG_FILE";
@@ -32,18 +34,39 @@ fn find_configfile() -> io::Result<PathBuf> {
     ))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct CalendarConfig {
     pub id: String,
     pub name: String,
+    pub override_tz: Option<Tz>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct CollectionConfig {
     pub name: String,
     pub provider: String,
     pub path: PathBuf,
     pub calendars: Vec<CalendarConfig>,
+}
+
+fn find_default_tz() -> Tz {
+    const LOCALTIME_LOCATION: &str = "/etc/localtime";
+    const ZONEINFO_DIR: &str = "/usr/share/zoneinfo/";
+
+    let tz_name = if let Ok(tz) = env::var("TZ") {
+        tz
+    } else {
+        fs::read_link(LOCALTIME_LOCATION)
+            .ok()
+            .and_then(|path| {
+                path.strip_prefix(ZONEINFO_DIR)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .ok()
+            })
+            .unwrap_or("localtime".to_string())
+    };
+
+    tz_name.parse::<Tz>().unwrap()
 }
 
 fn default_tick_rate() -> Duration {
@@ -66,12 +89,15 @@ pub fn load_suitable_config(
     })
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     #[serde(skip)]
     path: PathBuf,
     #[serde(skip, default = "default_tick_rate")]
     pub tick_rate: Duration,
+
+    #[serde(default = "find_default_tz")]
+    pub tz: Tz,
 
     #[serde(default = "default_notification_headsup_minutes")]
     pub notification_headsup_minutes: u32,
@@ -88,6 +114,7 @@ impl Default for Config {
                 PathBuf::from("jackal.toml")
             },
             tick_rate: Duration::from_secs(60),
+            tz: find_default_tz(),
             notification_headsup_minutes: default_notification_headsup_minutes(),
             collections: Vec::new(),
         }

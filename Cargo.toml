@@ -33,6 +33,7 @@ derive_more = "0.99.17"
 nix = "0.26.2"
 backtrace = "0.3.67"
 itertools = "0.10.5"
+serde_with = "2.3.1"
 
 # Use fork for serde support
 [dependencies.ical]

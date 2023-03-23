@@ -40,7 +40,13 @@ pub struct Args {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
 
-    let mut logger = Logger::try_with_env_or_str("info")?;
+    const DEFAULT_LOG_LEVEL: &'static str = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "info"
+    };
+
+    let mut logger = Logger::try_with_env_or_str(DEFAULT_LOG_LEVEL)?;
 
     if let Some(log_file) = args.log_file {
         logger = logger

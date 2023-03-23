@@ -67,11 +67,15 @@ pub fn from_dir(
         .filter_map(Result::ok)
         .peekable();
 
-    let tz = if let Some(event) = event_file_iter.peek() {
-        event.tz().clone()
-    } else {
-        Tz::utc()
-    };
+    let tz = config.override_tz.clone().unwrap_or_else(|| {
+        if let Some(event) = event_file_iter.peek() {
+            event.tz().clone()
+        } else {
+            Tz::utc()
+        }
+    });
+
+    log::debug!("Calendar '{}' uses TZ: {}", &config.name, tz.id());
 
     let mut inner = CalendarCore::new(path.to_owned(), config.id.clone(), config.name.clone(), tz);
 

@@ -2,6 +2,7 @@ use chrono::{Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, Offse
 use chrono_tz::{OffsetComponents, OffsetName};
 use itertools::Itertools;
 use rrule::RRuleSet;
+use serde_with::DeserializeFromStr;
 use std::convert::TryFrom;
 use std::fmt::Display;
 use std::iter::FromIterator;
@@ -97,8 +98,9 @@ impl Display for TzOffset {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, DeserializeFromStr, PartialEq)]
 pub enum Tz {
+    #[default]
     Local,
     Iana(chrono_tz::Tz),
     Custom {
