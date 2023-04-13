@@ -1,6 +1,5 @@
 use chrono::{
-    DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc,
-    Weekday,
+    DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday,
 };
 use ical::parser::ical::component::{
     IcalTimeZone, IcalTimeZoneTransition, IcalTimeZoneTransitionType,
@@ -11,18 +10,17 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take},
     character::complete::{char, digit1, one_of},
-    combinator::{all_consuming, map, map_res, opt},
+    combinator::{all_consuming, map_res, opt},
     sequence::{preceded, terminated, tuple},
     IResult,
 };
 use num_traits::FromPrimitive;
-use rrule::{RRule, RRuleSet};
+use rrule::RRule;
 use std::convert::TryFrom;
 use std::fmt::Display;
 use std::iter::FromIterator;
 use std::str::FromStr;
 use tz;
-use tz::timezone;
 
 use crate::provider::days_of_month;
 

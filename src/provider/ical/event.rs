@@ -1,24 +1,22 @@
-use chrono::{
-    DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday,
-};
+use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
 use rrule::RRule;
 use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use ical::parser::ical::component::{IcalAlarm, IcalCalendar, IcalEvent, IcalTimeZone};
+use ical::parser::ical::component::{IcalAlarm, IcalCalendar, IcalEvent};
 use ical::parser::ical::IcalParser;
 use ical::parser::Component;
 use ical::property::Property;
 
 use super::datetime::*;
-use super::{PropertyList, ISO8601_2004_LOCAL_FORMAT, ISO8601_2004_UTC_FORMAT};
+use super::{PropertyList, ISO8601_2004_UTC_FORMAT};
 
 use crate::provider::tz::*;
 use crate::provider::{
-    days_of_month, AlarmGenerator, AlarmTrigger, Error, ErrorKind, Eventlike, OccurrenceRule,
-    Result, TimeSpan, Uid,
+    AlarmGenerator, AlarmTrigger, Error, ErrorKind, Eventlike, OccurrenceRule, Result, TimeSpan,
+    Uid,
 };
 
 struct IcalAlarmGenerator {

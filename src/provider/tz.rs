@@ -365,7 +365,6 @@ impl TryFrom<Tz> for rrule::Tz {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::*;
 
     #[test]
     fn iana_tz() {
