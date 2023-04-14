@@ -1,4 +1,5 @@
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Datelike, Duration, Local, Month, NaiveDate, TimeZone};
+use num_traits::FromPrimitive;
 use std::fmt::{Display, Write};
 use unsegen::base::*;
 use unsegen::input::Scrollable;
@@ -9,6 +10,7 @@ use crate::ui::Context;
 
 enum Entry<'a> {
     Event(Occurrence<'a>),
+    DaySeparator(NaiveDate),
     Time(DateTime<Local>),
     Cursor(DateTime<Local>),
 }
@@ -17,6 +19,10 @@ impl Entry<'_> {
     pub fn datetime(&self) -> DateTime<Local> {
         match self {
             Entry::Event(Occurrence { span, .. }) => span.clone().with_tz(&Local).begin(),
+            Entry::DaySeparator(date) => Local
+                .from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
+                .earliest()
+                .unwrap(),
             Entry::Cursor(dt) | Entry::Time(dt) => dt.clone(),
         }
     }
@@ -55,8 +61,9 @@ impl Display for Entry<'_> {
                         )
                     }
                 };
-                write!(f, "{}: {}", time, event.summary())
+                write!(f, "\t{}: {}", time, event.summary())
             }
+            Self::DaySeparator(date) => write!(f, "{}", date.format("%a")),
             Self::Time(dt) => f.pad(&format!("[{}]", dt.time().format("%H:%M"))),
             Self::Cursor(dt) => write!(f, " * {}", dt.time().format("%H:%M")),
         }
@@ -82,20 +89,34 @@ impl Widget for EventWindow<'_> {
     }
 
     fn draw(&self, mut window: unsegen::base::Window, _hints: RenderingHints) {
-        let mut events = self
-            .context
-            .agenda()
-            .events_of_day(&self.context.cursor().date_naive())
-            .map(Entry::Event)
-            .chain([Entry::Cursor(self.context.cursor().clone())])
-            .collect::<Vec<Entry>>();
+        let num_possible_entries = window.get_height().raw_value() as usize;
 
-        // Append current time if cursor's date is today
-        if self.context.today() == self.context.cursor().date_naive() {
-            events.push(Entry::Time(self.context.now().clone()))
+        let mut date = self.context.cursor().date_naive();
+
+        let mut entries = Vec::<Entry>::with_capacity(num_possible_entries);
+
+        while entries.len() < num_possible_entries {
+            let mut events = self
+                .context
+                .agenda()
+                .events_of_day(&date)
+                .map(Entry::Event)
+                .collect::<Vec<Entry>>();
+
+            // Append current time if cursor's date is today
+            if self.context.today() == date {
+                events.push(Entry::Time(self.context.now().clone()))
+            }
+
+            if !events.is_empty() {
+                events.sort_unstable_by_key(|entry| entry.datetime());
+
+                entries.push(Entry::DaySeparator(date.clone()));
+                entries.extend(events);
+            }
+
+            date += Duration::days(1);
         }
-
-        events.sort_unstable_by_key(|entry| entry.datetime());
 
         let width = window.get_width().raw_value() as usize;
 
@@ -103,7 +124,7 @@ impl Widget for EventWindow<'_> {
 
         // Only count the real events (no cursor/clock)
         let mut idx: usize = 0;
-        for ev in events {
+        for ev in entries {
             match ev {
                 ev @ Entry::Event(..) => {
                     let saved_style = cursor.get_style_modifier();

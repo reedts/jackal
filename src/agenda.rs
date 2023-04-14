@@ -61,7 +61,7 @@ impl Agenda {
         })
     }
 
-    pub fn _events_of_month<'a>(
+    pub fn events_of_month<'a>(
         &'a self,
         month: Month,
         year: i32,
@@ -80,7 +80,7 @@ impl Agenda {
         let curr_month = Month::from_u32(today.month()).unwrap();
         let curr_year = today.year();
 
-        self._events_of_month(curr_month, curr_year)
+        self.events_of_month(curr_month, curr_year)
     }
 
     pub fn events_of_day<'a>(
