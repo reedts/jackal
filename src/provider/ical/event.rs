@@ -396,6 +396,39 @@ impl Event {
                 .unwrap()
                 .parse::<RRule<rrule::Unvalidated>>()
             {
+                fn collect_special_dates(
+                    properties: &PropertyList,
+                    name: &str,
+                    tz: &Tz,
+                ) -> Vec<DateTime<rrule::Tz>> {
+                    properties
+                        .iter()
+                        .filter(|p| p.name == name)
+                        .flat_map(|property| {
+                            let datetime_values: Vec<&str> =
+                                property.value.as_deref().unwrap().split(',').collect();
+
+                            datetime_values.into_iter().map(move |value| {
+                                let ical_dt = IcalDateTime::from_property(
+                                    &Property {
+                                        name: property.name.clone(),
+                                        params: property.params.clone(),
+                                        value: Some(value.to_string()),
+                                    },
+                                    Some(&tz),
+                                )
+                                .expect(&format!("{} has invalid datetime", name));
+                                let rdate_tz: rrule::Tz =
+                                    ical_dt.timezone().try_into().unwrap_or_else(|_| {
+                                        log::warn!("{}", CUSTOM_TZ_RRULE_ERROR_MSG);
+                                        rrule::Tz::LOCAL
+                                    });
+                                ical_dt.as_datetime(&rdate_tz)
+                            })
+                        })
+                        .collect()
+                }
+
                 let start = occurrence.first().begin();
                 let rrule_tz: rrule::Tz = occurrence.timezone().try_into().unwrap_or_else(|_| {
                     log::warn!("{}: {}", path.display(), CUSTOM_TZ_RRULE_ERROR_MSG);
@@ -413,40 +446,12 @@ impl Event {
                         })?;
 
                 // collect and add RDATES
-                let rdates: Vec<DateTime<rrule::Tz>> = event
-                    .properties
-                    .iter()
-                    .filter(|p| p.name == "RDATE")
-                    .map(|property| {
-                        let ical_dt = IcalDateTime::from_property(property, Some(&tz))
-                            .expect("RDATE has invalid datetime");
-                        let rdate_tz: rrule::Tz =
-                            ical_dt.timezone().try_into().unwrap_or_else(|_| {
-                                log::warn!("{}: {}", path.display(), CUSTOM_TZ_RRULE_ERROR_MSG);
-                                rrule::Tz::LOCAL
-                            });
-                        ical_dt.as_datetime(&rdate_tz)
-                    })
-                    .collect();
-                rrule_set = rrule_set.set_rdates(rdates);
+                rrule_set =
+                    rrule_set.set_rdates(collect_special_dates(&event.properties, "RDATE", &tz));
 
                 // collect and add EXDATES
-                let exdates: Vec<DateTime<rrule::Tz>> = event
-                    .properties
-                    .iter()
-                    .filter(|p| p.name == "EXDATE")
-                    .map(|property| {
-                        let ical_dt = IcalDateTime::from_property(property, Some(&tz))
-                            .expect("RDATE has invalid datetime");
-                        let rdate_tz: rrule::Tz =
-                            ical_dt.timezone().try_into().unwrap_or_else(|_| {
-                                log::warn!("{}: {}", path.display(), CUSTOM_TZ_RRULE_ERROR_MSG);
-                                rrule::Tz::LOCAL
-                            });
-                        ical_dt.as_datetime(&rdate_tz)
-                    })
-                    .collect();
-                rrule_set = rrule_set.set_exdates(exdates);
+                rrule_set =
+                    rrule_set.set_exdates(collect_special_dates(&event.properties, "EXDATE", &tz));
 
                 occurrence = occurrence.with_recurring(rrule_set);
             }
