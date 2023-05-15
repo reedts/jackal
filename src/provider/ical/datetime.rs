@@ -411,7 +411,7 @@ impl From<&Tz> for IcalTimeZone {
                 tz_spec
             }
             Tz::Custom { id: _, transitions } => {
-                for transition in transitions.transitions.iter() {
+                for transition in transitions.iter() {
                     let transition_rule = if transition.dst_offset_secs > 0 {
                         IcalTimeZoneTransitionType::STANDARD
                     } else {
@@ -495,7 +495,7 @@ impl TryFrom<&IcalTimeZone> for Tz {
         }
 
         // If not well-known we build a Tz from custom transitions
-        let mut transitions = Vec::<Transition>::with_capacity(value.transitions.len());
+        let mut transitions = Vec::<TransitionSet>::with_capacity(value.transitions.len());
 
         for ical_transition in value.transitions.iter() {
             let (utc_offset_secs, dst_offset_secs) = match ical_transition.transition {
@@ -562,12 +562,15 @@ impl TryFrom<&IcalTimeZone> for Tz {
                 let rrule = rrule_str
                     .parse::<RRule<rrule::Unvalidated>>()
                     .expect("Could not parse RRULE of timezone");
-                TransitionRule::Recurring(rrule.build(dtstart.as_datetime(&rrule::Tz::LOCAL))?)
+                let rrule_set = rrule.build(dtstart.as_datetime(&rrule::Tz::LOCAL))?;
+                let transitions =
+                    TZ_TRANSITION_CACHE.with(|tc| tc.get().unwrap().lookup(&rrule_set));
+                TransitionRule::Recurring(rrule_set, transitions)
             } else {
                 TransitionRule::Single(dtstart.as_naive_local())
             };
 
-            transitions.push(Transition {
+            transitions.push(TransitionSet {
                 utc_offset_secs,
                 dst_offset_secs,
                 id: id.to_string(),

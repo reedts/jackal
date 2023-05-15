@@ -1,24 +1,66 @@
-use chrono::{Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone};
+use chrono::{
+    DateTime, Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc,
+};
 use chrono_tz::{OffsetComponents, OffsetName};
+use elsa::FrozenBTreeMap;
 use itertools::Itertools;
+use once_cell::unsync::OnceCell;
 use rrule::RRuleSet;
 use serde_with::DeserializeFromStr;
 use std::convert::TryFrom;
 use std::fmt::Display;
 use std::iter::FromIterator;
 use std::str::FromStr;
+use std::thread_local;
 use std::vec::Vec;
 
 use super::error::*;
 
+thread_local! {
+    pub(crate) static TZ_TRANSITION_CACHE: OnceCell<TzTransitionCache> = OnceCell::with_value(TzTransitionCache(FrozenBTreeMap::default()));
+}
+
+pub struct TzTransitionCache(FrozenBTreeMap<String, Vec<NaiveDateTime>>);
+
+impl TzTransitionCache {
+    // 2038-01-01T00:00:00Z
+    const MAX_UNROLL_DT_SECS: i64 = 2145916800;
+
+    pub fn lookup(&'static self, rrule: &RRuleSet) -> &'static [NaiveDateTime] {
+        assert!(
+            rrule.get_rrule().len() == 1,
+            "Tz transition rule should consist of a single RRULE"
+        );
+
+        let key = rrule.get_rrule().first().unwrap().to_string();
+
+        if let Some(transitions) = self.0.get(&key) {
+            transitions
+        } else {
+            // Unroll RRULE until `MAX_UNROLL_DT`
+            let transitions = rrule
+                .into_iter()
+                .take_while(|dt| {
+                    dt < &Utc.from_utc_datetime(
+                        &NaiveDateTime::from_timestamp_opt(Self::MAX_UNROLL_DT_SECS, 0).unwrap(),
+                    )
+                })
+                .map(|dt| dt.naive_local())
+                .collect_vec();
+
+            self.0.insert(key, transitions)
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TransitionRule {
     Single(NaiveDateTime),
-    Recurring(RRuleSet),
+    Recurring(RRuleSet, &'static [NaiveDateTime]),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Transition {
+pub struct TransitionSet {
     pub utc_offset_secs: i32,
     pub dst_offset_secs: i32,
     pub id: String,
@@ -26,53 +68,21 @@ pub struct Transition {
     pub rule: TransitionRule,
 }
 
-impl Transition {
+impl TransitionSet {
     const MIN_FREQUENCY_DAYS: i64 = 365;
 
-    pub fn latest_before(&self, before: &NaiveDateTime) -> Option<(NaiveDateTime, &Transition)> {
+    pub fn latest_before(&self, before: &NaiveDateTime) -> Option<NaiveDateTime> {
         use TransitionRule::*;
 
         match &self.rule {
-            Single(dt) if dt <= before => Some((dt.clone(), self)),
-            Recurring(rrule) => {
-                let utc = rrule::Tz::UTC.from_utc_datetime(before);
-                let relevant_transitions = rrule
-                    .clone()
-                    .after(utc - Duration::days(Self::MIN_FREQUENCY_DAYS))
-                    .before(utc)
-                    .all_unchecked();
-                relevant_transitions
-                    .into_iter()
-                    .max()
-                    .map(|dt| (dt.naive_utc(), self))
+            Single(dt) if dt <= before => Some(dt.clone()),
+            Recurring(_, transitions) => {
+                let idx = transitions.partition_point(|dt| dt > before).checked_sub(1);
+
+                return idx.map(|i| transitions[i]);
             }
             _ => None,
         }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct TransitionSet {
-    pub transitions: Vec<Transition>,
-}
-
-impl TransitionSet {
-    pub fn latest_before<'transitions>(
-        &'transitions self,
-        local: &NaiveDateTime,
-    ) -> Vec<&'transitions Transition> {
-        let latest_transitions: Vec<(NaiveDateTime, &Transition)> = self
-            .transitions
-            .iter()
-            .filter_map(|transition| transition.latest_before(&local))
-            .collect();
-
-        latest_transitions
-            .iter()
-            .max_set_by_key(|(k, _)| k)
-            .iter()
-            .map(|(_, transition)| *transition)
-            .collect()
     }
 }
 
@@ -105,7 +115,7 @@ pub enum Tz {
     Iana(chrono_tz::Tz),
     Custom {
         id: String,
-        transitions: TransitionSet,
+        transitions: Vec<TransitionSet>,
     },
 }
 
@@ -201,7 +211,10 @@ impl TimeZone for Tz {
                 })
             }
             Custom { id: _, transitions } => {
-                let latest_transitions = transitions.latest_before(local);
+                let latest_transitions = transitions
+                    .iter()
+                    .filter_map(|trans_set| trans_set.latest_before(local).map(|_| trans_set))
+                    .collect_vec();
 
                 match latest_transitions.len() {
                     0 => LocalResult::None,
@@ -295,7 +308,9 @@ impl TimeZone for Tz {
             }
             Custom { id: _, transitions } => {
                 let transition = transitions
-                    .latest_before(utc)
+                    .iter()
+                    .filter_map(|trans_set| trans_set.latest_before(utc).map(|_| trans_set))
+                    .collect_vec()
                     .pop()
                     .expect("UTC datetime should fall in exactly ONE transition span");
 
@@ -311,8 +326,8 @@ impl TimeZone for Tz {
     }
 }
 
-impl FromIterator<Transition> for Tz {
-    fn from_iter<T: IntoIterator<Item = Transition>>(iter: T) -> Self {
+impl FromIterator<TransitionSet> for Tz {
+    fn from_iter<T: IntoIterator<Item = TransitionSet>>(iter: T) -> Self {
         let transitions = Vec::from_iter(iter);
         let id = transitions
             .first()
@@ -320,10 +335,7 @@ impl FromIterator<Transition> for Tz {
             .id
             .clone();
 
-        Tz::Custom {
-            id,
-            transitions: TransitionSet { transitions },
-        }
+        Tz::Custom { id, transitions }
     }
 }
 

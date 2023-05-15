@@ -1,6 +1,8 @@
-use chrono::{Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use elsa::FrozenBTreeMap;
 use log;
 use num_traits::FromPrimitive;
+use once_cell::sync::OnceCell;
 use std::collections::BTreeMap;
 
 use crate::config::Config;
@@ -18,6 +20,7 @@ impl Agenda {
         config: &Config,
         event_sink: &std::sync::mpsc::Sender<crate::events::Event>,
     ) -> Result<Self> {
+
         let calendars: BTreeMap<String, ProviderCalendar> = config
             .collections
             .iter()
@@ -45,7 +48,9 @@ impl Agenda {
             })
             .collect();
 
-        Ok(Agenda { calendars })
+        Ok(Agenda {
+            calendars,
+        })
     }
 
     /// Note, even though events are sorted within one calendar, they are not sorted in the
