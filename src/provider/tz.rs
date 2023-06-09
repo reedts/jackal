@@ -1,32 +1,25 @@
-use chrono::{
-    DateTime, Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc,
-};
+use chrono::{FixedOffset, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc};
 use chrono_tz::{OffsetComponents, OffsetName};
 use elsa::FrozenBTreeMap;
 use itertools::Itertools;
-use once_cell::unsync::OnceCell;
 use rrule::RRuleSet;
 use serde_with::DeserializeFromStr;
 use std::convert::TryFrom;
 use std::fmt::Display;
 use std::iter::FromIterator;
 use std::str::FromStr;
-use std::thread_local;
 use std::vec::Vec;
 
 use super::error::*;
 
-thread_local! {
-    pub(crate) static TZ_TRANSITION_CACHE: OnceCell<TzTransitionCache> = OnceCell::with_value(TzTransitionCache(FrozenBTreeMap::default()));
-}
-
+#[derive(Default)]
 pub struct TzTransitionCache(FrozenBTreeMap<String, Vec<NaiveDateTime>>);
 
 impl TzTransitionCache {
     // 2038-01-01T00:00:00Z
     const MAX_UNROLL_DT_SECS: i64 = 2145916800;
 
-    pub fn lookup(&'static self, rrule: &RRuleSet) -> &'static [NaiveDateTime] {
+    pub fn lookup(&self, rrule: &RRuleSet) -> &[NaiveDateTime] {
         assert!(
             rrule.get_rrule().len() == 1,
             "Tz transition rule should consist of a single RRULE"

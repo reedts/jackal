@@ -1,8 +1,6 @@
-use chrono::{DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc};
-use elsa::FrozenBTreeMap;
+use chrono::{Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use log;
 use num_traits::FromPrimitive;
-use once_cell::sync::OnceCell;
 use std::collections::BTreeMap;
 
 use crate::config::Config;
@@ -13,6 +11,7 @@ use crate::provider::{Alarm, EventFilter, MutCalendarlike, Occurrence, ProviderC
 
 pub struct Agenda {
     calendars: BTreeMap<String, ProviderCalendar>,
+    tz_transition_cache: &'static TzTransitionCache,
 }
 
 impl Agenda {
@@ -20,6 +19,7 @@ impl Agenda {
         config: &Config,
         event_sink: &std::sync::mpsc::Sender<crate::events::Event>,
     ) -> Result<Self> {
+        let tz_transition_cache: &'static TzTransitionCache = Box::leak(Box::default());
 
         let calendars: BTreeMap<String, ProviderCalendar> = config
             .collections
@@ -29,6 +29,7 @@ impl Agenda {
                     Some(ical::from_dir(
                         collection_spec.path.as_path(),
                         collection_spec.calendars.as_slice(),
+                        tz_transition_cache,
                         event_sink,
                     ))
                 } else {
@@ -50,6 +51,7 @@ impl Agenda {
 
         Ok(Agenda {
             calendars,
+            tz_transition_cache,
         })
     }
 

@@ -8,17 +8,15 @@ use ical::parser::Component;
 use ical::property::Property;
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take},
+    bytes::complete::tag,
     character::complete::{char, digit1, one_of},
     combinator::{all_consuming, map_res, opt},
     sequence::{preceded, terminated, tuple},
     IResult,
 };
 use num_traits::FromPrimitive;
-use rrule::RRule;
 use std::convert::TryFrom;
 use std::fmt::Display;
-use std::iter::FromIterator;
 use std::str::FromStr;
 use tz;
 
@@ -463,126 +461,6 @@ impl From<&Tz> for IcalTimeZone {
     }
 }
 
-impl TryFrom<&IcalTimeZone> for Tz {
-    type Error = Error;
-    fn try_from(value: &IcalTimeZone) -> std::result::Result<Self, Self::Error> {
-        fn parse_offset(s: &str) -> Result<i32> {
-            let (_, (sign, hours, minutes, seconds)) = tuple((
-                map_res(
-                    one_of::<_, _, (&str, nom::error::ErrorKind)>("+-"),
-                    |s: char| (s.to_string() + "1").parse::<i32>(),
-                ),
-                map_res(take(2usize), |s: &str| s.parse::<i32>()),
-                map_res(take(2usize), |s: &str| s.parse::<i32>()),
-                map_res(opt(take(2usize)), |s: Option<&str>| {
-                    s.unwrap_or("0").parse::<i32>()
-                }),
-            ))(s)?;
-
-            Ok(sign * (hours * 3600 + minutes * 60 + seconds))
-        }
-
-        let id = value
-            .get_property("TZID")
-            .ok_or(Error::new(ErrorKind::TimezoneError, "Timezone has no id"))?
-            .value
-            .as_deref()
-            .unwrap();
-
-        // First try for "well-known" (IANA) TZID
-        if let tz @ Ok(_) = id.parse::<Tz>() {
-            return tz;
-        }
-
-        // If not well-known we build a Tz from custom transitions
-        let mut transitions = Vec::<TransitionSet>::with_capacity(value.transitions.len());
-
-        for ical_transition in value.transitions.iter() {
-            let (utc_offset_secs, dst_offset_secs) = match ical_transition.transition {
-                IcalTimeZoneTransitionType::STANDARD => (
-                    parse_offset(
-                        ical_transition
-                            .get_property("TZOFFSETTO")
-                            .unwrap()
-                            .value
-                            .as_ref()
-                            .unwrap(),
-                    )
-                    .expect("TZOFFSETTO not convertible"),
-                    0,
-                ),
-                IcalTimeZoneTransitionType::DAYLIGHT => {
-                    let utc_offset = parse_offset(
-                        ical_transition
-                            .get_property("TZOFFSETFROM")
-                            .unwrap()
-                            .value
-                            .as_ref()
-                            .unwrap(),
-                    )
-                    .expect("TZOFFSETFROM not convertible");
-                    (
-                        utc_offset,
-                        parse_offset(
-                            ical_transition
-                                .get_property("TZOFFSETTO")
-                                .unwrap()
-                                .value
-                                .as_ref()
-                                .unwrap(),
-                        )
-                        .expect("TZOFFSETTO not convertible")
-                            - utc_offset,
-                    )
-                }
-            };
-
-            let name = ical_transition
-                .get_property("TZNAME")
-                .and_then(|prop| prop.value.to_owned());
-
-            // build RRULE for custom timezone
-            // There is no need to provide a Tz here as DTSTART in VTIMEZONE
-            // must contain a local (or 'floating') value
-            let dtstart = IcalDateTime::from_property(
-                ical_transition.get_property("DTSTART").ok_or(Error::new(
-                    ErrorKind::TimezoneError,
-                    &format!(
-                        "Missing DTSTART for timezone '{}'",
-                        name.as_deref().unwrap_or(&id)
-                    ),
-                ))?,
-                None,
-            )?;
-
-            let rule = if let Some(rrule_str) = ical_transition
-                .get_property("RRULE")
-                .and_then(|prop| prop.value.as_deref())
-            {
-                let rrule = rrule_str
-                    .parse::<RRule<rrule::Unvalidated>>()
-                    .expect("Could not parse RRULE of timezone");
-                let rrule_set = rrule.build(dtstart.as_datetime(&rrule::Tz::LOCAL))?;
-                let transitions =
-                    TZ_TRANSITION_CACHE.with(|tc| tc.get().unwrap().lookup(&rrule_set));
-                TransitionRule::Recurring(rrule_set, transitions)
-            } else {
-                TransitionRule::Single(dtstart.as_naive_local())
-            };
-
-            transitions.push(TransitionSet {
-                utc_offset_secs,
-                dst_offset_secs,
-                id: id.to_string(),
-                name,
-                rule,
-            });
-        }
-
-        Ok(Self::from_iter(transitions))
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IcalDateTime {
     Date(NaiveDate),
@@ -635,6 +513,7 @@ impl IcalDateTime {
 
         if let Ok(dt) = NaiveDateTime::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT) {
             if let Some(tz) = used_tz {
+                log::debug!("time: {}", dt);
                 Ok(Self::Local(tz.from_local_datetime(&dt).earliest().unwrap()))
             } else {
                 Ok(Self::Floating(dt))

@@ -11,7 +11,7 @@ use ical::parser::Component;
 use ical::property::Property;
 
 use super::datetime::*;
-use super::{PropertyList, ISO8601_2004_UTC_FORMAT};
+use super::{tz_from_ical, PropertyList, ISO8601_2004_UTC_FORMAT};
 
 use crate::provider::tz::*;
 use crate::provider::{
@@ -264,7 +264,7 @@ impl Event {
         Ok(event)
     }
 
-    pub fn from_file(path: &Path) -> Result<Self> {
+    pub fn from_file(path: &Path, tz_transition_cache: &'static TzTransitionCache) -> Result<Self> {
         let buf = io::BufReader::new(fs::File::open(path)?);
 
         let mut reader = IcalParser::new(buf);
@@ -291,10 +291,14 @@ impl Event {
             }
         };
 
-        Self::from_ical(path, ical)
+        Self::from_ical(path, ical, tz_transition_cache)
     }
 
-    pub fn from_ical(path: &Path, ical: IcalCalendar) -> Result<Self> {
+    pub fn from_ical(
+        path: &Path,
+        ical: IcalCalendar,
+        tz_transition_cache: &'static TzTransitionCache,
+    ) -> Result<Self> {
         const CUSTOM_TZ_RRULE_ERROR_MSG: &'static str =
             "RRULE in event uses a custom defined timezone which is currently \
             not supported (see https://github.com/fmeringdal/rust-rrule/pull/85).\
@@ -318,7 +322,7 @@ impl Event {
         let tz = ical
             .timezones
             .first()
-            .and_then(|tz| Tz::try_from(tz).ok())
+            .and_then(|tz| tz_from_ical(tz, tz_transition_cache).ok())
             .unwrap_or(Tz::utc());
 
         let dtstart = event

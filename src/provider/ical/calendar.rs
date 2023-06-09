@@ -18,6 +18,7 @@ use super::{Error, ErrorKind, Event, Result};
 pub struct Calendar {
     inner: provider::CalendarCore<Event>,
     _modification_watcher: notify::RecommendedWatcher,
+    tz_transition_cache: &'static TzTransitionCache,
     pending_modifications: mpsc::Receiver<CalendarModification>,
     current_modifications: HashSet<CalendarModification>,
 }
@@ -33,6 +34,7 @@ impl std::ops::Deref for Calendar {
 pub fn from_dir(
     path: &Path,
     config: &CalendarConfig,
+    tz_transition_cache: &'static TzTransitionCache,
     event_sink: &std::sync::mpsc::Sender<crate::events::Event>,
 ) -> Result<Calendar> {
     if !path.is_dir() {
@@ -56,7 +58,9 @@ pub fn from_dir(
         .map(|dir| {
             dir.map_or_else(
                 |_| -> Result<_> { Err(Error::from(ErrorKind::CalendarParse)) },
-                |file: fs::DirEntry| -> Result<Event> { Event::from_file(file.path().as_path()) },
+                |file: fs::DirEntry| -> Result<Event> {
+                    Event::from_file(file.path().as_path(), tz_transition_cache)
+                },
             )
         })
         .inspect(|res| {
@@ -92,6 +96,7 @@ pub fn from_dir(
     Ok(Calendar {
         inner,
         _modification_watcher: wachter,
+        tz_transition_cache,
         pending_modifications: queue,
         current_modifications: HashSet::new(),
     })
@@ -178,8 +183,12 @@ impl MutCalendarlike for Calendar {
                 );
             }
         }
-        fn add_for_path(calendar: &mut CalendarCore<Event>, path: &Path) {
-            let event = match Event::from_file(path) {
+        fn add_for_path(
+            calendar: &mut CalendarCore<Event>,
+            path: &Path,
+            tz_transition_cache: &'static TzTransitionCache,
+        ) {
+            let event = match Event::from_file(path, tz_transition_cache) {
                 Ok(e) => e,
                 Err(e) => {
                     log::warn!("{}", e);
@@ -196,11 +205,13 @@ impl MutCalendarlike for Calendar {
         for m in self.pending_modifications.try_iter() {
             if !self.current_modifications.contains(&m) {
                 match m {
-                    CalendarModification::Create(path) => add_for_path(&mut self.inner, &path),
+                    CalendarModification::Create(path) => {
+                        add_for_path(&mut self.inner, &path, self.tz_transition_cache)
+                    }
                     CalendarModification::Remove(path) => remove_for_path(&mut self.inner, &path),
                     CalendarModification::Modify(path) => {
                         remove_for_path(&mut self.inner, &path);
-                        add_for_path(&mut self.inner, &path);
+                        add_for_path(&mut self.inner, &path, self.tz_transition_cache);
                     }
                 }
             }
