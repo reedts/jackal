@@ -11,7 +11,7 @@ use crate::provider::{Alarm, EventFilter, MutCalendarlike, Occurrence, ProviderC
 
 pub struct Agenda {
     calendars: BTreeMap<String, ProviderCalendar>,
-    tz_transition_cache: &'static TzTransitionCache,
+    _tz_transition_cache: &'static TzTransitionCache,
 }
 
 impl Agenda {
@@ -51,7 +51,7 @@ impl Agenda {
 
         Ok(Agenda {
             calendars,
-            tz_transition_cache,
+            _tz_transition_cache: tz_transition_cache,
         })
     }
 

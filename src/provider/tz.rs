@@ -62,8 +62,6 @@ pub struct TransitionSet {
 }
 
 impl TransitionSet {
-    const MIN_FREQUENCY_DAYS: i64 = 365;
-
     pub fn latest_before(&self, before: &NaiveDateTime) -> Option<NaiveDateTime> {
         use TransitionRule::*;
 
