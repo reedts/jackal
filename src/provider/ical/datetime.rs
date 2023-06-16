@@ -170,8 +170,7 @@ impl FromStr for IcalDuration {
                 ErrorKind::DurationParse,
                 &format!("{}", err),
             ));
-        })
-        .unwrap();
+        })?;
 
         duration.sign = if let Some(sign) = sign {
             if sign == '-' {
