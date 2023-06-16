@@ -70,7 +70,7 @@ impl TransitionSet {
         match &self.rule {
             Single(dt) if dt <= before => Some(dt.clone()),
             Recurring(_, transitions) => {
-                let idx = transitions.partition_point(|dt| dt > before).checked_sub(1);
+                let idx = transitions.partition_point(|dt| dt < before).checked_sub(1);
 
                 return idx.map(|i| transitions[i]);
             }
