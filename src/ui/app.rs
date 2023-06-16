@@ -71,6 +71,11 @@ impl<'a> App<'a> {
             // Handle events
             if let Ok(event) = dispatcher.next() {
                 match event {
+                    Event::Signal(nix::sys::signal::SIGWINCH) => {
+                        /* redraw */
+                        log::debug!("Redraw after 'SIGWINCH'");
+                    }
+                    Event::Signal(_) => {}
                     Event::Update => self.context.update(),
                     Event::ExternalModification => {
                         self.context.agenda_mut().process_external_modifications();

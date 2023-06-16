@@ -4,7 +4,7 @@ use flexi_logger::{FileSpec, Logger};
 use lib::agenda::Agenda;
 use lib::events::Dispatcher;
 use lib::ui::app::App;
-use nix::sys::termios;
+use nix::sys::{signal, termios};
 use std::io::stdout;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -77,9 +77,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{:?}", backtrace::Backtrace::new());
     }));
 
+    let mut signals_to_wait = signal::SigSet::empty();
+    signals_to_wait.add(signal::SIGWINCH);
+
     let config = lib::config::load_suitable_config(args.configfile.as_deref())?;
 
-    let dispatcher = Dispatcher::from_config(&config);
+    let dispatcher = Dispatcher::from_config(&config, signals_to_wait);
     // Setup unsegen terminal
     let stdout = stdout();
     let term = Terminal::new(stdout.lock())?;

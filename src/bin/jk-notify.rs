@@ -196,7 +196,11 @@ fn wait(
 
         match events.recv_timeout(time_until(until)) {
             Ok(lib::events::Event::ExternalModification) => return ControlFlow::Restart,
-            Ok(lib::events::Event::Update | lib::events::Event::Input(_)) => {
+            Ok(
+                lib::events::Event::Update
+                | lib::events::Event::Input(_)
+                | lib::events::Event::Signal(_),
+            ) => {
                 panic!("No dispatcher was started so where do those come from?!")
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => return ControlFlow::Continue,
