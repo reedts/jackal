@@ -191,6 +191,10 @@ impl MonthIndex {
         MonthIndex { index, year }
     }
 
+    pub fn index(&self) -> u32 {
+        self.index.number_from_month() - 1
+    }
+
     pub fn _next(&self) -> Self {
         let next_month = self.index.succ();
 
@@ -236,10 +240,10 @@ impl<T: Datelike> From<T> for MonthIndex {
 impl Add<u32> for MonthIndex {
     type Output = MonthIndex;
     fn add(self, rhs: u32) -> Self::Output {
-        let month_sum = self.index.number_from_month() + rhs;
-        if month_sum <= 12 {
+        let month_sum = self.index() + rhs;
+        if month_sum < 12 {
             MonthIndex {
-                index: Month::from_u32(month_sum).unwrap(),
+                index: Month::from_u32(month_sum + 1).unwrap(),
                 year: self.year,
             }
         } else {
@@ -247,7 +251,7 @@ impl Add<u32> for MonthIndex {
             let new_month = month_sum - year_diff * 12;
 
             MonthIndex {
-                index: Month::from_u32(new_month).unwrap(),
+                index: Month::from_u32(new_month + 1).unwrap(),
                 year: self.year + year_diff as i32,
             }
         }
