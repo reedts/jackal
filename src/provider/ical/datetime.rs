@@ -512,7 +512,6 @@ impl IcalDateTime {
 
         if let Ok(dt) = NaiveDateTime::parse_from_str(val, ISO8601_2004_LOCAL_FORMAT) {
             if let Some(tz) = used_tz {
-                log::debug!("time: {}", dt);
                 Ok(Self::Local(tz.from_local_datetime(&dt).earliest().unwrap()))
             } else {
                 Ok(Self::Floating(dt))
