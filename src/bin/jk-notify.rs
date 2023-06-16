@@ -246,10 +246,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|alarm| {
                     (
                         alarm.datetime().with_timezone(&Utc),
-                        alarm
-                            .description()
-                            .unwrap_or(alarm.occurrence().event().title())
-                            .to_owned(),
+                        format!(
+                            "{}: {}",
+                            alarm.occurrence().event().title(),
+                            alarm
+                                .description()
+                                .unwrap_or(alarm.occurrence().event().title())
+                        ),
                         alarm.occurrence().clone(),
                     )
                 })
