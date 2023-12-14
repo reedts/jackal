@@ -21,7 +21,7 @@ use self::tz::*;
 
 pub type Result<T> = std::result::Result<T, self::Error>;
 
-type Uid = String;
+pub type Uid = String;
 
 pub enum EventFilter {
     InRange(Bound<NaiveDateTime>, Bound<NaiveDateTime>),

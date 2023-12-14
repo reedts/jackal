@@ -15,13 +15,13 @@ use unsegen::widget::*;
 use super::command::CommandParser;
 use super::insert::InsertParser;
 
-pub struct App<'a> {
-    config: &'a Config,
+pub struct App<'app> {
+    config: &'app Config,
     context: Context,
 }
 
-impl<'a> App<'a> {
-    pub fn new(config: &'a Config, agenda: Agenda) -> App<'a> {
+impl<'app> App<'app> {
+    pub fn new(config: &'app Config, agenda: Agenda) -> App<'app> {
         let context = Context::new(agenda);
         App { config, context }
     }
@@ -44,7 +44,7 @@ impl<'a> App<'a> {
 
     fn as_widget<'w>(&'w self) -> impl Widget + 'w
     where
-        'a: 'w,
+        'app: 'w,
     {
         let layout = VLayout::new()
             .widget(
@@ -63,7 +63,7 @@ impl<'a> App<'a> {
         mut term: Terminal,
     ) -> Result<(), Box<dyn std::error::Error>>
     where
-        'a: 'r,
+        'app: 'r,
     {
         let mut run = true;
 

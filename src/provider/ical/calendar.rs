@@ -173,7 +173,10 @@ impl MutCalendarlike for Calendar {
     fn process_external_modifications(&mut self) {
         fn remove_for_path(calendar: &mut CalendarCore<Event>, path: &Path) {
             let Some(uid) = uid_from_path(path) else {
-                log::warn!("Unable to obtain uid from file removal event path '{}'", path.to_string_lossy());
+                log::warn!(
+                    "Unable to obtain uid from file removal event path '{}'",
+                    path.to_string_lossy()
+                );
                 return;
             };
             if !calendar.remove_by_uid(&uid) {

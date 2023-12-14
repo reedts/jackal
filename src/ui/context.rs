@@ -2,6 +2,7 @@ use chrono::prelude::*;
 use std::collections::BTreeMap;
 
 use crate::agenda::Agenda;
+use crate::provider::Uid;
 
 use unsegen::base::style::*;
 use unsegen::widget::builtin::PromptLine;
@@ -44,11 +45,14 @@ impl Default for Theme {
     }
 }
 
+type EventCache = BTreeMap<NaiveDate, Vec<Uid>>;
+
 pub struct Context {
     pub mode: Mode,
     pub theme: Theme,
     pub cursor: DateTime<Local>,
     pub eventlist_index: usize,
+    pub eventlist_cache: EventCache,
     pub last_error_message: Option<String>,
     input_sinks: BTreeMap<Mode, PromptLine>,
     agenda: Agenda,
@@ -67,6 +71,7 @@ impl Context {
                 (Mode::Command, PromptLine::with_prompt(":".to_owned())),
             ]),
             eventlist_index: 0,
+            eventlist_cache: EventCache::default(),
             agenda: calendar,
             now: Local::now(),
         }
