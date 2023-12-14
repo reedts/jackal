@@ -30,7 +30,7 @@ impl IcalAlarmGenerator {
     // There are EXACTLY THREE values for the ACTION property.
     // Anything else will be ignored by jackal to avoid further problems
     // with these VALARM items.
-    const VALID_ACTION_VALUES: [&str; 3] = ["DISPLAY", "AUDIO", "EMAIL"];
+    const VALID_ACTION_VALUES: [&'static str; 3] = ["DISPLAY", "AUDIO", "EMAIL"];
 
     pub fn finish(self, event: Uid) -> AlarmGenerator {
         AlarmGenerator::new(

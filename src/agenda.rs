@@ -1,17 +1,29 @@
-use chrono::{Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Duration, Local, Month, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use log;
 use num_traits::FromPrimitive;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::iter::FromIterator;
 
 use crate::config::Config;
 use crate::provider::datetime::days_of_month;
 use crate::provider::ical;
 use crate::provider::tz::*;
-use crate::provider::{Alarm, EventFilter, MutCalendarlike, Occurrence, ProviderCalendar, Result};
+use crate::provider::Uid;
+use crate::provider::{
+    Alarm, EventFilter, MutCalendarlike, Occurrence, ProviderCalendar, Result, TimeSpan,
+};
+
+struct CacheLine(TimeSpan<Local>, String, Uid);
+
+type OccurrenceCache = BTreeMap<NaiveDate, Vec<CacheLine>>;
 
 pub struct Agenda {
     calendars: BTreeMap<String, ProviderCalendar>,
-    tz_transition_cache: &'static TzTransitionCache,
+    // By using RefCell we can mutate our cache even when
+    // used with a shared reference
+    occurrence_cache: RefCell<OccurrenceCache>,
+    _tz_transition_cache: &'static TzTransitionCache,
 }
 
 impl Agenda {
@@ -19,7 +31,7 @@ impl Agenda {
         config: &Config,
         event_sink: &std::sync::mpsc::Sender<crate::events::Event>,
     ) -> Result<Self> {
-        let tz_transition_cache: &'static TzTransitionCache = Box::leak(Box::default());
+        let _tz_transition_cache: &'static TzTransitionCache = Box::leak(Box::default());
 
         let calendars: BTreeMap<String, ProviderCalendar> = config
             .collections
@@ -29,7 +41,7 @@ impl Agenda {
                     Some(ical::from_dir(
                         collection_spec.path.as_path(),
                         collection_spec.calendars.as_slice(),
-                        tz_transition_cache,
+                        _tz_transition_cache,
                         event_sink,
                     ))
                 } else {
@@ -51,8 +63,46 @@ impl Agenda {
 
         Ok(Agenda {
             calendars,
-            tz_transition_cache,
+            occurrence_cache: RefCell::default(),
+            _tz_transition_cache,
         })
+    }
+
+    // fn fetch_cached<'a>(
+    //     &'a self,
+    //     range: impl std::ops::RangeBounds<NaiveDateTime> + 'a + Clone,
+    // ) -> impl Iterator<Item = Occurrence<'a>> + 'a {
+    //     todo!();
+    // }
+
+    fn add_to_cache(&self, date: NaiveDate) {
+        let mut cache = self.occurrence_cache.borrow_mut();
+
+        let begin = date.and_hms_opt(0, 0, 0).unwrap();
+        let end = (date + Duration::days(1)).and_hms_opt(0, 0, 0).unwrap();
+
+        if cache.contains_key(&date) {
+            cache.remove(&date);
+        }
+
+        let events = self.calendars.iter().flat_map(move |(name, calendar)| {
+            calendar
+                .as_calendar()
+                .filter_events(EventFilter::default().datetime_range(begin..end))
+                .into_iter()
+                .zip(std::iter::repeat(name))
+        });
+
+        cache.insert(
+            date,
+            Vec::from_iter(events.map(|(occ, calendar): (Occurrence<'_>, &String)| {
+                CacheLine(
+                    occ.span.clone().with_tz(&Local),
+                    calendar.to_string(),
+                    occ.event.uid().to_string(),
+                )
+            })),
+        );
     }
 
     /// Note, even though events are sorted within one calendar, they are not sorted in the
