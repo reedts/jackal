@@ -1,6 +1,7 @@
 use chrono::{DateTime, Duration, Month, NaiveDate, TimeZone};
 use rrule::{RRuleSet, RRuleSetIter};
 use std::ops::Bound;
+use std::hash::{Hash, Hasher};
 
 pub fn days_of_month(month: &Month, year: i32) -> u32 {
     if month.number_from_month() == 12 {
@@ -165,6 +166,13 @@ impl<Tz: TimeZone> TimeSpan<Tz> {
 impl<Tz: TimeZone> From<TimeSpan<Tz>> for Duration {
     fn from(timespan: TimeSpan<Tz>) -> Self {
         timespan.duration()
+    }
+}
+
+impl<Tz: TimeZone> Hash for TimeSpan<Tz> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.begin().hash(state);
+        self.end().hash(state);
     }
 }
 
