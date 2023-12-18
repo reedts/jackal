@@ -2,6 +2,7 @@ use chrono::{DateTime, Datelike, Duration, Local, Month, NaiveDate, NaiveDateTim
 use log;
 use num_traits::FromPrimitive;
 use std::cell::RefCell;
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashSet};
 use std::iter::FromIterator;
 use std::ops::{Bound, RangeBounds};
@@ -17,11 +18,11 @@ use crate::provider::{
 
 #[derive(Default)]
 struct OccurrenceCache {
-    occurrences: BTreeMap<Uid, HashSet<TimeSpan<Utc>>>,
+    occurrences: BTreeMap<Uid, Vec<TimeSpan<Utc>>>,
     events: BTreeMap<NaiveDate, HashSet<Uid>>,
 }
 
-struct CacheLine(Uid, TimeSpan<Utc>);
+struct CacheLine<'cache>(&'cache Uid, &'cache [TimeSpan<Utc>]);
 
 impl OccurrenceCache {
     pub fn add<'occ, I>(&mut self, iter: I)
@@ -42,7 +43,7 @@ impl OccurrenceCache {
             self.occurrences
                 .entry(occ.event.uid().to_string())
                 .or_default()
-                .insert(occ.span.with_tz(&Utc));
+                .push(occ.span.with_tz(&Utc))
         }
     }
 
@@ -50,6 +51,41 @@ impl OccurrenceCache {
         self.events.contains_key(date)
     }
 
+    pub fn fetch_range<'cache>(
+        &'cache self,
+        range: impl RangeBounds<NaiveDate>,
+    ) -> impl Iterator<Item = CacheLine<'cache>> + 'cache {
+        let uids = self.events.range(range).flat_map(|(_, uids)| uids.iter());
+
+        uids.into_iter()
+            .map(move |uid| CacheLine(uid, &self.occurrences.get(uid).unwrap()))
+    }
+
+    pub fn fetch<'cache>(
+        &'cache self,
+        date: &NaiveDate,
+    ) -> impl Iterator<Item = CacheLine<'cache>> + 'cache {
+        self.events
+            .get(&date)
+            .unwrap()
+            .iter()
+            .map(move |uid| CacheLine(uid, self.occurrences.get(uid.as_str()).unwrap().as_slice()))
+    }
+
+    pub fn remove(&mut self, date: &NaiveDate) {
+        let uids = self.events.get(date);
+
+        match uids {
+            Some(uids) => {
+                for uid in uids {
+                    self.occurrences.remove(uid);
+                }
+            }
+            None => (),
+        }
+
+        self.events.remove(date);
+    }
 }
 
 pub struct Agenda {
@@ -118,26 +154,20 @@ impl Agenda {
 
         if let (Some(start), Some(end)) = (start, end) {
             // Add to cache if not already cached
-            for day in start
-                .date()
+            let mut cache = self.occurrence_cache.borrow_mut();
+
+            let begin_date = start.date();
+            let end_date = end.date();
+
+            for day in begin_date
                 .iter_days()
-                .take_while(|dt| dt <= &end.date())
-                .filter(|dt| !self.occurrence_cache.borrow().contains_key(dt))
+                .take_while(|dt| dt <= &end_date)
+                .filter(|dt| !cache.contains(dt))
             {
                 self.add_to_cache(day);
             }
 
-            let cache = self.occurrence_cache.borrow();
-
-            let cachelines = cache
-                .range(start.date()..=end.date())
-                .flat_map(|(_, clines)| {
-                    clines.iter().filter(|CacheLine(ts, _, _)| {
-                        &ts.begin().naive_local() >= start && &ts.end().naive_local() <= end
-                    })
-                });
-
-            cachelines.into_iter()
+            let cached_events = cache.fetch_range(begin_date..=end_date);
         } else {
             self.fetch_no_cache(range.clone())
         }
@@ -160,28 +190,18 @@ impl Agenda {
         let begin = date.and_hms_opt(0, 0, 0).unwrap();
         let end = (date + Duration::days(1)).and_hms_opt(0, 0, 0).unwrap();
 
-        if cache.contains_key(&date) {
+        if cache.contains(&date) {
             cache.remove(&date);
         }
 
-        let events = self.calendars.iter().flat_map(move |(name, calendar)| {
+        let occurrences = self.calendars.iter().flat_map(move |(name, calendar)| {
             calendar
                 .as_calendar()
                 .filter_events(EventFilter::default().datetime_range(begin..end))
                 .into_iter()
-                .zip(std::iter::repeat(name))
         });
 
-        cache.insert(
-            date,
-            Vec::from_iter(events.map(|(occ, calendar): (Occurrence<'_>, &String)| {
-                CacheLine(
-                    occ.span.clone().with_tz(&Local),
-                    calendar.to_string(),
-                    occ.event.uid().to_string(),
-                )
-            })),
-        );
+        cache.add(occurrences);
     }
 
     /// Note, even though events are sorted within one calendar, they are not sorted in the
