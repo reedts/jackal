@@ -132,6 +132,7 @@ pub trait Calendarlike {
     fn name(&self) -> &str;
     fn path(&self) -> &Path;
     fn tz(&self) -> &Tz;
+    fn event_by_uid(&self, uid: &str) -> Option<&dyn Eventlike>;
     fn events_in<'a>(
         &'a self,
         begin: Bound<DateTime<Utc>>,

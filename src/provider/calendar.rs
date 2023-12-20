@@ -200,6 +200,10 @@ impl<Event: Eventlike + 'static, T: Deref<Target = CalendarCore<Event>>> Calenda
         &self.tz
     }
 
+    fn event_by_uid(&self, uid: &str) -> Option<&dyn Eventlike> {
+        self.find_by_uid(uid).map(|ev| ev as &dyn Eventlike)
+    }
+
     fn events_in<'a>(
         &'a self,
         begin: Bound<DateTime<Utc>>,

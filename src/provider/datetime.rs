@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Month, NaiveDate, TimeZone};
 use rrule::{RRuleSet, RRuleSetIter};
-use std::ops::Bound;
 use std::hash::{Hash, Hasher};
+use std::ops::Bound;
 
 pub fn days_of_month(month: &Month, year: i32) -> u32 {
     if month.number_from_month() == 12 {
