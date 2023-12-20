@@ -1,5 +1,4 @@
-use chrono::{DateTime, Datelike, Duration, Local, Month, NaiveDate, TimeZone};
-use num_traits::FromPrimitive;
+use chrono::{DateTime, Duration, Local, NaiveDate, TimeZone};
 use std::fmt::{Display, Write};
 use unsegen::base::*;
 use unsegen::input::Scrollable;
@@ -8,6 +7,7 @@ use unsegen::widget::*;
 use crate::provider::Occurrence;
 use crate::ui::Context;
 
+#[allow(dead_code)]
 enum Entry<'a> {
     Event(Occurrence<'a>),
     DaySeparator(NaiveDate),

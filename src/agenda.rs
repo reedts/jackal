@@ -1,22 +1,90 @@
-use chrono::{DateTime, Datelike, Duration, Local, Month, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{Datelike, Duration, Month, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use log;
 use num_traits::FromPrimitive;
 use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::iter::FromIterator;
+use std::collections::{BTreeMap, HashSet};
+use std::ops::{Bound, RangeBounds};
 
 use crate::config::Config;
 use crate::provider::datetime::days_of_month;
 use crate::provider::ical;
 use crate::provider::tz::*;
-use crate::provider::Uid;
 use crate::provider::{
-    Alarm, EventFilter, MutCalendarlike, Occurrence, ProviderCalendar, Result, TimeSpan,
+    Alarm, EventFilter, Eventlike, MutCalendarlike, Occurrence, ProviderCalendar, Result, TimeSpan,
+    Uid,
 };
 
-struct CacheLine(TimeSpan<Local>, String, Uid);
+#[derive(Default)]
+struct OccurrenceCache {
+    occurrences: BTreeMap<Uid, Vec<TimeSpan<Tz>>>,
+    events: BTreeMap<NaiveDate, HashSet<Uid>>,
+}
 
-type OccurrenceCache = BTreeMap<NaiveDate, Vec<CacheLine>>;
+struct CacheLine<'cache>(&'cache Uid, &'cache [TimeSpan<Tz>]);
+
+impl OccurrenceCache {
+    pub fn add<'occ, I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = Occurrence<'occ>>,
+    {
+        for occ in iter {
+            let first_day = occ.begin().date_naive();
+            let last_day = occ.end().date_naive();
+
+            for day in first_day.iter_days().take_while(|dt| dt <= &last_day) {
+                self.events
+                    .entry(day)
+                    .or_default()
+                    .insert(occ.event.uid().to_string());
+            }
+
+            self.occurrences
+                .entry(occ.event.uid().to_string())
+                .or_default()
+                .push(occ.span)
+        }
+    }
+
+    pub fn contains(&self, date: &NaiveDate) -> bool {
+        self.events.contains_key(date)
+    }
+
+    pub fn fetch_range<'cache>(
+        &'cache self,
+        range: impl RangeBounds<NaiveDate>,
+    ) -> impl Iterator<Item = CacheLine<'cache>> + 'cache {
+        let uids = self.events.range(range).flat_map(|(_, uids)| uids.iter());
+
+        uids.into_iter()
+            .map(move |uid| CacheLine(uid, &self.occurrences.get(uid).unwrap()))
+    }
+
+    pub fn _fetch<'cache>(
+        &'cache self,
+        date: &NaiveDate,
+    ) -> impl Iterator<Item = CacheLine<'cache>> + 'cache {
+        self.events
+            .get(&date)
+            .unwrap()
+            .iter()
+            .map(move |uid| CacheLine(uid, self.occurrences.get(uid.as_str()).unwrap().as_slice()))
+    }
+
+    pub fn remove(&mut self, date: &NaiveDate) {
+        let uids = self.events.get(date);
+
+        match uids {
+            Some(uids) => {
+                for uid in uids {
+                    self.occurrences.remove(uid);
+                }
+            }
+            None => (),
+        }
+
+        self.events.remove(date);
+    }
+}
 
 pub struct Agenda {
     calendars: BTreeMap<String, ProviderCalendar>,
@@ -68,12 +136,64 @@ impl Agenda {
         })
     }
 
-    // fn fetch_cached<'a>(
-    //     &'a self,
-    //     range: impl std::ops::RangeBounds<NaiveDateTime> + 'a + Clone,
-    // ) -> impl Iterator<Item = Occurrence<'a>> + 'a {
-    //     todo!();
-    // }
+    fn fetch_maybe_cached<'a>(
+        &'a self,
+        range: impl RangeBounds<NaiveDateTime> + 'a + Clone,
+    ) -> Option<impl Iterator<Item = Occurrence<'a>> + 'a> {
+        //impl Iterator<Item = Occurrence<'a>> + 'a {
+        let start = match range.start_bound() {
+            Bound::Included(t) | Bound::Excluded(t) => Some(t),
+            Bound::Unbounded => None,
+        };
+
+        let end = match range.start_bound() {
+            Bound::Included(t) | Bound::Excluded(t) => Some(t),
+            Bound::Unbounded => None,
+        };
+
+        if let (Some(start), Some(end)) = (start, end) {
+            // Add to cache if not already cached
+            let begin_date = start.date();
+            let end_date = end.date();
+
+            for day in begin_date
+                .iter_days()
+                .take_while(|dt| dt <= &end_date)
+                .filter(|dt| !self.occurrence_cache.borrow().contains(dt))
+            {
+                self.add_to_cache(day);
+            }
+
+            let results = self
+                .occurrence_cache
+                .borrow()
+                .fetch_range(begin_date..=end_date)
+                .flat_map(move |CacheLine(uid, timespans)| {
+                    let event = self.find_by_uid(uid).unwrap();
+
+                    timespans.into_iter().map(move |ts| Occurrence {
+                        event,
+                        span: ts.clone().with_tz(&Tz::utc()),
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            Some(results.into_iter())
+        } else {
+            None
+        }
+    }
+
+    fn _fetch_no_cache<'a>(
+        &'a self,
+        range: impl RangeBounds<NaiveDateTime> + 'a + Clone,
+    ) -> impl Iterator<Item = Occurrence<'a>> + 'a {
+        self.calendars.values().flat_map(move |calendar| {
+            calendar
+                .as_calendar()
+                .filter_events(EventFilter::default().datetime_range(range.clone()))
+        })
+    }
 
     fn add_to_cache(&self, date: NaiveDate) {
         let mut cache = self.occurrence_cache.borrow_mut();
@@ -81,41 +201,28 @@ impl Agenda {
         let begin = date.and_hms_opt(0, 0, 0).unwrap();
         let end = (date + Duration::days(1)).and_hms_opt(0, 0, 0).unwrap();
 
-        if cache.contains_key(&date) {
+        if cache.contains(&date) {
             cache.remove(&date);
         }
 
-        let events = self.calendars.iter().flat_map(move |(name, calendar)| {
+        let occurrences = self.calendars.values().flat_map(move |calendar| {
             calendar
                 .as_calendar()
                 .filter_events(EventFilter::default().datetime_range(begin..end))
                 .into_iter()
-                .zip(std::iter::repeat(name))
         });
 
-        cache.insert(
-            date,
-            Vec::from_iter(events.map(|(occ, calendar): (Occurrence<'_>, &String)| {
-                CacheLine(
-                    occ.span.clone().with_tz(&Local),
-                    calendar.to_string(),
-                    occ.event.uid().to_string(),
-                )
-            })),
-        );
+        cache.add(occurrences);
     }
 
     /// Note, even though events are sorted within one calendar, they are not sorted in the
     /// resulting iterator since multiple calendars are merged
     pub fn events_in<'a>(
         &'a self,
-        range: impl std::ops::RangeBounds<NaiveDateTime> + 'a + Clone,
+        range: impl RangeBounds<NaiveDateTime> + 'a + Clone,
     ) -> impl Iterator<Item = Occurrence<'a>> + 'a {
-        self.calendars.values().flat_map(move |calendar| {
-            calendar
-                .as_calendar()
-                .filter_events(EventFilter::default().datetime_range(range.clone()))
-        })
+        self.fetch_maybe_cached(range)
+            .expect("Provided range cannot be cached")
     }
 
     pub fn events_of_month<'a>(
@@ -138,6 +245,12 @@ impl Agenda {
         let curr_year = today.year();
 
         self.events_of_month(curr_month, curr_year)
+    }
+
+    pub fn find_by_uid<'a>(&'a self, uid: &str) -> Option<&'a dyn Eventlike> {
+        self.calendars
+            .values()
+            .find_map(|calendar| calendar.as_calendar().event_by_uid(uid))
     }
 
     pub fn events_of_day<'a>(
@@ -164,7 +277,6 @@ impl Agenda {
         &'a self,
         range: impl std::ops::RangeBounds<NaiveDateTime> + 'a + Clone,
     ) -> impl Iterator<Item = Alarm<'a, Tz>> {
-        use std::ops::Bound;
         let start = match range.start_bound() {
             Bound::Included(dt) => Bound::Included(Utc.from_utc_datetime(&dt)),
             Bound::Excluded(dt) => Bound::Included(Utc.from_utc_datetime(&dt)),
