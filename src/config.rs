@@ -3,6 +3,7 @@ use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+// FIXME: Use chrono::Duration once they support serde
 use std::time::Duration;
 use toml;
 
@@ -73,6 +74,11 @@ fn default_tick_rate() -> Duration {
     Duration::from_secs(60)
 }
 
+fn default_event_lookahead() -> Duration {
+    // 8 weeks
+    Duration::from_secs(3600 * 24 * 7 * 8)
+}
+
 fn default_notification_headsup_minutes() -> u32 {
     DEFAULT_NOTIFICATION_HEADSUP_MINUTES
 }
@@ -96,6 +102,9 @@ pub struct Config {
     #[serde(skip, default = "default_tick_rate")]
     pub tick_rate: Duration,
 
+    #[serde(default = "default_event_lookahead")]
+    pub event_lookahead: Duration,
+
     #[serde(default = "find_default_tz")]
     pub tz: Tz,
 
@@ -115,6 +124,7 @@ impl Default for Config {
             },
             tick_rate: Duration::from_secs(60),
             tz: find_default_tz(),
+            event_lookahead: default_tick_rate(),
             notification_headsup_minutes: default_notification_headsup_minutes(),
             collections: Vec::new(),
         }

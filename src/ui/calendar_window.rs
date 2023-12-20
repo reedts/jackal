@@ -303,6 +303,8 @@ pub struct CalendarWindow<'a> {
 }
 
 impl<'a> CalendarWindow<'a> {
+    const PADDING_X: usize = 2;
+
     pub fn new(context: &'a Context) -> Self {
         CalendarWindow { context }
     }
@@ -311,8 +313,8 @@ impl<'a> CalendarWindow<'a> {
 impl Widget for CalendarWindow<'_> {
     fn space_demand(&self) -> Demand2D {
         Demand2D {
-            width: ColDemand::at_least(MonthPane::WIDTH),
-            height: RowDemand::at_least(MonthPane::HEIGHT),
+            width: ColDemand::exact(MonthPane::WIDTH + 2 * Self::PADDING_X),
+            height: RowDemand::exact(MonthPane::HEIGHT),
         }
     }
 

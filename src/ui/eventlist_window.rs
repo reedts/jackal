@@ -8,8 +8,8 @@ use crate::provider::Occurrence;
 use crate::ui::Context;
 
 #[allow(dead_code)]
-enum Entry<'a> {
-    Event(Occurrence<'a>),
+enum Entry<'entry> {
+    Event(Occurrence<'entry>),
     DaySeparator(NaiveDate),
     Time(DateTime<Local>),
     Cursor(DateTime<Local>),
@@ -70,13 +70,14 @@ impl Display for Entry<'_> {
     }
 }
 
-pub struct EventWindow<'a> {
-    context: &'a Context,
+pub struct EventWindow<'win> {
+    context: &'win Context,
+    lookahead: Duration,
 }
 
-impl<'a> EventWindow<'a> {
-    pub fn new(context: &'a Context) -> Self {
-        EventWindow { context }
+impl<'win> EventWindow<'win> {
+    pub fn new(context: &'win Context, lookahead: Duration) -> Self {
+        EventWindow { context, lookahead }
     }
 }
 
@@ -96,7 +97,7 @@ impl Widget for EventWindow<'_> {
             .agenda()
             .events_in(
                 date.and_hms_opt(0, 0, 0).unwrap()
-                    ..(date + Duration::weeks(4)).and_hms_opt(23, 59, 59).unwrap(),
+                    ..(date + self.lookahead).and_hms_opt(23, 59, 59).unwrap(),
             )
             .map(Entry::Event)
             .collect::<Vec<Entry>>();
@@ -119,6 +120,7 @@ impl Widget for EventWindow<'_> {
         let mut date_it = NaiveDate::MIN;
 
         for ev in entries {
+            // Check if iteration entry has new date. If yes write DaySeparator
             let ev_date = ev.datetime().date_naive();
             if ev_date != date_it {
                 let saved_style = cursor.get_style_modifier();
@@ -128,6 +130,7 @@ impl Widget for EventWindow<'_> {
 
                 date_it = ev_date;
             }
+
             match ev {
                 ev @ Entry::Event(..) => {
                     let saved_style = cursor.get_style_modifier();
@@ -159,7 +162,7 @@ impl Widget for EventWindow<'_> {
     }
 }
 
-pub struct EventWindowBehaviour<'a>(pub &'a mut Context, pub usize);
+pub struct EventWindowBehaviour<'beh>(pub &'beh mut Context, pub usize);
 
 impl Scrollable for EventWindowBehaviour<'_> {
     fn scroll_backwards(&mut self) -> unsegen::input::OperationResult {

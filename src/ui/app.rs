@@ -1,10 +1,9 @@
+use super::{CalendarWindow, Context, EventWindow, EventWindowBehaviour, Mode};
 use crate::agenda::Agenda;
 use crate::config::Config;
 use crate::events::{Dispatcher, Event};
 use crate::provider::tz::*;
 use crate::provider::NewEvent;
-
-use super::{CalendarWindow, Context, EventWindow, EventWindowBehaviour, Mode};
 
 use unsegen::base::{GraphemeCluster, Terminal};
 use unsegen::input::{
@@ -50,7 +49,10 @@ impl<'app> App<'app> {
             .widget(
                 HLayout::new()
                     .widget(CalendarWindow::new(&self.context))
-                    .widget(EventWindow::new(&self.context)),
+                    .widget(EventWindow::new(
+                        &self.context,
+                        chrono::Duration::from_std(self.config.event_lookahead.clone()).unwrap(),
+                    )),
             )
             .widget(self.bottom_bar());
 
