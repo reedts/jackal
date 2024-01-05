@@ -146,7 +146,7 @@ impl Agenda {
             Bound::Unbounded => None,
         };
 
-        let end = match range.start_bound() {
+        let end = match range.end_bound() {
             Bound::Included(t) | Bound::Excluded(t) => Some(t),
             Bound::Unbounded => None,
         };
