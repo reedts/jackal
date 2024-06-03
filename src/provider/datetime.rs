@@ -22,7 +22,7 @@ pub fn _days_of_year(year: i32) -> u32 {
         .num_days() as u32
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TimeSpan<Tz: TimeZone> {
     Allday(NaiveDate, Option<NaiveDate>, Tz),
     TimePoints(DateTime<Tz>, DateTime<Tz>),

@@ -31,7 +31,16 @@ impl OccurrenceCache {
             let first_day = occ.begin().date_naive();
             let last_day = occ.end().date_naive();
 
+            log::debug!(
+                "Adding occurrence {} - {} of event '{}'",
+                first_day,
+                last_day,
+                occ.event.uid()
+            );
+
             for day in first_day.iter_days().take_while(|dt| dt <= &last_day) {
+                log::debug!("Adding {} of event '{}'", day, occ.event.uid());
+
                 self.events
                     .entry(day)
                     .or_default()
@@ -140,7 +149,6 @@ impl Agenda {
         &'a self,
         range: impl RangeBounds<NaiveDateTime> + 'a + Clone,
     ) -> Option<impl Iterator<Item = Occurrence<'a>> + 'a> {
-        //impl Iterator<Item = Occurrence<'a>> + 'a {
         let start = match range.start_bound() {
             Bound::Included(t) | Bound::Excluded(t) => Some(t),
             Bound::Unbounded => None,
@@ -156,11 +164,14 @@ impl Agenda {
             let begin_date = start.date();
             let end_date = end.date();
 
+            log::debug!("Fetching date range {} - {}", begin_date, end_date);
+
             for day in begin_date
                 .iter_days()
                 .take_while(|dt| dt <= &end_date)
                 .filter(|dt| !self.occurrence_cache.borrow().contains(dt))
             {
+                log::debug!("Adding date '{}' to cache", day);
                 self.add_to_cache(day);
             }
 
@@ -202,6 +213,7 @@ impl Agenda {
         let end = (date + Duration::days(1)).and_hms_opt(0, 0, 0).unwrap();
 
         if cache.contains(&date) {
+            log::debug!("Date '{}' already in cache. Removing.", date);
             cache.remove(&date);
         }
 

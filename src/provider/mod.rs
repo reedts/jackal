@@ -115,6 +115,64 @@ impl Occurrence<'_> {
         self.span.end()
     }
 
+    pub fn days(&self) -> Vec<TimeSpan<Tz>> {
+        fn unroll<'dt, Tz: TimeZone>(
+            from: &'dt DateTime<Tz>,
+            to: &'dt DateTime<Tz>,
+        ) -> impl Iterator<Item = TimeSpan<Tz>> + 'dt {
+            let begin_date = from.date_naive();
+            let end_date = to.date_naive();
+            let tz = from.timezone();
+
+            begin_date
+                .iter_days()
+                .take_while(move |date| date <= &end_date)
+                .map(move |date| {
+                    if &date == &begin_date {
+                        TimeSpan::TimePoints(
+                            from.clone(),
+                            tz.from_local_datetime(
+                                (begin_date + Duration::days(1))
+                                    .and_hms_opt(0, 0, 0)
+                                    .as_ref()
+                                    .unwrap(),
+                            )
+                            .latest()
+                            .expect("At least one LocalTime must exist"),
+                        )
+                    } else if &date == &end_date {
+                        TimeSpan::TimePoints(
+                            tz.from_local_datetime(end_date.and_hms_opt(0, 0, 0).as_ref().unwrap())
+                                .earliest()
+                                .expect("At least one LocalTime must exist"),
+                            to.clone(),
+                        )
+                    } else {
+                        TimeSpan::Allday(date, None, tz.clone())
+                    }
+                })
+        }
+
+        match &self.span {
+            TimeSpan::Allday(begin, end, tz) => {
+                if let Some(e) = end {
+                    begin
+                        .iter_days()
+                        .take_while(|date| date <= e)
+                        .map(|date| TimeSpan::Allday(date, None, tz.clone()))
+                        .collect()
+                } else {
+                    vec![TimeSpan::Allday(begin.clone(), None, tz.clone())]
+                }
+            }
+            TimeSpan::TimePoints(begin, end) => unroll(begin, end).collect(),
+            TimeSpan::Duration(begin, dur) => {
+                unroll(begin, &(begin.clone() + dur.clone())).collect()
+            }
+            ts @ TimeSpan::Instant(_) => vec![ts.clone()],
+        }
+    }
+
     pub fn event(&self) -> &dyn Eventlike {
         self.event
     }

@@ -4,21 +4,22 @@ use unsegen::base::*;
 use unsegen::input::Scrollable;
 use unsegen::widget::*;
 
-use crate::provider::Occurrence;
+use crate::provider::TimeSpan;
 use crate::ui::Context;
 
 #[allow(dead_code)]
-enum Entry<'entry> {
-    Event(Occurrence<'entry>),
+#[derive(Debug)]
+enum Entry {
+    Event(TimeSpan<Local>, String),
     DaySeparator(NaiveDate),
     Time(DateTime<Local>),
     Cursor(DateTime<Local>),
 }
 
-impl Entry<'_> {
+impl Entry {
     pub fn datetime(&self) -> DateTime<Local> {
         match self {
-            Entry::Event(Occurrence { span, .. }) => span.clone().with_tz(&Local).begin(),
+            Entry::Event(span, _) => span.begin(),
             Entry::DaySeparator(date) => Local
                 .from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
                 .earliest()
@@ -28,10 +29,10 @@ impl Entry<'_> {
     }
 }
 
-impl Display for Entry<'_> {
+impl Display for Entry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Event(Occurrence { span, event }) => {
+            Self::Event(span, title) => {
                 let local_span = span.clone().with_tz(&Local);
 
                 let time = if span.num_days() > 1 {
@@ -61,7 +62,7 @@ impl Display for Entry<'_> {
                         )
                     }
                 };
-                write!(f, "\t{}: {}", time, event.summary())
+                write!(f, "\t{}: {}", time, title)
             }
             Self::DaySeparator(date) => write!(f, "{}", date.format("%a, %b %d")),
             Self::Time(dt) => f.pad(&format!("[{}]", dt.time().format("%H:%M"))),
@@ -99,7 +100,12 @@ impl Widget for EventWindow<'_> {
                 date.and_hms_opt(0, 0, 0).unwrap()
                     ..(date + self.lookahead).and_hms_opt(23, 59, 59).unwrap(),
             )
-            .map(Entry::Event)
+            .flat_map(|occ| {
+                occ.days()
+                    .into_iter()
+                    .zip(std::iter::repeat(occ.event.title()))
+            })
+            .map(|(span, title)| Entry::Event(span.with_tz(&Local), title.to_owned()))
             .collect::<Vec<Entry>>();
 
         // Append current time if cursor's date is today
@@ -110,6 +116,8 @@ impl Widget for EventWindow<'_> {
         if !entries.is_empty() {
             entries.sort_unstable_by_key(|entry| entry.datetime());
         }
+
+        log::info!("{:#?}", entries);
 
         let width = window.get_width().raw_value() as usize;
 
