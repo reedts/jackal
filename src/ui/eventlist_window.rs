@@ -4,7 +4,7 @@ use unsegen::base::*;
 use unsegen::input::Scrollable;
 use unsegen::widget::*;
 
-use crate::provider::TimeSpan;
+use crate::provider::{Occurrence, TimeSpan};
 use crate::ui::Context;
 
 #[allow(dead_code)]
@@ -29,39 +29,31 @@ impl Entry {
     }
 }
 
+impl From<Occurrence<'_>> for Entry {
+    fn from(value: Occurrence) -> Self {
+        let Occurrence { span, event } = value;
+        Entry::Event(span.with_tz(&Local), event.title().to_owned())
+    }
+}
+
 impl Display for Entry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Event(span, title) => {
                 let local_span = span.clone().with_tz(&Local);
 
-                let time = if span.num_days() > 1 {
-                    if span.is_allday() {
-                        format!(
-                            "{} - {}",
-                            local_span.begin().date_naive(),
-                            local_span.end().date_naive()
-                        )
-                    } else {
-                        format!(
-                            "{} - {}",
-                            local_span.begin().time().format("%H:%M"),
-                            local_span.end().time().format("%H:%M")
-                        )
-                    }
+                let time = if span.is_allday() {
+                    "Allday".to_owned()
+                } else if span.is_instant() {
+                    format!("{}", local_span.begin().time().format("%H:%M"))
                 } else {
-                    if span.is_allday() {
-                        "Allday".to_owned()
-                    } else if span.is_instant() {
-                        format!("{}", local_span.begin().time().format("%H:%M"))
-                    } else {
-                        format!(
-                            "{} - {}",
-                            local_span.begin().time().format("%H:%M"),
-                            local_span.end().time().format("%H:%M")
-                        )
-                    }
+                    format!(
+                        "{} - {}",
+                        local_span.begin().time().format("%H:%M"),
+                        local_span.end().time().format("%H:%M")
+                    )
                 };
+
                 write!(f, "\t{}: {}", time, title)
             }
             Self::DaySeparator(date) => write!(f, "{}", date.format("%a, %b %d")),
@@ -100,12 +92,7 @@ impl Widget for EventWindow<'_> {
                 date.and_hms_opt(0, 0, 0).unwrap()
                     ..(date + self.lookahead).and_hms_opt(23, 59, 59).unwrap(),
             )
-            .flat_map(|occ| {
-                occ.days()
-                    .into_iter()
-                    .zip(std::iter::repeat(occ.event.title()))
-            })
-            .map(|(span, title)| Entry::Event(span.with_tz(&Local), title.to_owned()))
+            .map(Entry::from)
             .collect::<Vec<Entry>>();
 
         // Append current time if cursor's date is today
@@ -117,7 +104,7 @@ impl Widget for EventWindow<'_> {
             entries.sort_unstable_by_key(|entry| entry.datetime());
         }
 
-        log::info!("{:#?}", entries);
+        log::debug!("{:#?}", entries);
 
         let width = window.get_width().raw_value() as usize;
 

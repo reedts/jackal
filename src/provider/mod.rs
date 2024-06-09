@@ -153,23 +153,27 @@ impl Occurrence<'_> {
                 })
         }
 
-        match &self.span {
-            TimeSpan::Allday(begin, end, tz) => {
-                if let Some(e) = end {
-                    begin
-                        .iter_days()
-                        .take_while(|date| date <= e)
-                        .map(|date| TimeSpan::Allday(date, None, tz.clone()))
-                        .collect()
-                } else {
-                    vec![TimeSpan::Allday(begin.clone(), None, tz.clone())]
+        if self.span.num_days() > 1 {
+            match &self.span {
+                TimeSpan::Allday(begin, end, tz) => {
+                    if let Some(e) = end {
+                        begin
+                            .iter_days()
+                            .take_while(|date| date < e)
+                            .map(|date| TimeSpan::Allday(date, None, tz.clone()))
+                            .collect()
+                    } else {
+                        vec![TimeSpan::Allday(begin.clone(), None, tz.clone())]
+                    }
                 }
+                TimeSpan::TimePoints(begin, end) => unroll(begin, end).collect(),
+                TimeSpan::Duration(begin, dur) => {
+                    unroll(begin, &(begin.clone() + dur.clone())).collect()
+                }
+                ts @ TimeSpan::Instant(_) => vec![ts.clone()],
             }
-            TimeSpan::TimePoints(begin, end) => unroll(begin, end).collect(),
-            TimeSpan::Duration(begin, dur) => {
-                unroll(begin, &(begin.clone() + dur.clone())).collect()
-            }
-            ts @ TimeSpan::Instant(_) => vec![ts.clone()],
+        } else {
+            vec![self.span.clone()]
         }
     }
 
