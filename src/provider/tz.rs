@@ -1,4 +1,4 @@
-use chrono::{FixedOffset, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc};
+use chrono::{DateTime, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc};
 use chrono_tz::{OffsetComponents, OffsetName};
 use elsa::FrozenBTreeMap;
 use itertools::Itertools;
@@ -35,7 +35,9 @@ impl TzTransitionCache {
                 .into_iter()
                 .take_while(|dt| {
                     dt < &Utc.from_utc_datetime(
-                        &NaiveDateTime::from_timestamp_opt(Self::MAX_UNROLL_DT_SECS, 0).unwrap(),
+                        &DateTime::from_timestamp(Self::MAX_UNROLL_DT_SECS, 0)
+                            .unwrap()
+                            .naive_utc(),
                     )
                 })
                 .map(|dt| dt.naive_local())

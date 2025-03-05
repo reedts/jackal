@@ -642,7 +642,7 @@ impl FromStr for IcalDateTime {
 
 impl Default for IcalDateTime {
     fn default() -> Self {
-        IcalDateTime::Floating(NaiveDateTime::from_timestamp_opt(0, 0).unwrap())
+        IcalDateTime::Floating(DateTime::from_timestamp(0, 0).unwrap().naive_utc())
     }
 }
 pub struct IcalTimeSpan(pub TimeSpan<Tz>);

@@ -129,7 +129,7 @@ impl AlarmGenerator {
 
 pub struct AlarmIter<'a> {
     next: Vec<Alarm<'a, Tz>>,
-    rrule_iter: OccurrenceIter<'a, Tz>,
+    rrule_iter: OccurrenceIter<Tz>,
     inner: &'a AlarmGenerator,
     event: &'a dyn Eventlike,
 }

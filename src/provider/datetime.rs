@@ -259,7 +259,7 @@ impl<Tz: TimeZone> OccurrenceRule<Tz> {
         }
     }
 
-    pub fn iter<'a>(&'a self) -> OccurrenceIter<'a, Tz> {
+    pub fn iter<'a>(&'a self) -> OccurrenceIter<Tz> {
         use OccurrenceRule::*;
         match self {
             Onetime(ts) => OccurrenceIter {
@@ -284,13 +284,13 @@ impl<Tz: TimeZone> OccurrenceRule<Tz> {
     }
 }
 
-pub struct OccurrenceIter<'a, Tz: TimeZone> {
+pub struct OccurrenceIter<Tz: TimeZone> {
     start: Option<TimeSpan<Tz>>,
-    rrule_iter: Option<RRuleSetIter<'a>>,
+    rrule_iter: Option<RRuleSetIter>,
     tz: Tz,
 }
 
-impl<Tz: TimeZone> Iterator for OccurrenceIter<'_, Tz> {
+impl<Tz: TimeZone> Iterator for OccurrenceIter<Tz> {
     type Item = TimeSpan<Tz>;
 
     fn next(&mut self) -> Option<Self::Item> {
